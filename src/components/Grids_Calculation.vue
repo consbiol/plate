@@ -29,6 +29,8 @@ export default {
     kDecay: { type: Number, required: true, default: 2.0 },
     baseSeaDistanceThreshold: { type: Number, required: true },
     baseLandDistanceThreshold: { type: Number, required: true },
+    // 平均気温(°C): 氷河行数の大本パラメータ
+    averageTemperature: { type: Number, required: false, default: 15 },
     // per-latitude-band vertical wobble (rows): integer number of rows to shift (+/-)
     landBandVerticalWobbleRows: { type: Number, required: false, default: 2 },
     // X scale for wobble noise sampling
@@ -206,6 +208,38 @@ export default {
         case 10: return this.landDistanceThreshold10;
         default: return this.landDistanceThreshold10;
       }
+    },
+    // 平均気温から上端・下端氷河グリッド数を算出（10℃低下ごとに+10）
+    _computeTopGlacierRowsFromAverageTemperature() {
+      const t = (typeof this.averageTemperature === 'number') ? this.averageTemperature : 15;
+      const anchors = [
+        { t: -25, val: 45 },
+        { t: -15, val: 35 },
+        { t: -5,  val: 25 },
+        { t: 5,   val: 15 },
+        { t: 10,  val: 10 },
+        { t: 15,  val: 5  },
+        { t: 25,  val: -5 }
+      ];
+      let v;
+      if (t <= anchors[0].t) {
+        // 直線外挿（傾き -1 行/℃）
+        v = anchors[0].val + (t - anchors[0].t) * (-1);
+      } else if (t >= anchors[anchors.length - 1].t) {
+        const last = anchors[anchors.length - 1];
+        v = last.val + (t - last.t) * (-1);
+      } else {
+        for (let i = 0; i < anchors.length - 1; i++) {
+          const a = anchors[i];
+          const b = anchors[i + 1];
+          if (t >= a.t && t <= b.t) {
+            const ratio = (t - a.t) / (b.t - a.t);
+            v = a.val + ratio * (b.val - a.val);
+            break;
+          }
+        }
+      }
+      return Math.round(v);
     },
     noise2D(x, y) {
       const s = Math.sin((x * 12.9898) + (y * 78.233)) * 43758.5453;
@@ -807,6 +841,7 @@ export default {
       }
       // 上端を氷河で上書き（ノイズ付き）
       // 海/湖: +0、低地・乾燥地・ツンドラ: +landGlacierExtraRows、高地: +highlandGlacierExtraRows
+      const computedTopGlacierRows = this._computeTopGlacierRowsFromAverageTemperature();
       for (let gy = 0; gy < this.gridHeight; gy++) {
         for (let gx = 0; gx < this.gridWidth; gx++) {
           const idx = gy * this.gridWidth + gx;
@@ -826,7 +861,8 @@ export default {
           } else if (colors[idx] === alpineColor) {
             additionalGrids = this.alpineGlacierExtraRows;
           }
-          const threshold = Math.max(0, this.topGlacierRows + additionalGrids + noise);
+          const base = computedTopGlacierRows + additionalGrids;
+          const threshold = base > 0 ? Math.max(0, base + noise) : 0;
           if (distanceFromTop < threshold) {
             colors[idx] = glacierColor;
           }
@@ -853,7 +889,8 @@ export default {
           } else if (colors[idx] === alpineColor) {
             additionalGrids = this.alpineGlacierExtraRows;
           }
-          const threshold = Math.max(0, this.topGlacierRows + additionalGrids + noise);
+          const base = computedTopGlacierRows + additionalGrids;
+          const threshold = base > 0 ? Math.max(0, base + noise) : 0;
           if (distanceFromBottom < threshold) {
             colors[idx] = glacierColor;
           }

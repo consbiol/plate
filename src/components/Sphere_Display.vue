@@ -9,7 +9,11 @@ export default {
     gridWidth: { type: Number, required: true },
     gridHeight: { type: Number, required: true },
     gridData: { type: Array, required: false, default: () => [] },
-    polarBufferRows: { type: Number, required: false, default: 50 }
+    polarBufferRows: { type: Number, required: false, default: 50 },
+    polarAvgRows: { type: Number, required: false, default: 3 },
+    polarBlendRows: { type: Number, required: false, default: 12 },
+    polarNoiseStrength: { type: Number, required: false, default: 0.3 },
+    polarNoiseScale: { type: Number, required: false, default: 0.01 }
   },
   methods: {
     openSpherePopup() {
@@ -208,6 +212,24 @@ export default {
       }
       return [255,255,255];
     },
+    _hashNoise2D(x, y) {
+      const s = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+      return s - Math.floor(s);
+    },
+    _fractalNoise2D(x, y, octaves = 4, persistence = 0.5) {
+      let value = 0;
+      let amplitude = 1;
+      let frequency = 1;
+      let maxValue = 0;
+      for (let i = 0; i < octaves; i++) {
+        value += (this._hashNoise2D(x * frequency, y * frequency) * 2 - 1) * amplitude;
+        maxValue += amplitude;
+        amplitude *= persistence;
+        frequency *= 2;
+      }
+      // normalize to 0..1
+      return (value / maxValue) * 0.5 + 0.5;
+    },
     // Initialize WebGL shader/texture. Returns true on success.
     initWebGL(canvas) {
       const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
@@ -230,11 +252,31 @@ export default {
         uniform float u_cx;
         uniform float u_cy;
         uniform float u_R;
-        uniform vec3 u_polarColor;
+        uniform vec3 u_polarColorTop;
+        uniform vec3 u_polarColorBottom;
+        uniform float u_blendFrac;
+        uniform float u_polarNoiseScale;
+        uniform float u_polarNoiseStrength;
         varying vec2 v_uv;
         const float PI = 3.141592653589793;
+        // hash + FBM (fractal) noise
+        float hash(vec2 p) {
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+        }
+        float noise(vec2 p) {
+          return hash(p);
+        }
+        float fbm(vec2 p) {
+          float v = 0.0;
+          float amp = 0.5;
+          for (int i = 0; i < 5; i++) {
+            v += amp * noise(p);
+            p *= 2.0;
+            amp *= 0.5;
+          }
+          return v; // ~0..1
+        }
         void main() {
-          // convert frag coord using gl_FragCoord
           vec2 fc = gl_FragCoord.xy;
           float sx = (fc.x - u_cx) / u_R;
           float sy = - (fc.y - u_cy) / u_R;
@@ -244,18 +286,32 @@ export default {
           }
           float sz = sqrt(max(0.0, 1.0 - sq));
           float dist = sqrt(sq);
-          // draw 2-pixel gray ring around sphere edge
-          float thickness = 2.0 / max(1.0, u_R); // normalized thickness (2 pixels)
+          float thickness = 2.0 / max(1.0, u_R);
           if (abs(dist - 1.0) < thickness) {
-            gl_FragColor = vec4(vec3(0.4), 1.0); // gray
+            gl_FragColor = vec4(vec3(0.4), 1.0);
             return;
           }
           float phi = asin(sy);
           float lambda = atan(sx, sz);
           float mercY = 0.5 + (log(tan(PI * 0.25 + phi * 0.5)) / (2.0 * PI));
-          // 極域判定はmercYの絶対位置で行う（u_topFrac..u_topFrac+u_heightFrac が地図領域）
           if (mercY < u_topFrac || mercY > u_topFrac + u_heightFrac) {
-            gl_FragColor = vec4(u_polarColor, 1.0);
+            vec3 pcol = (mercY < u_topFrac) ? u_polarColorTop : u_polarColorBottom;
+            // compute blend weight based on distance into polar region
+            float u_coord = fract((lambda + PI) / (2.0 * PI) + u_offset);
+            float v_coord = (mercY - u_topFrac) / u_heightFrac;
+            float delta = (mercY < u_topFrac) ? (u_topFrac - mercY) : (mercY - (u_topFrac + u_heightFrac));
+            float polarWeight = 1.0;
+            if (u_blendFrac > 0.0) {
+              polarWeight = clamp(delta / u_blendFrac, 0.0, 1.0);
+            }
+            // noise
+            float n = fbm(vec2(u_coord * u_polarNoiseScale, v_coord * u_polarNoiseScale));
+            polarWeight = clamp(polarWeight + (n - 0.5) * u_polarNoiseStrength, 0.0, 1.0);
+            // sample nearest texture row (clamp v)
+            float v_clamped = clamp(v_coord, 0.0, 1.0);
+            vec3 mapCol = texture2D(u_texture, vec2(u_coord, v_clamped)).rgb;
+            vec3 outCol = mix(mapCol, pcol, polarWeight);
+            gl_FragColor = vec4(outCol, 1.0);
             return;
           }
           float u = fract((lambda + PI) / (2.0 * PI) + u_offset);
@@ -348,14 +404,51 @@ export default {
         u_cx: gl.getUniformLocation(prog, 'u_cx'),
         u_cy: gl.getUniformLocation(prog, 'u_cy'),
         u_R: gl.getUniformLocation(prog, 'u_R'),
-        u_polarColor: gl.getUniformLocation(prog, 'u_polarColor')
+        u_polarColorTop: gl.getUniformLocation(prog, 'u_polarColorTop'),
+        u_polarColorBottom: gl.getUniformLocation(prog, 'u_polarColorBottom'),
+        u_blendFrac: gl.getUniformLocation(prog, 'u_blendFrac'),
+        u_polarNoiseScale: gl.getUniformLocation(prog, 'u_polarNoiseScale'),
+        u_polarNoiseStrength: gl.getUniformLocation(prog, 'u_polarNoiseStrength')
       };
       // set static uniforms
       gl.uniform1i(this._glUniforms.u_texture, 0);
       const effHeight = height + topBuf + bottomBuf;
       gl.uniform1f(this._glUniforms.u_topFrac, topBuf / effHeight);
       gl.uniform1f(this._glUniforms.u_heightFrac, height / effHeight);
-      gl.uniform3fv(this._glUniforms.u_polarColor, new Float32Array([1.0, 1.0, 1.0]));
+      // determine polar colors from the uploaded texture pixels (robust to timing)
+      let polarTopRgb = [255,255,255];
+      let polarBottomRgb = [255,255,255];
+      try {
+        const rows = Math.max(1, Math.min(this.polarAvgRows || 1, Math.floor(height / 2)));
+        let sumTop = [0,0,0], sumBottom = [0,0,0];
+        let countTop = 0, countBottom = 0;
+        // pixels is width*height*4, row-major, y from 0..height-1 (top to bottom)
+        for (let ry = 0; ry < rows; ry++) {
+          const yTop = ry;
+          const yBottom = height - 1 - ry;
+          for (let x = 0; x < width; x++) {
+            const pTopIdx = (yTop * width + x) * 4;
+            const pBottomIdx = (yBottom * width + x) * 4;
+            const rT = pixels[pTopIdx], gT = pixels[pTopIdx+1], bT = pixels[pTopIdx+2];
+            const rB = pixels[pBottomIdx], gB = pixels[pBottomIdx+1], bB = pixels[pBottomIdx+2];
+            sumTop[0] += rT; sumTop[1] += gT; sumTop[2] += bT; countTop++;
+            sumBottom[0] += rB; sumBottom[1] += gB; sumBottom[2] += bB; countBottom++;
+          }
+        }
+        if (countTop > 0) polarTopRgb = [Math.round(sumTop[0]/countTop), Math.round(sumTop[1]/countTop), Math.round(sumTop[2]/countTop)];
+        if (countBottom > 0) polarBottomRgb = [Math.round(sumBottom[0]/countBottom), Math.round(sumBottom[1]/countBottom), Math.round(sumBottom[2]/countBottom)];
+      } catch (e) {
+        polarTopRgb = [255,255,255];
+        polarBottomRgb = [255,255,255];
+      }
+      // set polar uniforms (normalized 0..1)
+      gl.uniform3fv(this._glUniforms.u_polarColorTop, new Float32Array(polarTopRgb.map(c => c / 255)));
+      gl.uniform3fv(this._glUniforms.u_polarColorBottom, new Float32Array(polarBottomRgb.map(c => c / 255)));
+      // set blend/noise params
+      const blendFrac = (this.polarBlendRows || 3) / effHeight;
+      gl.uniform1f(this._glUniforms.u_blendFrac, blendFrac);
+      gl.uniform1f(this._glUniforms.u_polarNoiseScale, this.polarNoiseScale || 0.05);
+      gl.uniform1f(this._glUniforms.u_polarNoiseStrength, this.polarNoiseStrength || 0.3);
       // viewport
       gl.viewport(0, 0, canvas.width, canvas.height);
       this._gl = gl;
@@ -481,20 +574,19 @@ export default {
       const totalBuf = Math.max(0, Math.min(maxTotalBuf, this.polarBufferRows));
       const topBuf = Math.floor(totalBuf / 2);
       const bottomBuf = totalBuf - topBuf;
-      const polarRGB = [255, 255, 255];
       const colShift = (this._rotationColumns || 0);
 
       // プリコンピュートのキャッシュ条件: canvasサイズ / mapサイズ / bufs
       console.debug("Sphere_Display.drawSphere start", { W, H, width, height, hasGridData: !!(this.gridData && this.gridData.length === width * height) });
+      // derive displayColors once (available outside precompute block)
+      let displayColors = (this.gridData && this.gridData.length === width * height)
+        ? this._deriveDisplayColorsFromGridData(this.gridData, width, height)
+        : [];
       if (!this._precompute || this._precompute.W !== W || this._precompute.H !== H || this._precompute.width !== width || this._precompute.height !== height || this._precompute.topBuf !== topBuf || this._precompute.bottomBuf !== bottomBuf) {
       const displayStride = width + 2;
       const effHeight = height + topBuf + bottomBuf;
-      const displayColorsFromGridData = (this.gridData && this.gridData.length === width * height)
-        ? this._deriveDisplayColorsFromGridData(this.gridData, width, height)
-        : [];
-      let displayColors = displayColorsFromGridData;
       const expectedDisplayLen2 = (width + 2) * (height + 2);
-      if (!displayColorsFromGridData || displayColorsFromGridData.length < expectedDisplayLen2) {
+      if (!displayColors || displayColors.length < expectedDisplayLen2) {
         displayColors = new Array(expectedDisplayLen2);
         for (let i = 0; i < expectedDisplayLen2; i++) {
           displayColors[i] = 'rgb(80,80,80)';
@@ -522,6 +614,8 @@ export default {
         const baseIxArr = [];
         const iyMapArr = [];
         const isPolarArr = [];
+        const polarSideArr = [];
+        const mercYArr = [];
         for (let py = -R; py <= R; py++) {
           for (let px = -R; px <= R; px++) {
             const x2 = px * px;
@@ -543,14 +637,25 @@ export default {
             if (iyExt < 0) iyExt = 0;
             if (iyExt >= effHeight) iyExt = effHeight - 1;
             if (iyExt < topBuf || iyExt >= topBuf + height) {
-              baseIxArr.push(0);
+              // keep ix0 so we can sample nearest map column for blending
+              baseIxArr.push(ix0);
               iyMapArr.push(0);
               isPolarArr.push(1);
+              // polarSide: 1 = top, 2 = bottom
+              if (iyExt < topBuf) {
+                // top polar
+                polarSideArr.push(1);
+              } else {
+                // bottom polar
+                polarSideArr.push(2);
+              }
             } else {
               baseIxArr.push(ix0);
               iyMapArr.push(iyExt - topBuf);
               isPolarArr.push(0);
+              polarSideArr.push(0);
             }
+            mercYArr.push(mercY);
             pixels.push({ px, py });
           }
         }
@@ -559,6 +664,8 @@ export default {
           baseIx: Int16Array.from(baseIxArr),
           iyMap: Int16Array.from(iyMapArr),
           isPolar: Uint8Array.from(isPolarArr),
+          polarSide: Uint8Array.from(polarSideArr),
+          mercY: Float32Array.from(mercYArr),
           palette, displayStride
         };
       }
@@ -570,15 +677,79 @@ export default {
       const displayStride = pc.displayStride;
       const pal = pc.palette;
       const pCount = pc.pixels.length;
+      // determine polar buffer colors from top/bottom map rows (most frequent color)
+      let polarTopRgb = [255,255,255];
+      let polarBottomRgb = [255,255,255];
+      try {
+        // use the already-derived displayColors array (created above) to determine polar colors
+        if (displayColors && displayColors.length >= (width + 2) * (height + 2)) {
+          const stride = width + 2;
+          const topY = 1;
+          const bottomY = height;
+          const countsTop = new Map();
+          const countsBottom = new Map();
+          for (let x = 1; x <= width; x++) {
+            const topIdx = topY * stride + x;
+            const bottomIdx = bottomY * stride + x;
+            const tc = displayColors[topIdx] || '';
+            const bc = displayColors[bottomIdx] || '';
+            countsTop.set(tc, (countsTop.get(tc) || 0) + 1);
+            countsBottom.set(bc, (countsBottom.get(bc) || 0) + 1);
+          }
+          const pickMost = (m) => {
+            let best = null, bestCount = -1;
+            for (const [k,v] of m.entries()) { if (v > bestCount) { best = k; bestCount = v; } }
+            return best;
+          };
+          const topColor = pickMost(countsTop);
+          const bottomColor = pickMost(countsBottom);
+          if (topColor) polarTopRgb = this.parseColorToRgb(topColor);
+          if (bottomColor) polarBottomRgb = this.parseColorToRgb(bottomColor);
+        }
+      } catch (e) {
+        // fall back to white if anything fails
+        polarTopRgb = [255,255,255];
+        polarBottomRgb = [255,255,255];
+      }
       for (let i = 0; i < pCount; i++) {
         const p = pc.pixels[i];
         const x = pc.cx + p.px;
         const y = pc.cy + p.py;
         const offset = (y * W + x) * 4;
         if (pc.isPolar[i]) {
-          data[offset] = polarRGB[0];
-          data[offset + 1] = polarRGB[1];
-          data[offset + 2] = polarRGB[2];
+          const side = pc.polarSide ? pc.polarSide[i] : 1;
+          const colPolar = (side === 1) ? polarTopRgb : polarBottomRgb;
+          // sample map color at nearest column, border row (display row 1 for top, height for bottom)
+          const ix0 = pc.baseIx[i];
+          const displayX = (ix0 % width) + 1;
+          const displayYMap = (side === 1) ? 1 : height;
+          const mapIdx = displayYMap * pc.displayStride + displayX;
+          const mapColorStr = displayColors[mapIdx] || 'rgb(0,0,0)';
+          const colMap = this.parseColorToRgb(mapColorStr);
+          // blending weight based on vertical distance (mercY) and polarBlendRows
+          const mercY = (pc.mercY && pc.mercY[i] != null) ? pc.mercY[i] : ((side === 1) ? 0 : 1);
+          const effHeight = height + topBuf + bottomBuf;
+          const uTopFrac = topBuf / effHeight;
+          const uHeightFrac = height / effHeight;
+          const blendRows = Math.max(0, Math.min(this.polarBlendRows || 3, Math.floor(effHeight)));
+          const blendFrac = blendRows / effHeight;
+          let delta = 0;
+          if (side === 1) delta = uTopFrac - mercY;
+          else delta = mercY - (uTopFrac + uHeightFrac);
+          let polarWeight = 1.0;
+          if (blendFrac > 0) {
+            polarWeight = Math.max(0, Math.min(1, delta / blendFrac));
+          }
+          // add fractal noise to break straight seam
+          const n = this._fractalNoise2D((pc.cx + p.px) * (this.polarNoiseScale || 0.05), (pc.cy + p.py) * (this.polarNoiseScale || 0.05), 4, 0.5);
+          polarWeight = Math.max(0, Math.min(1, polarWeight + (n - 0.5) * (this.polarNoiseStrength || 0.3)));
+          const mapWeight = 1 - polarWeight;
+          const r = Math.round(colPolar[0] * polarWeight + colMap[0] * mapWeight);
+          const g = Math.round(colPolar[1] * polarWeight + colMap[1] * mapWeight);
+          const b = Math.round(colPolar[2] * polarWeight + colMap[2] * mapWeight);
+          data[offset] = r;
+          data[offset + 1] = g;
+          data[offset + 2] = b;
           data[offset + 3] = 255;
         } else {
           const ix0 = pc.baseIx[i];

@@ -23,13 +23,18 @@
       <input type="number" min="1" max="20" step="1" v-model.number="local.baseSeaDistanceThreshold" @change="emitField('baseSeaDistanceThreshold', local.baseSeaDistanceThreshold)" />
     </div>
     <div style="margin-bottom: 8px;">
+      <label>平均気温 (°C): </label>
+      <input type="number" min="-50" max="60" step="2" v-model.number="averageTemperature" />
+      <span style="margin-left:8px">{{ Math.round(averageTemperature) }}</span>
+    </div>
+    <div style="margin-bottom: 8px;">
       <label>低地・乾燥地間の距離閾値 (グリッド): </label>
       <input type="number" min="1" max="30" step="1" v-model.number="local.baseLandDistanceThreshold" @change="emitField('baseLandDistanceThreshold', local.baseLandDistanceThreshold)" />
     </div>
     <details style="margin-bottom:8px;max-width:600px;margin-left:auto;margin-right:auto;">
       <summary style="cursor:pointer;font-weight:bold;margin-bottom:6px;">低地・乾燥地間の距離閾値（帯別）</summary>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
-        <div style="width:48%;"><label>帯01 (極側5グリッド): </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold1" @change="emitField('landDistanceThreshold1', local.landDistanceThreshold1)" /></div>
+        <div style="width:48%;"><label>帯01 (極): </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold1" @change="emitField('landDistanceThreshold1', local.landDistanceThreshold1)" /></div>
         <div style="width:48%;"><label>帯02: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold2" @change="emitField('landDistanceThreshold2', local.landDistanceThreshold2)" /></div>
         <div style="width:48%;"><label>帯03: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold3" @change="emitField('landDistanceThreshold3', local.landDistanceThreshold3)" /></div>
         <div style="width:48%;"><label>帯04: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold4" @change="emitField('landDistanceThreshold4', local.landDistanceThreshold4)" /></div>
@@ -38,9 +43,8 @@
         <div style="width:48%;"><label>帯07: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold7" @change="emitField('landDistanceThreshold7', local.landDistanceThreshold7)" /></div>
         <div style="width:48%;"><label>帯08: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold8" @change="emitField('landDistanceThreshold8', local.landDistanceThreshold8)" /></div>
         <div style="width:48%;"><label>帯09: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold9" @change="emitField('landDistanceThreshold9', local.landDistanceThreshold9)" /></div>
-        <div style="width:48%;"><label>帯10 (赤道付近): </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold10" @change="emitField('landDistanceThreshold10', local.landDistanceThreshold10)" /></div>
+        <div style="width:48%;"><label>帯10 (赤道): </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold10" @change="emitField('landDistanceThreshold10', local.landDistanceThreshold10)" /></div>
       </div>
-      <div style="width:48%;"><label>帯10 (赤道付近): </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold10" @change="emitField('landDistanceThreshold10', local.landDistanceThreshold10)" /></div>
       <div style="width:100%;margin-top:8px;">
         <label>帯の縦揺らぎ（行数）: </label>
         <input type="number" min="0" max="50" step="1" v-model.number="local.landBandVerticalWobbleRows" @change="emitField('landBandVerticalWobbleRows', local.landBandVerticalWobbleRows)" />
@@ -53,12 +57,8 @@
       </div>
     </details>
     <div style="margin-bottom: 8px;">
-      <label>上端・下端ツンドラグリッド追加数: </label>
-      <input type="number" min="0" max="50" step="1" v-model.number="local.tundraExtraRows" @change="emitField('tundraExtraRows', local.tundraExtraRows)" />
-    </div>
-    <div style="margin-bottom: 8px;">
       <label>上端・下端氷河グリッド数: </label>
-      <input type="number" min="0" max="50" step="1" v-model.number="local.topGlacierRows" @change="emitField('topGlacierRows', local.topGlacierRows)" />
+      <span>{{ Math.round(local.topGlacierRows) }}</span>
     </div>
     <div style="margin-bottom: 8px;">
       <label>陸(低地・乾燥地・ツンドラ)の氷河追加グリッド数: </label>
@@ -147,6 +147,7 @@
       :landDistanceThreshold10="local.landDistanceThreshold10"
       :landBandVerticalWobbleRows="local.landBandVerticalWobbleRows"
       :landBandWobbleXScale="local.landBandWobbleXScale"
+      :averageTemperature="averageTemperature"
       :topTundraRows="topTundraRowsComputed"
       :topGlacierRows="local.topGlacierRows"
       :landGlacierExtraRows="local.landGlacierExtraRows"
@@ -224,6 +225,10 @@ export default {
     // 親(App)から現在の描画用色配列（+2枠つき）を渡してもらう
       gridData: { type: Array, required: false, default: () => [] }
   },
+  mounted() {
+    // 初期表示時に平均気温から氷河行数を算出（デフォルト 15℃ → 5）
+    this.updateAverageTemperature();
+  },
   data() {
     return {
       // グリッド幅・高さ（初期値: 200x100）
@@ -296,6 +301,26 @@ export default {
     }
   },
   computed: {
+    averageTemperature: {
+      get() {
+        if (this.$store && this.$store.getters && typeof this.$store.getters.averageTemperature === 'number') {
+          return this.$store.getters.averageTemperature;
+        }
+        return 15;
+      },
+      set(val) {
+        let num = Number(val);
+        if (!isFinite(num)) return;
+        // 2℃刻みにスナップし、許容範囲へクランプ
+        num = Math.round(num / 2) * 2;
+        if (num < -50) num = -50;
+        if (num > 60) num = 60;
+        if (this.$store) {
+          this.$store.dispatch('updateAverageTemperature', num);
+        }
+        this.updateAverageTemperature(num);
+      }
+    },
     topTundraRowsComputed() {
       const glacier = (this.local && typeof this.local.topGlacierRows === 'number') ? this.local.topGlacierRows : 0;
       const extra = (this.local && typeof this.local.tundraExtraRows === 'number') ? this.local.tundraExtraRows : 0;
@@ -305,6 +330,41 @@ export default {
   methods: {
     emitField(field, value) {
       this.$emit(`update:${field}`, value);
+    },
+    // 平均気温から上端・下端氷河グリッド数を線形補間で算出（2℃刻み入力想定）
+    updateAverageTemperature(value) {
+      const t = (typeof value === 'number') ? value
+        : (this.$store && this.$store.getters && typeof this.$store.getters.averageTemperature === 'number'
+            ? this.$store.getters.averageTemperature : 15);
+      const anchors = [
+        { t: -25, val: 45 },
+        { t: -15, val: 35 },
+        { t: -5,  val: 25 },
+        { t: 5,   val: 15 },
+        { t: 10,  val: 10 },
+        { t: 15,  val: 5  },
+        { t: 25,  val: -5 }
+      ];
+      let v;
+      if (t <= anchors[0].t) {
+        v = anchors[0].val + (t - anchors[0].t) * (-1); // 10℃あたり+10 → 1℃で+1（温度低下で増える＝傾き-1）
+      } else if (t >= anchors[anchors.length - 1].t) {
+        const last = anchors[anchors.length - 1];
+        v = last.val + (t - last.t) * (-1);
+      } else {
+        for (let i = 0; i < anchors.length - 1; i++) {
+          const a = anchors[i];
+          const b = anchors[i + 1];
+          if (t >= a.t && t <= b.t) {
+            const ratio = (t - a.t) / (b.t - a.t);
+            v = a.val + ratio * (b.val - a.val);
+            break;
+          }
+        }
+      }
+      // 端数は四捨五入。負も許容（海氷河は作成しないよう計算側でガード）
+      this.local.topGlacierRows = Math.round(v);
+      this.emitField('topGlacierRows', this.local.topGlacierRows);
     },
     emitCenterParams() {
       this.$emit('update:centerParameters', JSON.parse(JSON.stringify(this.mutableCenterParams)));
