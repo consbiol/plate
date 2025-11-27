@@ -100,7 +100,7 @@ export default {
       const desert = 'rgb(150, 130, 110)';
       const highland = 'rgb(145, 100, 75)';
       const alpine = 'rgb(95, 80, 70)';
-      const tundra = 'rgb(180, 150, 80)';
+      const tundra = 'rgb(104, 131, 56)';
       const glacier = 'rgb(255, 255, 255)';
       for (let gy = 0; gy < displayHeight; gy++) {
         for (let gx = 0; gx < displayWidth; gx++) {
@@ -183,7 +183,7 @@ export default {
             return 'rgb(30, 80, 140)';
           } else if (t.type === 'land') {
             switch (t.land) {
-              case 'tundra': return 'rgb(180, 150, 80)';
+              case 'tundra': return 'rgb(104, 131, 56)';
               case 'glacier': return 'rgb(255, 255, 255)';
               case 'lake': return 'rgb(60, 120, 180)';
               case 'lowland': return 'rgb(34, 139, 34)';
