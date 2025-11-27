@@ -26,13 +26,35 @@
       <label>低地・乾燥地間の距離閾値 (グリッド): </label>
       <input type="number" min="1" max="30" step="1" v-model.number="local.baseLandDistanceThreshold" @change="emitField('baseLandDistanceThreshold', local.baseLandDistanceThreshold)" />
     </div>
+    <details style="margin-bottom:8px;max-width:600px;margin-left:auto;margin-right:auto;">
+      <summary style="cursor:pointer;font-weight:bold;margin-bottom:6px;">低地・乾燥地間の距離閾値（帯別）</summary>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
+        <div style="width:48%;"><label>帯01 (極側5グリッド): </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold1" @change="emitField('landDistanceThreshold1', local.landDistanceThreshold1)" /></div>
+        <div style="width:48%;"><label>帯02: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold2" @change="emitField('landDistanceThreshold2', local.landDistanceThreshold2)" /></div>
+        <div style="width:48%;"><label>帯03: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold3" @change="emitField('landDistanceThreshold3', local.landDistanceThreshold3)" /></div>
+        <div style="width:48%;"><label>帯04: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold4" @change="emitField('landDistanceThreshold4', local.landDistanceThreshold4)" /></div>
+        <div style="width:48%;"><label>帯05: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold5" @change="emitField('landDistanceThreshold5', local.landDistanceThreshold5)" /></div>
+        <div style="width:48%;"><label>帯06: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold6" @change="emitField('landDistanceThreshold6', local.landDistanceThreshold6)" /></div>
+        <div style="width:48%;"><label>帯07: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold7" @change="emitField('landDistanceThreshold7', local.landDistanceThreshold7)" /></div>
+        <div style="width:48%;"><label>帯08: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold8" @change="emitField('landDistanceThreshold8', local.landDistanceThreshold8)" /></div>
+        <div style="width:48%;"><label>帯09: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold9" @change="emitField('landDistanceThreshold9', local.landDistanceThreshold9)" /></div>
+        <div style="width:48%;"><label>帯10 (赤道付近): </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold10" @change="emitField('landDistanceThreshold10', local.landDistanceThreshold10)" /></div>
+      </div>
+      <div style="width:48%;"><label>帯10 (赤道付近): </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold10" @change="emitField('landDistanceThreshold10', local.landDistanceThreshold10)" /></div>
+      <div style="width:100%;margin-top:8px;">
+        <label>帯の縦揺らぎ（行数）: </label>
+        <input type="number" min="0" max="50" step="1" v-model.number="local.landBandVerticalWobbleRows" @change="emitField('landBandVerticalWobbleRows', local.landBandVerticalWobbleRows)" />
+        <span style="margin-left:8px;color:#666">（0で固定）</span>
+      </div>
+      <div style="width:100%;margin-top:6px;">
+        <label>帯揺らぎの X スケール: </label>
+        <input type="number" min="0" max="1" step="0.01" v-model.number="local.landBandWobbleXScale" @change="emitField('landBandWobbleXScale', local.landBandWobbleXScale)" />
+        <span style="margin-left:8px;color:#666">（ノイズの横スケール）</span>
+      </div>
+    </details>
     <div style="margin-bottom: 8px;">
       <label>上端・下端ツンドラグリッド追加数: </label>
       <input type="number" min="0" max="50" step="1" v-model.number="local.tundraExtraRows" @change="emitField('tundraExtraRows', local.tundraExtraRows)" />
-    </div>
-    <div style="margin-bottom: 8px;">
-      <label>上端・下端ツンドラグリッド数: </label>
-      <span>{{ topTundraRowsComputed }}</span>
     </div>
     <div style="margin-bottom: 8px;">
       <label>上端・下端氷河グリッド数: </label>
@@ -41,6 +63,10 @@
     <div style="margin-bottom: 8px;">
       <label>陸(低地・乾燥地・ツンドラ)の氷河追加グリッド数: </label>
       <input type="number" min="0" max="50" step="1" v-model.number="local.landGlacierExtraRows" @change="emitField('landGlacierExtraRows', local.landGlacierExtraRows)" />
+    </div>
+    <div style="margin-bottom: 8px;">
+      <label>上端・下端ツンドラグリッド追加数: </label>
+      <input type="number" min="0" max="50" step="1" v-model.number="local.tundraExtraRows" @change="emitField('tundraExtraRows', local.tundraExtraRows)" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>高地の氷河追加グリッド数: </label>
@@ -109,6 +135,18 @@
       :kDecay="3.0"
       :baseSeaDistanceThreshold="local.baseSeaDistanceThreshold"
       :baseLandDistanceThreshold="local.baseLandDistanceThreshold"
+      :landDistanceThreshold1="local.landDistanceThreshold1"
+      :landDistanceThreshold2="local.landDistanceThreshold2"
+      :landDistanceThreshold3="local.landDistanceThreshold3"
+      :landDistanceThreshold4="local.landDistanceThreshold4"
+      :landDistanceThreshold5="local.landDistanceThreshold5"
+      :landDistanceThreshold6="local.landDistanceThreshold6"
+      :landDistanceThreshold7="local.landDistanceThreshold7"
+      :landDistanceThreshold8="local.landDistanceThreshold8"
+      :landDistanceThreshold9="local.landDistanceThreshold9"
+      :landDistanceThreshold10="local.landDistanceThreshold10"
+      :landBandVerticalWobbleRows="local.landBandVerticalWobbleRows"
+      :landBandWobbleXScale="local.landBandWobbleXScale"
       :topTundraRows="topTundraRowsComputed"
       :topGlacierRows="local.topGlacierRows"
       :landGlacierExtraRows="local.landGlacierExtraRows"
@@ -152,6 +190,21 @@ export default {
     baseSeaDistanceThreshold: { type: Number, required: false, default: 5 },
     // 低地・乾燥地間の距離閾値（デフォルト: 10グリッド）: 陸グリッドが低地か乾燥地かを判定する距離の基準値。大きいほど低地が広がります。
     baseLandDistanceThreshold: { type: Number, required: false, default: 10 },
+    // 低地・乾燥地間の距離閾値（帯ごと、上端/下端から5グリッド単位、帯1..帯10）
+    landDistanceThreshold1: { type: Number, required: false, default: 35 },
+    landDistanceThreshold2: { type: Number, required: false, default: 35 },
+    landDistanceThreshold3: { type: Number, required: false, default: 35 },
+    landDistanceThreshold4: { type: Number, required: false, default: 35 },
+    landDistanceThreshold5: { type: Number, required: false, default: 25 },
+    landDistanceThreshold6: { type: Number, required: false, default: 10 },
+    landDistanceThreshold7: { type: Number, required: false, default: 5 },
+    landDistanceThreshold8: { type: Number, required: false, default: 10 },
+    landDistanceThreshold9: { type: Number, required: false, default: 25 },
+    landDistanceThreshold10: { type: Number, required: false, default: 35 },
+    // 帯の縦揺らぎ（行数）: 0で無効
+    landBandVerticalWobbleRows: { type: Number, required: false, default: 2 },
+    // 帯揺らぎの X スケール（ノイズのサンプリング横スケール）
+    landBandWobbleXScale: { type: Number, required: false, default: 0.05 },
     // 上端・下端ツンドラグリッド追加数（デフォルト: 7）: 上端・下端氷河グリッド数からの追加グリッド数
     tundraExtraRows: { type: Number, required: false, default: 7 },
     // 上端・下端氷河グリッド数（デフォルト: 5）: 上下端から何グリッド分を氷河に上書きするかの基準値（海/湖は追加なし）。
@@ -185,6 +238,18 @@ export default {
         baseLandDistanceThreshold: this.baseLandDistanceThreshold,
         tundraExtraRows: this.tundraExtraRows,
         topGlacierRows: this.topGlacierRows,
+        landBandVerticalWobbleRows: this.landBandVerticalWobbleRows,
+        landBandWobbleXScale: this.landBandWobbleXScale,
+        landDistanceThreshold1: this.landDistanceThreshold1,
+        landDistanceThreshold2: this.landDistanceThreshold2,
+        landDistanceThreshold3: this.landDistanceThreshold3,
+        landDistanceThreshold4: this.landDistanceThreshold4,
+        landDistanceThreshold5: this.landDistanceThreshold5,
+        landDistanceThreshold6: this.landDistanceThreshold6,
+        landDistanceThreshold7: this.landDistanceThreshold7,
+        landDistanceThreshold8: this.landDistanceThreshold8,
+        landDistanceThreshold9: this.landDistanceThreshold9,
+        landDistanceThreshold10: this.landDistanceThreshold10,
         landGlacierExtraRows: this.landGlacierExtraRows,
         highlandGlacierExtraRows: this.highlandGlacierExtraRows,
         alpineGlacierExtraRows: this.alpineGlacierExtraRows,
@@ -205,6 +270,18 @@ export default {
     baseSeaDistanceThreshold(val) { this.local.baseSeaDistanceThreshold = val; },
     baseLandDistanceThreshold(val) { this.local.baseLandDistanceThreshold = val; },
     tundraExtraRows(val) { this.local.tundraExtraRows = val; },
+    landDistanceThreshold1(val) { this.local.landDistanceThreshold1 = val; },
+    landDistanceThreshold2(val) { this.local.landDistanceThreshold2 = val; },
+    landDistanceThreshold3(val) { this.local.landDistanceThreshold3 = val; },
+    landDistanceThreshold4(val) { this.local.landDistanceThreshold4 = val; },
+    landDistanceThreshold5(val) { this.local.landDistanceThreshold5 = val; },
+    landDistanceThreshold6(val) { this.local.landDistanceThreshold6 = val; },
+    landDistanceThreshold7(val) { this.local.landDistanceThreshold7 = val; },
+    landDistanceThreshold8(val) { this.local.landDistanceThreshold8 = val; },
+    landDistanceThreshold9(val) { this.local.landDistanceThreshold9 = val; },
+    landDistanceThreshold10(val) { this.local.landDistanceThreshold10 = val; },
+    landBandVerticalWobbleRows(val) { this.local.landBandVerticalWobbleRows = val; },
+    landBandWobbleXScale(val) { this.local.landBandWobbleXScale = val; },
     topGlacierRows(val) { this.local.topGlacierRows = val; },
     landGlacierExtraRows(val) { this.local.landGlacierExtraRows = val; },
     highlandGlacierExtraRows(val) { this.local.highlandGlacierExtraRows = val; },

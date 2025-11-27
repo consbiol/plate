@@ -29,6 +29,21 @@ export default {
     kDecay: { type: Number, required: true, default: 2.0 },
     baseSeaDistanceThreshold: { type: Number, required: true },
     baseLandDistanceThreshold: { type: Number, required: true },
+    // per-latitude-band vertical wobble (rows): integer number of rows to shift (+/-)
+    landBandVerticalWobbleRows: { type: Number, required: false, default: 2 },
+    // X scale for wobble noise sampling
+    landBandWobbleXScale: { type: Number, required: false, default: 0.05 },
+    // per-latitude-band land distance thresholds (bands 1..10, pole->equator)
+    landDistanceThreshold1: { type: Number, required: false, default: 35 },
+    landDistanceThreshold2: { type: Number, required: false, default: 35 },
+    landDistanceThreshold3: { type: Number, required: false, default: 35 },
+    landDistanceThreshold4: { type: Number, required: false, default: 35 },
+    landDistanceThreshold5: { type: Number, required: false, default: 25 },
+    landDistanceThreshold6: { type: Number, required: false, default: 10 },
+    landDistanceThreshold7: { type: Number, required: false, default: 5 },
+    landDistanceThreshold8: { type: Number, required: false, default: 10 },
+    landDistanceThreshold9: { type: Number, required: false, default: 25 },
+    landDistanceThreshold10: { type: Number, required: false, default: 35 },
     topTundraRows: { type: Number, required: true },
     topGlacierRows: { type: Number, required: true },
     landGlacierExtraRows: { type: Number, required: true },
@@ -159,6 +174,38 @@ export default {
         return null;
       }
       return { x: wx, y: wy };
+    },
+    // 緯度帯インデックスを取得（1..10）。両極から5行ごとに帯を区切る。
+    _getLatBandIndex(y, x) {
+      const wobbleRows = Math.max(0, Math.floor(this.landBandVerticalWobbleRows || 0));
+      let yShifted = y;
+      if (wobbleRows > 0) {
+        // noise2D returns -1..1; scale to wobbleRows and round
+        const shift = Math.round(this.noise2D((x || 0) * (this.landBandWobbleXScale || 0.05), 0) * wobbleRows);
+        yShifted = Math.max(0, Math.min(this.gridHeight - 1, y + shift));
+      }
+      const dPole = Math.min(yShifted, this.gridHeight - 1 - yShifted);
+      const band = Math.floor(dPole / 5) + 1;
+      if (band < 1) return 1;
+      if (band > 10) return 10;
+      return band;
+    },
+    // 指定行/列の land distance threshold を返す
+    _getLandDistanceThresholdForRow(y, x) {
+      const b = this._getLatBandIndex(y, x);
+      switch (b) {
+        case 1: return this.landDistanceThreshold1;
+        case 2: return this.landDistanceThreshold2;
+        case 3: return this.landDistanceThreshold3;
+        case 4: return this.landDistanceThreshold4;
+        case 5: return this.landDistanceThreshold5;
+        case 6: return this.landDistanceThreshold6;
+        case 7: return this.landDistanceThreshold7;
+        case 8: return this.landDistanceThreshold8;
+        case 9: return this.landDistanceThreshold9;
+        case 10: return this.landDistanceThreshold10;
+        default: return this.landDistanceThreshold10;
+      }
     },
     noise2D(x, y) {
       const s = Math.sin((x * 12.9898) + (y * 78.233)) * 43758.5453;
@@ -398,7 +445,7 @@ export default {
       const desertColor = 'rgb(150, 130, 110)'; // 乾燥地: 茶色がかった灰色
       const highlandColor = 'rgb(145, 100, 75)'; // 高地: 灰色がかった茶色（茶色気味）
       const alpineColor = 'rgb(95, 80, 70)'; // 高山: 灰色がかった焦げ茶色
-      const tundraColor = 'rgb(180, 150, 80)';
+      const tundraColor = 'rgb(104, 131, 56)';
       const glacierColor = 'rgb(255, 255, 255)';
       const distanceToSea = new Array(N).fill(Infinity);
       const distanceToLand = new Array(N).fill(Infinity);
@@ -496,7 +543,8 @@ export default {
         for (let gx = 0; gx < this.gridWidth; gx++) {
           const idx = gy * this.gridWidth + gx;
           if (!landMask[idx]) continue;
-          const landThreshold = this.baseLandDistanceThreshold + noiseGrid[idx] * landNoiseAmplitude;
+          const bandThreshold = this._getLandDistanceThresholdForRow(gy, gx);
+          const landThreshold = bandThreshold + noiseGrid[idx] * landNoiseAmplitude;
           lowlandMask[idx] = distanceToSea[idx] <= landThreshold;
         }
       }
@@ -506,7 +554,8 @@ export default {
           const idx = gy * this.gridWidth + gx;
           const n = noiseGrid[idx];
           if (landMask[idx]) {
-            const landThreshold = this.baseLandDistanceThreshold + n * landNoiseAmplitude;
+            const bandThreshold = this._getLandDistanceThresholdForRow(gy, gx);
+            const landThreshold = bandThreshold + n * landNoiseAmplitude;
             colors[idx] = distanceToSea[idx] > landThreshold ? desertColor : lowlandColor;
           } else {
             const seaThreshold = this.baseSeaDistanceThreshold + n * seaNoiseAmplitude;
