@@ -27,8 +27,12 @@
       <input type="number" min="1" max="30" step="1" v-model.number="local.baseLandDistanceThreshold" @change="emitField('baseLandDistanceThreshold', local.baseLandDistanceThreshold)" />
     </div>
     <div style="margin-bottom: 8px;">
+      <label>上端・下端ツンドラグリッド追加数: </label>
+      <input type="number" min="0" max="50" step="1" v-model.number="local.tundraExtraRows" @change="emitField('tundraExtraRows', local.tundraExtraRows)" />
+    </div>
+    <div style="margin-bottom: 8px;">
       <label>上端・下端ツンドラグリッド数: </label>
-      <input type="number" min="0" max="50" step="1" v-model.number="local.topTundraRows" @change="emitField('topTundraRows', local.topTundraRows)" />
+      <span>{{ topTundraRowsComputed }}</span>
     </div>
     <div style="margin-bottom: 8px;">
       <label>上端・下端氷河グリッド数: </label>
@@ -105,7 +109,7 @@
       :kDecay="3.0"
       :baseSeaDistanceThreshold="local.baseSeaDistanceThreshold"
       :baseLandDistanceThreshold="local.baseLandDistanceThreshold"
-      :topTundraRows="local.topTundraRows"
+      :topTundraRows="topTundraRowsComputed"
       :topGlacierRows="local.topGlacierRows"
       :landGlacierExtraRows="local.landGlacierExtraRows"
       :highlandGlacierExtraRows="local.highlandGlacierExtraRows"
@@ -148,10 +152,10 @@ export default {
     baseSeaDistanceThreshold: { type: Number, required: false, default: 5 },
     // 低地・乾燥地間の距離閾値（デフォルト: 10グリッド）: 陸グリッドが低地か乾燥地かを判定する距離の基準値。大きいほど低地が広がります。
     baseLandDistanceThreshold: { type: Number, required: false, default: 10 },
-    // 上端・下端ツンドラグリッド数（デフォルト: 10）: 上下端から何グリッド分をツンドラに上書きするかの基準値。
-    topTundraRows: { type: Number, required: false, default: 10 },
-    // 上端・下端氷河グリッド数（デフォルト: 3）: 上下端から何グリッド分を氷河に上書きするかの基準値（海/湖は追加なし）。
-    topGlacierRows: { type: Number, required: false, default: 3 },
+    // 上端・下端ツンドラグリッド追加数（デフォルト: 7）: 上端・下端氷河グリッド数からの追加グリッド数
+    tundraExtraRows: { type: Number, required: false, default: 7 },
+    // 上端・下端氷河グリッド数（デフォルト: 5）: 上下端から何グリッド分を氷河に上書きするかの基準値（海/湖は追加なし）。
+    topGlacierRows: { type: Number, required: false, default: 5 },
     // 陸(低地・乾燥地・ツンドラ)の氷河追加グリッド数（デフォルト: 5）: 陸地タイプに応じて氷河上書き範囲を追加するグリッド数。
     landGlacierExtraRows: { type: Number, required: false, default: 5 },
     // 高地の氷河追加グリッド数（デフォルト: 15）: 高地タイプに応じて氷河上書き範囲を追加するグリッド数。
@@ -179,7 +183,7 @@ export default {
         minCenterDistance: this.minCenterDistance,
         baseSeaDistanceThreshold: this.baseSeaDistanceThreshold,
         baseLandDistanceThreshold: this.baseLandDistanceThreshold,
-        topTundraRows: this.topTundraRows,
+        tundraExtraRows: this.tundraExtraRows,
         topGlacierRows: this.topGlacierRows,
         landGlacierExtraRows: this.landGlacierExtraRows,
         highlandGlacierExtraRows: this.highlandGlacierExtraRows,
@@ -200,7 +204,7 @@ export default {
     minCenterDistance(val) { this.local.minCenterDistance = val; },
     baseSeaDistanceThreshold(val) { this.local.baseSeaDistanceThreshold = val; },
     baseLandDistanceThreshold(val) { this.local.baseLandDistanceThreshold = val; },
-    topTundraRows(val) { this.local.topTundraRows = val; },
+    tundraExtraRows(val) { this.local.tundraExtraRows = val; },
     topGlacierRows(val) { this.local.topGlacierRows = val; },
     landGlacierExtraRows(val) { this.local.landGlacierExtraRows = val; },
     highlandGlacierExtraRows(val) { this.local.highlandGlacierExtraRows = val; },
@@ -212,6 +216,13 @@ export default {
         this.mutableCenterParams = JSON.parse(JSON.stringify(val || []));
       },
       deep: true
+    }
+  },
+  computed: {
+    topTundraRowsComputed() {
+      const glacier = (this.local && typeof this.local.topGlacierRows === 'number') ? this.local.topGlacierRows : 0;
+      const extra = (this.local && typeof this.local.tundraExtraRows === 'number') ? this.local.tundraExtraRows : 0;
+      return Math.max(0, glacier + extra);
     }
   },
   methods: {
@@ -303,7 +314,8 @@ export default {
     <div class="row"><label>中心間の排他距離 (グリッド):</label><span>${escape(params.minCenterDistance)}</span></div>
     <div class="row"><label>浅瀬・深海間距離閾値:</label><span>${escape(params.baseSeaDistanceThreshold)}</span></div>
     <div class="row"><label>低地・乾燥地間距離閾値:</label><span>${escape(params.baseLandDistanceThreshold)}</span></div>
-    <div class="row"><label>上端・下端ツンドラグリッド数:</label><span>${escape(params.topTundraRows)}</span></div>
+    <div class="row"><label>上端・下端ツンドラ追加グリッド数:</label><span>${escape(params.tundraExtraRows)}</span></div>
+    <div class="row"><label>上端・下端ツンドラ総グリッド数:</label><span>${escape(this.topTundraRowsComputed)}</span></div>
     <div class="row"><label>上端・下端氷河グリッド数:</label><span>${escape(params.topGlacierRows)}</span></div>
     <div class="row"><label>陸(低地・乾燥地・ツンドラ)の氷河追加グリッド数:</label><span>${escape(params.landGlacierExtraRows)}</span></div>
     <div class="row"><label>高地の氷河追加グリッド数:</label><span>${escape(params.highlandGlacierExtraRows)}</span></div>

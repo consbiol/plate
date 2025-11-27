@@ -33,7 +33,7 @@ export default {
         const desert = 'rgb(150, 130, 110)';
         const highland = 'rgb(145, 100, 75)';
         const alpine = 'rgb(95, 80, 70)';
-        const tundra = 'rgb(104, 131, 56)';
+        const tundra = 'rgb(180, 150, 80)';
         const glacier = 'rgb(255, 255, 255)';
         for (let gy = 0; gy < displayHeight; gy++) {
           for (let gx = 0; gx < displayWidth; gx++) {
