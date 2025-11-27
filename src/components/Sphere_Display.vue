@@ -13,7 +13,10 @@ export default {
     polarAvgRows: { type: Number, required: false, default: 3 },
     polarBlendRows: { type: Number, required: false, default: 12 },
     polarNoiseStrength: { type: Number, required: false, default: 0.3 },
-    polarNoiseScale: { type: Number, required: false, default: 0.01 }
+    polarNoiseScale: { type: Number, required: false, default: 0.01 },
+    // 陸（氷河除く）に事後的に適用する青灰色トーン
+    landTintColor: { type: String, required: false, default: 'rgb(150, 165, 185)' },
+    landTintStrength: { type: Number, required: false, default: 0.35 }
   },
   methods: {
     openSpherePopup() {
@@ -389,7 +392,20 @@ export default {
           const displayY = y + 1;
           const idx = displayY * displayStride + displayX;
           const s = displayColors[idx];
-          const rgb = this.parseColorToRgb(s);
+          let rgb = this.parseColorToRgb(s);
+          // 陸（氷河除く）に青灰色トーンを適用（事後的フィルタ）
+          if (this.gridData && this.gridData.length === width * height) {
+            const cell = this.gridData[y * width + x];
+            if (cell && cell.terrain && cell.terrain.type === 'land' && cell.terrain.land !== 'glacier') {
+              const tint = this.parseColorToRgb(this.landTintColor);
+              const k = Math.max(0, Math.min(1, this.landTintStrength || 0));
+              rgb = [
+                Math.round(rgb[0] * (1 - k) + tint[0] * k),
+                Math.round(rgb[1] * (1 - k) + tint[1] * k),
+                Math.round(rgb[2] * (1 - k) + tint[2] * k)
+              ];
+            }
+          }
           const p = (y * width + x) * 4;
           pixels[p] = rgb[0]; pixels[p+1] = rgb[1]; pixels[p+2] = rgb[2]; pixels[p+3] = 255;
         }
@@ -725,7 +741,22 @@ export default {
           const displayYMap = (side === 1) ? 1 : height;
           const mapIdx = displayYMap * pc.displayStride + displayX;
           const mapColorStr = displayColors[mapIdx] || 'rgb(0,0,0)';
-          const colMap = this.parseColorToRgb(mapColorStr);
+          let colMap = this.parseColorToRgb(mapColorStr);
+          // 極近傍でも陸（氷河除く）なら軽くトーンを足す（近似）
+          if (this.gridData && this.gridData.length === width * height) {
+            const xMap = (displayX - 1 + (this._rotationColumns || 0)) % width;
+            const yMap = (side === 1) ? 0 : (height - 1);
+            const cell = this.gridData[yMap * width + xMap];
+            if (cell && cell.terrain && cell.terrain.type === 'land' && cell.terrain.land !== 'glacier') {
+              const tint = this.parseColorToRgb(this.landTintColor);
+              const k = Math.max(0, Math.min(1, (this.landTintStrength || 0) * 0.6)); // 極はやや弱め
+              colMap = [
+                Math.round(colMap[0] * (1 - k) + tint[0] * k),
+                Math.round(colMap[1] * (1 - k) + tint[1] * k),
+                Math.round(colMap[2] * (1 - k) + tint[2] * k)
+              ];
+            }
+          }
           // blending weight based on vertical distance (mercY) and polarBlendRows
           const mercY = (pc.mercY && pc.mercY[i] != null) ? pc.mercY[i] : ((side === 1) ? 0 : 1);
           const effHeight = height + topBuf + bottomBuf;
@@ -758,9 +789,25 @@ export default {
           const displayY = iy + 1;
           const displayIdx = displayY * displayStride + displayX;
           const pi = displayIdx * 3;
-          data[offset] = pal[pi] || 255;
-          data[offset + 1] = pal[pi + 1] || 255;
-          data[offset + 2] = pal[pi + 2] || 255;
+          let r = pal[pi] || 255;
+          let g = pal[pi + 1] || 255;
+          let b = pal[pi + 2] || 255;
+          // 陸（氷河除く）に青灰色トーンを適用
+          if (this.gridData && this.gridData.length === width * height) {
+            const xMap = ((ix0 + colShift) % width + width) % width;
+            const yMap = iy;
+            const cell = this.gridData[yMap * width + xMap];
+            if (cell && cell.terrain && cell.terrain.type === 'land' && cell.terrain.land !== 'glacier') {
+              const tint = this.parseColorToRgb(this.landTintColor);
+              const k = Math.max(0, Math.min(1, this.landTintStrength || 0));
+              r = Math.round(r * (1 - k) + tint[0] * k);
+              g = Math.round(g * (1 - k) + tint[1] * k);
+              b = Math.round(b * (1 - k) + tint[2] * k);
+            }
+          }
+          data[offset] = r;
+          data[offset + 1] = g;
+          data[offset + 2] = b;
           data[offset + 3] = 255;
         }
       }
