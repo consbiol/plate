@@ -57,6 +57,11 @@
       </div>
     </details>
     <div style="margin-bottom: 8px;">
+      <label>雲量: </label>
+      <input type="range" min="0" max="1" step="0.1" v-model.number="local.cloudAmount" @change="emitField('cloudAmount', local.cloudAmount)" />
+      <span style="margin-left:8px">{{ (local.cloudAmount || 0).toFixed(2) }}</span>
+    </div>
+    <div style="margin-bottom: 8px;">
       <label>上端・下端氷河グリッド数: </label>
       <span>{{ Math.round(local.topGlacierRows) }}</span>
     </div>
@@ -78,11 +83,11 @@
     </div>
     <div style="margin-bottom: 8px;">
       <label>湖の数（平均）: </label>
-      <input type="number" min="0" max="10" step="0.1" v-model.number="local.averageLakesPerCenter" @change="emitField('averageLakesPerCenter', local.averageLakesPerCenter)" />
+      <input type="number" min="0" max="10" step="0.5" v-model.number="local.averageLakesPerCenter" @change="emitField('averageLakesPerCenter', local.averageLakesPerCenter)" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>高地の数（平均）: </label>
-      <input type="number" min="0" max="10" step="0.1" v-model.number="local.averageHighlandsPerCenter" @change="emitField('averageHighlandsPerCenter', local.averageHighlandsPerCenter)" />
+      <input type="number" min="0" max="10" step="0.5" v-model.number="local.averageHighlandsPerCenter" @change="emitField('averageHighlandsPerCenter', local.averageHighlandsPerCenter)" />
     </div>
 
     <div v-if="centerParameters && centerParameters.length > 0" style="margin-top: 20px; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto;">
@@ -167,6 +172,7 @@
       :gridHeight="gridHeight"
       :gridData="gridDataLocal"
       :polarBufferRows="75"
+      :cloudAmount="local.cloudAmount"
     />
   </div>
 </template>
@@ -223,7 +229,9 @@ export default {
     // 中心点のパラメータ配列（デフォルト: 空配列）: 各中心点の影響係数、減衰率、方向角度などの詳細パラメータ。
     centerParameters: { type: Array, required: false, default: () => [] },
     // 親(App)から現在の描画用色配列（+2枠つき）を渡してもらう
-      gridData: { type: Array, required: false, default: () => [] }
+      gridData: { type: Array, required: false, default: () => [] },
+    // 雲量（0..1）: 被覆度優先で効く
+    cloudAmount: { type: Number, required: false, default: 0.4 }
   },
   mounted() {
     // 初期表示時に平均気温から氷河行数を算出（デフォルト 15℃ → 5）
@@ -238,6 +246,7 @@ export default {
       local: {
         centersY: this.centersY,
         seaLandRatio: this.seaLandRatio,
+        cloudAmount: this.cloudAmount,
         minCenterDistance: this.minCenterDistance,
         baseSeaDistanceThreshold: this.baseSeaDistanceThreshold,
         baseLandDistanceThreshold: this.baseLandDistanceThreshold,
@@ -271,6 +280,7 @@ export default {
   watch: {
     centersY(val) { this.local.centersY = val; },
     seaLandRatio(val) { this.local.seaLandRatio = val; },
+    cloudAmount(val) { this.local.cloudAmount = val; },
     minCenterDistance(val) { this.local.minCenterDistance = val; },
     baseSeaDistanceThreshold(val) { this.local.baseSeaDistanceThreshold = val; },
     baseLandDistanceThreshold(val) { this.local.baseLandDistanceThreshold = val; },

@@ -16,7 +16,11 @@ export default {
     polarNoiseScale: { type: Number, required: false, default: 0.01 },
     // 陸（氷河除く）に事後的に適用する青灰色トーン
     landTintColor: { type: String, required: false, default: 'rgb(150, 165, 185)' },
-    landTintStrength: { type: Number, required: false, default: 0.35 }
+    landTintStrength: { type: Number, required: false, default: 0.35 },
+    // 雲量（0..1）: 被覆度に強く、濃さ（不透明度）に弱く効かせる
+    cloudAmount: { type: Number, required: false, default: 0.4 },
+    // 雲ノイズのトーラス周期（uv空間上の反復数）
+    cloudPeriod: { type: Number, required: false, default: 16 }
   },
   methods: {
     openSpherePopup() {
@@ -233,6 +237,98 @@ export default {
       // normalize to 0..1
       return (value / maxValue) * 0.5 + 0.5;
     },
+    // --- Cloud (CPU) tileable noise helpers ---
+    _rand2(ix, iy) {
+      // integer-ish inputs recommended
+      const s = Math.sin(ix * 12.9898 + iy * 78.233) * 43758.5453;
+      return s - Math.floor(s);
+    },
+    _valueNoiseTile(u, v, period) {
+      const p = Math.max(2, Math.floor(period || 16));
+      const x = u * p;
+      const y = v * p;
+      const x0 = Math.floor(x);
+      const y0 = Math.floor(y);
+      const fx = x - x0;
+      const fy = y - y0;
+      const x1 = (x0 + 1) % p;
+      const y1 = (y0 + 1) % p;
+      const i00 = this._rand2(x0 % p, y0 % p);
+      const i10 = this._rand2(x1 % p, y0 % p);
+      const i01 = this._rand2(x0 % p, y1 % p);
+      const i11 = this._rand2(x1 % p, y1 % p);
+      const sx = fx * fx * (3 - 2 * fx);
+      const sy = fy * fy * (3 - 2 * fy);
+      const a = i00 + (i10 - i00) * sx;
+      const b = i01 + (i11 - i01) * sx;
+      return a + (b - a) * sy; // 0..1-ish
+    },
+    _fbmTile(u, v, basePeriod) {
+      let vsum = 0;
+      let amp = 0.55;
+      let period = Math.max(2, Math.floor(basePeriod || 16));
+      for (let i = 0; i < 4; i++) {
+        const n = this._valueNoiseTile(u, v, period);
+        vsum += amp * n;
+        amp *= 0.5;
+        period *= 2;
+      }
+      // normalize roughly to 0..1
+      return Math.max(0, Math.min(1, vsum / 1.5));
+    },
+    _getCellClassWeight(cell) {
+      if (cell && cell.terrain) {
+        if (cell.terrain.type === 'sea') return 1.0;
+        if (cell.terrain.type === 'land') {
+          const l = cell.terrain.land;
+          if (l === 'desert') return 0.4;
+          if (l === 'lake') return 1.0;
+          return 0.8;
+        }
+      }
+      return 1.0;
+    },
+    _sampleClassWeightBilinear(u, v, width, height, gridData) {
+      // u,v in [0,1], bilinear in grid index space (0..width-1, 0..height-1), u wraps, v clamps
+      if (!gridData || gridData.length !== width * height) return 1.0;
+      const x = Math.max(0, Math.min(width - 1, u * (width - 1)));
+      const y = Math.max(0, Math.min(height - 1, v * (height - 1)));
+      const x0 = Math.floor(x);
+      const y0 = Math.floor(y);
+      const x1 = Math.min(width - 1, x0 + 1);
+      const y1 = Math.min(height - 1, y0 + 1);
+      const tx = x - x0;
+      const ty = y - y0;
+      const idx00 = y0 * width + x0;
+      const idx10 = y0 * width + x1;
+      const idx01 = y1 * width + x0;
+      const idx11 = y1 * width + x1;
+      const w00 = this._getCellClassWeight(gridData[idx00]);
+      const w10 = this._getCellClassWeight(gridData[idx10]);
+      const w01 = this._getCellClassWeight(gridData[idx01]);
+      const w11 = this._getCellClassWeight(gridData[idx11]);
+      const wx0 = w00 * (1 - tx) + w10 * tx;
+      const wx1 = w01 * (1 - tx) + w11 * tx;
+      return wx0 * (1 - ty) + wx1 * ty;
+    },
+    _sampleClassWeightSmooth(u, v, width, height, gridData, rUV) {
+      // 3x3 サンプル（中心+斜め含め9タップ）、uはトーラス、vはクランプ
+      const du = Math.max(0, rUV || 0);
+      const dv = Math.max(0, rUV || 0);
+      let sum = 0;
+      let count = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const uu = u + dx * du;
+          const vv = v + dy * dv;
+          const uuWrapped = ((uu % 1) + 1) % 1;
+          const vvClamped = Math.max(0, Math.min(1, vv));
+          sum += this._sampleClassWeightBilinear(uuWrapped, vvClamped, width, height, gridData);
+          count += 1;
+        }
+      }
+      return sum / Math.max(1, count);
+    },
     // Initialize WebGL shader/texture. Returns true on success.
     initWebGL(canvas) {
       const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
@@ -249,7 +345,10 @@ export default {
       const fsSource = `
         precision mediump float;
         uniform sampler2D u_texture;
+        uniform sampler2D u_classTex;
         uniform float u_offset; // fraction [0,1)
+        uniform vec2  u_texelSize;       // 1/width, 1/height for map sampling
+        uniform float u_classSmoothRadius; // in texels (e.g., 0.75)
         uniform float u_topFrac;
         uniform float u_heightFrac;
         uniform float u_cx;
@@ -260,9 +359,11 @@ export default {
         uniform float u_blendFrac;
         uniform float u_polarNoiseScale;
         uniform float u_polarNoiseStrength;
+        uniform float u_cloudAmount;      // 0..1
+        uniform float u_cloudPeriod;      // e.g. 16
         varying vec2 v_uv;
         const float PI = 3.141592653589793;
-        // hash + FBM (fractal) noise
+        // hash + FBM (fractal) noise (legacy, polar blend用)
         float hash(vec2 p) {
           return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
         }
@@ -278,6 +379,50 @@ export default {
             amp *= 0.5;
           }
           return v; // ~0..1
+        }
+        // タイル可能（トーラス）な値ノイズ
+        float rand(vec2 n) { return fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453); }
+        float valueNoiseTile(vec2 uv, float period) {
+          vec2 p = uv * period;
+          vec2 i0 = floor(p);
+          vec2 f = fract(p);
+          vec2 i1 = i0 + 1.0;
+          // ラップ（トーラス化）
+          i0 = mod(i0, period);
+          i1 = mod(i1, period);
+          float v00 = rand(i0);
+          float v10 = rand(vec2(i1.x, i0.y));
+          float v01 = rand(vec2(i0.x, i1.y));
+          float v11 = rand(i1);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(mix(v00, v10, u.x), mix(v01, v11, u.x), u.y);
+        }
+        float fbmTile(vec2 uv, float basePeriod) {
+          float v = 0.0;
+          float amp = 0.55;
+          float period = basePeriod;
+          for (int i = 0; i < 4; i++) {
+            v += amp * valueNoiseTile(uv, period);
+            amp *= 0.5;
+            period *= 2.0; // 倍周波数でも周期性維持
+          }
+          return clamp(v, 0.0, 1.0);
+        }
+        // クラス重みの近傍平滑（3x3=9タップ）。オフセットは雲解像度に追随（u_cloudPeriodに反比例）
+        float sampleClassSmooth(vec2 uv) {
+          float rUV = max(0.0, u_classSmoothRadius) / max(1.0, u_cloudPeriod);
+          vec2 du = vec2(rUV, 0.0);
+          vec2 dv = vec2(0.0, rUV);
+          vec2 uvC = vec2(fract(uv.x), clamp(uv.y, 0.0, 1.0));
+          float s = 0.0;
+          for (int j = -1; j <= 1; j++) {
+            for (int i = -1; i <= 1; i++) {
+              vec2 o = vec2(float(i) * du.x, float(j) * dv.y);
+              vec2 p = vec2(fract(uvC.x + o.x), clamp(uvC.y + o.y, 0.0, 1.0));
+              s += texture2D(u_classTex, p).r;
+            }
+          }
+          return s / 9.0;
         }
         void main() {
           vec2 fc = gl_FragCoord.xy;
@@ -297,9 +442,15 @@ export default {
           float phi = asin(sy);
           float lambda = atan(sx, sz);
           float mercY = 0.5 + (log(tan(PI * 0.25 + phi * 0.5)) / (2.0 * PI));
+          // ベース色を算出（極ブレンド or 通常）
+          vec3 baseCol;
+          float uMap;
+          float vMap;
+          // 雲ノイズは極バッファを含む全域(mercY:0..1)で評価
+          float uEff = fract((lambda + PI) / (2.0 * PI) + u_offset);
+          float vEff = mercY;
           if (mercY < u_topFrac || mercY > u_topFrac + u_heightFrac) {
             vec3 pcol = (mercY < u_topFrac) ? u_polarColorTop : u_polarColorBottom;
-            // compute blend weight based on distance into polar region
             float u_coord = fract((lambda + PI) / (2.0 * PI) + u_offset);
             float v_coord = (mercY - u_topFrac) / u_heightFrac;
             float delta = (mercY < u_topFrac) ? (u_topFrac - mercY) : (mercY - (u_topFrac + u_heightFrac));
@@ -307,20 +458,37 @@ export default {
             if (u_blendFrac > 0.0) {
               polarWeight = clamp(delta / u_blendFrac, 0.0, 1.0);
             }
-            // noise
             float n = fbm(vec2(u_coord * u_polarNoiseScale, v_coord * u_polarNoiseScale));
             polarWeight = clamp(polarWeight + (n - 0.5) * u_polarNoiseStrength, 0.0, 1.0);
-            // sample nearest texture row (clamp v)
             float v_clamped = clamp(v_coord, 0.0, 1.0);
             vec3 mapCol = texture2D(u_texture, vec2(u_coord, v_clamped)).rgb;
-            vec3 outCol = mix(mapCol, pcol, polarWeight);
-            gl_FragColor = vec4(outCol, 1.0);
-            return;
+            baseCol = mix(mapCol, pcol, polarWeight);
+            uMap = u_coord;
+            vMap = v_clamped; // クラス参照も同クランプでOK
+          } else {
+            float u = fract((lambda + PI) / (2.0 * PI) + u_offset);
+            float v = (mercY - u_topFrac) / u_heightFrac;
+            baseCol = texture2D(u_texture, vec2(u, v)).rgb;
+            uMap = u;
+            vMap = v;
           }
-          float u = fract((lambda + PI) / (2.0 * PI) + u_offset);
-          float v = (mercY - u_topFrac) / u_heightFrac;
-          vec4 col = texture2D(u_texture, vec2(u, v));
-          gl_FragColor = col;
+          // 雲レイヤ（白）: 被覆度優先、濃さは弱く
+          float classW = sampleClassSmooth(vec2(uMap, vMap)); // 海=1, 陸=0.7/0.8, 乾燥=0.2/0.4 を近傍で平滑化
+          float eff = clamp(u_cloudAmount * classW, 0.0, 1.0);
+          // トーラスFBMノイズ（極バッファ含む全域で評価）
+          float nCloud = fbmTile(vec2(uEff, vEff), max(2.0, u_cloudPeriod));
+          // 被覆度の閾値（雲量で強く変化）: 雲量↑で閾値↓ → coverage↑
+          float t = mix(0.9, 0.2, eff);
+          float edge = 0.08;
+          float coverage = smoothstep(t - edge, t + edge, nCloud);
+          // 雲の不透明度
+          float alpha = 0.40 + 0.65 * sqrt(eff);
+          // 覆われた領域内の濃淡（厚み + 高周波ディテール）で変調
+          float depth = clamp((nCloud - t) / max(1e-3, 1.0 - t), 0.0, 1.0);
+          float detail = fbmTile(vec2(uEff, vEff) + vec2(0.123, 0.456), max(2.0, u_cloudPeriod * 4.0));
+          float density = mix(0.5, 1.0, 0.5 * detail + 0.5 * depth);
+          vec3 outCol = mix(baseCol, vec3(1.0), coverage * alpha * density);
+          gl_FragColor = vec4(outCol, 1.0);
         }
       `;
       const compile = (src, type) => {
@@ -357,8 +525,8 @@ export default {
       const tex = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, tex);
       // Use nearest filtering to avoid linear interpolation blur when the texture is scaled
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       // For non-power-of-two textures, REPEAT is not allowed in WebGL1.
       // Use CLAMP_TO_EDGE and handle wrapping in the shader via fract().
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -411,10 +579,46 @@ export default {
         }
       }
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      // build class weight texture (海=1.0, 陸=0.7, 乾燥地=0.2, 湖=1.0, 氷河は陸扱い=0.7)
+      const classTex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, classTex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      const classPixels = new Uint8Array(width * height * 4);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          let wgt = 1.0; // default 海
+          if (this.gridData && this.gridData.length === width * height) {
+            const cell = this.gridData[y * width + x];
+            if (cell && cell.terrain) {
+              if (cell.terrain.type === 'sea') {
+                // 海・湖は 1.0
+                wgt = 1.0;
+              } else if (cell.terrain.type === 'land') {
+                const l = cell.terrain.land;
+                if (l === 'desert') wgt = 0.4;
+                else if (l === 'lake') wgt = 1.0;
+                else wgt = 0.8; // 陸の既定
+              }
+            } else {
+              wgt = 1.0;
+            }
+          }
+          const v = Math.max(0, Math.min(255, Math.round(wgt * 255)));
+          const p = (y * width + x) * 4;
+          classPixels[p] = v; classPixels[p + 1] = v; classPixels[p + 2] = v; classPixels[p + 3] = 255;
+        }
+      }
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, classPixels);
       // uniforms
       this._glUniforms = {
         u_texture: gl.getUniformLocation(prog, 'u_texture'),
+        u_classTex: gl.getUniformLocation(prog, 'u_classTex'),
         u_offset: gl.getUniformLocation(prog, 'u_offset'),
+        u_texelSize: gl.getUniformLocation(prog, 'u_texelSize'),
+        u_classSmoothRadius: gl.getUniformLocation(prog, 'u_classSmoothRadius'),
         u_topFrac: gl.getUniformLocation(prog, 'u_topFrac'),
         u_heightFrac: gl.getUniformLocation(prog, 'u_heightFrac'),
         u_cx: gl.getUniformLocation(prog, 'u_cx'),
@@ -424,10 +628,15 @@ export default {
         u_polarColorBottom: gl.getUniformLocation(prog, 'u_polarColorBottom'),
         u_blendFrac: gl.getUniformLocation(prog, 'u_blendFrac'),
         u_polarNoiseScale: gl.getUniformLocation(prog, 'u_polarNoiseScale'),
-        u_polarNoiseStrength: gl.getUniformLocation(prog, 'u_polarNoiseStrength')
+        u_polarNoiseStrength: gl.getUniformLocation(prog, 'u_polarNoiseStrength'),
+        u_cloudAmount: gl.getUniformLocation(prog, 'u_cloudAmount'),
+        u_cloudPeriod: gl.getUniformLocation(prog, 'u_cloudPeriod')
       };
       // set static uniforms
       gl.uniform1i(this._glUniforms.u_texture, 0);
+      gl.uniform1i(this._glUniforms.u_classTex, 1);
+      gl.uniform2f(this._glUniforms.u_texelSize, 1.0 / Math.max(1, width), 1.0 / Math.max(1, height));
+      gl.uniform1f(this._glUniforms.u_classSmoothRadius, 0.75);
       const effHeight = height + topBuf + bottomBuf;
       gl.uniform1f(this._glUniforms.u_topFrac, topBuf / effHeight);
       gl.uniform1f(this._glUniforms.u_heightFrac, height / effHeight);
@@ -465,10 +674,14 @@ export default {
       gl.uniform1f(this._glUniforms.u_blendFrac, blendFrac);
       gl.uniform1f(this._glUniforms.u_polarNoiseScale, this.polarNoiseScale || 0.05);
       gl.uniform1f(this._glUniforms.u_polarNoiseStrength, this.polarNoiseStrength || 0.3);
+      // cloud params
+      gl.uniform1f(this._glUniforms.u_cloudAmount, Math.max(0, Math.min(1, this.cloudAmount || 0)));
+      gl.uniform1f(this._glUniforms.u_cloudPeriod, Math.max(2, this.cloudPeriod || 16));
       // viewport
       gl.viewport(0, 0, canvas.width, canvas.height);
       this._gl = gl;
       this._glTex = tex;
+      this._glClassTex = classTex;
       return true;
     },
     drawWebGL() {
@@ -481,6 +694,11 @@ export default {
       // ensure texture bound to TEXTURE0
       gl.activeTexture(gl.TEXTURE0);
       if (this._glTex) gl.bindTexture(gl.TEXTURE_2D, this._glTex);
+      // bind class texture to TEXTURE1
+      gl.activeTexture(gl.TEXTURE1);
+      if (this._glClassTex) gl.bindTexture(gl.TEXTURE_2D, this._glClassTex);
+      // restore active 0 for consistency (optional)
+      gl.activeTexture(gl.TEXTURE0);
       const cx = canvas.width / 2;
       const cy = canvas.height / 2;
       const R = Math.floor(Math.min(canvas.width, canvas.height) * 0.30);
@@ -489,6 +707,13 @@ export default {
       gl.uniform1f(this._glUniforms.u_R, R);
       const offsetFrac = ((this._rotationColumns || 0) / Math.max(1, this.gridWidth));
       gl.uniform1f(this._glUniforms.u_offset, offsetFrac);
+      // update cloud params per-frame (UI反映)
+      if (this._glUniforms && this._glUniforms.u_cloudAmount) {
+        gl.uniform1f(this._glUniforms.u_cloudAmount, Math.max(0, Math.min(1, this.cloudAmount || 0)));
+      }
+      if (this._glUniforms && this._glUniforms.u_cloudPeriod) {
+        gl.uniform1f(this._glUniforms.u_cloudPeriod, Math.max(2, this.cloudPeriod || 16));
+      }
       // draw
       gl.clearColor(0,0,0,1);
       gl.clear(gl.COLOR_BUFFER_BIT);
@@ -732,6 +957,8 @@ export default {
         const x = pc.cx + p.px;
         const y = pc.cy + p.py;
         const offset = (y * W + x) * 4;
+        // 共通: 雲ノイズ座標（極バッファ含む全域）
+        const vEff = Math.max(0, Math.min(1, pc.mercY ? pc.mercY[i] : 0.5));
         if (pc.isPolar[i]) {
           const side = pc.polarSide ? pc.polarSide[i] : 1;
           const colPolar = (side === 1) ? polarTopRgb : polarBottomRgb;
@@ -742,10 +969,26 @@ export default {
           const mapIdx = displayYMap * pc.displayStride + displayX;
           const mapColorStr = displayColors[mapIdx] || 'rgb(0,0,0)';
           let colMap = this.parseColorToRgb(mapColorStr);
+          // 分類重み（海/陸/乾燥）取得用のマップ座標
+          const xMap = (displayX - 1 + (this._rotationColumns || 0)) % width;
+          const yMap = (side === 1) ? 0 : (height - 1);
+          // 雲クラス重み（UV基準の9タップ平滑・バイリニア補間）
+          let classW = 1.0;
           // 極近傍でも陸（氷河除く）なら軽くトーンを足す（近似）
           if (this.gridData && this.gridData.length === width * height) {
-            const xMap = (displayX - 1 + (this._rotationColumns || 0)) % width;
-            const yMap = (side === 1) ? 0 : (height - 1);
+            // 連続uv（map域）を算出し、uvオフセットに基づく9サンプル平均を取得
+            const effHeight = height + topBuf + bottomBuf;
+            const uTopFrac = topBuf / effHeight;
+            const uHeightFrac = height / effHeight;
+            const sx = p.px / R;
+            const sy = -p.py / R;
+            const sq = sx * sx + sy * sy;
+            const sz = Math.sqrt(Math.max(0, 1 - Math.min(1, sq)));
+            const lambda = Math.atan2(sx, sz);
+            const uCoord = (((lambda + Math.PI) / (2 * Math.PI)) + (this._rotationColumns || 0) / Math.max(1, width)) % 1;
+            const vCoord = Math.max(0, Math.min(1, (vEff - uTopFrac) / Math.max(1e-6, uHeightFrac)));
+            const rUV = 0.75 / Math.max(1, this.cloudPeriod || 16);
+            classW = this._sampleClassWeightSmooth(uCoord, vCoord, width, height, this.gridData, rUV);
             const cell = this.gridData[yMap * width + xMap];
             if (cell && cell.terrain && cell.terrain.type === 'land' && cell.terrain.land !== 'glacier') {
               const tint = this.parseColorToRgb(this.landTintColor);
@@ -778,9 +1021,33 @@ export default {
           const r = Math.round(colPolar[0] * polarWeight + colMap[0] * mapWeight);
           const g = Math.round(colPolar[1] * polarWeight + colMap[1] * mapWeight);
           const b = Math.round(colPolar[2] * polarWeight + colMap[2] * mapWeight);
-          data[offset] = r;
-          data[offset + 1] = g;
-          data[offset + 2] = b;
+          // --- 雲オーバーレイ（描画後に適用） ---
+          // 経度u: 回転を反映したマップ列から推定
+          const uEff = ((xMap % width) + width) % width / width;
+          // クラウド有効度
+          const effC = Math.max(0, Math.min(1, (this.cloudAmount || 0) * classW));
+          let rr = r, gg = g, bb = b;
+          if (effC > 0) {
+            const nCloud = this._fbmTile(uEff, vEff, this.cloudPeriod || 16);
+            const t = 0.9 + (0.2 - 0.9) * effC; // mix(0.9,0.2,effC)
+            const edge = 0.08;
+            // smoothstep(t-edge, t+edge, nCloud)
+            let coverage = 0;
+            if (nCloud <= t - edge) coverage = 0;
+            else if (nCloud >= t + edge) coverage = 1;
+            else coverage = (nCloud - (t - edge)) / (2 * edge);
+            const alpha = 0.35 + 0.45 * Math.sqrt(effC);
+            const depth = Math.max(0, Math.min(1, (nCloud - t) / Math.max(1e-3, 1 - t)));
+            const detail = this._fbmTile((uEff + 0.123) % 1, (vEff + 0.456) % 1, (this.cloudPeriod || 16) * 4);
+            const density = 0.5 + (1.0 - 0.5) * (0.5 * detail + 0.5 * depth);
+            const k = Math.max(0, Math.min(1, coverage * alpha * density));
+            rr = Math.round(rr * (1 - k) + 255 * k);
+            gg = Math.round(gg * (1 - k) + 255 * k);
+            bb = Math.round(bb * (1 - k) + 255 * k);
+          }
+          data[offset] = rr;
+          data[offset + 1] = gg;
+          data[offset + 2] = bb;
           data[offset + 3] = 255;
         } else {
           const ix0 = pc.baseIx[i];
@@ -793,7 +1060,22 @@ export default {
           let g = pal[pi + 1] || 255;
           let b = pal[pi + 2] || 255;
           // 陸（氷河除く）に青灰色トーンを適用
+          // 分類重み（UV基準の9タップ平滑・バイリニア補間）
+          let classW = 1.0;
           if (this.gridData && this.gridData.length === width * height) {
+            const effHeight = height + topBuf + bottomBuf;
+            const uTopFrac = topBuf / effHeight;
+            const uHeightFrac = height / effHeight;
+            const sx = p.px / R;
+            const sy = -p.py / R;
+            const sq = sx * sx + sy * sy;
+            const sz = Math.sqrt(Math.max(0, 1 - Math.min(1, sq)));
+            const lambda = Math.atan2(sx, sz);
+            const uCoord = (((lambda + Math.PI) / (2 * Math.PI)) + (this._rotationColumns || 0) / Math.max(1, width)) % 1;
+            const vCoord = Math.max(0, Math.min(1, (vEff - uTopFrac) / Math.max(1e-6, uHeightFrac)));
+            const rUV = 0.75 / Math.max(1, this.cloudPeriod || 16);
+            classW = this._sampleClassWeightSmooth(uCoord, vCoord, width, height, this.gridData, rUV);
+            // 陸トーン適用のためのセル参照（グリッド座標）
             const xMap = ((ix0 + colShift) % width + width) % width;
             const yMap = iy;
             const cell = this.gridData[yMap * width + xMap];
@@ -805,9 +1087,31 @@ export default {
               b = Math.round(b * (1 - k) + tint[2] * k);
             }
           }
-          data[offset] = r;
-          data[offset + 1] = g;
-          data[offset + 2] = b;
+          // --- 雲オーバーレイ（描画後に適用） ---
+          // 経度u: 回転を反映したマップ列から
+          const uEff = ((((ix0 + colShift) % width) + width) % width) / width;
+          const effC = Math.max(0, Math.min(1, (this.cloudAmount || 0) * classW));
+          let rr = r, gg = g, bb = b;
+          if (effC > 0) {
+            const nCloud = this._fbmTile(uEff, vEff, this.cloudPeriod || 16);
+            const t = 0.9 + (0.2 - 0.9) * effC;
+            const edge = 0.08;
+            let coverage = 0;
+            if (nCloud <= t - edge) coverage = 0;
+            else if (nCloud >= t + edge) coverage = 1;
+            else coverage = (nCloud - (t - edge)) / (2 * edge);
+            const alpha = 0.35 + 0.45 * Math.sqrt(effC);
+            const depth = Math.max(0, Math.min(1, (nCloud - t) / Math.max(1e-3, 1 - t)));
+            const detail = this._fbmTile((uEff + 0.123) % 1, (vEff + 0.456) % 1, (this.cloudPeriod || 16) * 4);
+            const density = 0.5 + (1.0 - 0.5) * (0.5 * detail + 0.5 * depth);
+            const k = Math.max(0, Math.min(1, coverage * alpha * density));
+            rr = Math.round(rr * (1 - k) + 255 * k);
+            gg = Math.round(gg * (1 - k) + 255 * k);
+            bb = Math.round(bb * (1 - k) + 255 * k);
+          }
+          data[offset] = rr;
+          data[offset + 1] = gg;
+          data[offset + 2] = bb;
           data[offset + 3] = 255;
         }
       }
