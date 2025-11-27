@@ -25,8 +25,6 @@ export default {
   },
   methods: {
     onGenerated(payload) {
-      // デバッグ用ログ
-      console.log('onGenerated payload', payload);
       // gridData を優先して受け取り、width/height が提供されていれば適用
       if (payload && Array.isArray(payload.gridData)) {
         this.gridData = payload.gridData;

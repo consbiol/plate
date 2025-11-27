@@ -577,7 +577,7 @@ export default {
       const colShift = (this._rotationColumns || 0);
 
       // プリコンピュートのキャッシュ条件: canvasサイズ / mapサイズ / bufs
-      console.debug("Sphere_Display.drawSphere start", { W, H, width, height, hasGridData: !!(this.gridData && this.gridData.length === width * height) });
+      // drawSphere start
       // derive displayColors once (available outside precompute block)
       let displayColors = (this.gridData && this.gridData.length === width * height)
         ? this._deriveDisplayColorsFromGridData(this.gridData, width, height)
