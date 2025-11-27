@@ -56,19 +56,7 @@ export default {
         this._useWebGL = false;
       }
       // compute buffer values for debug display
-      const widthDbg = this.gridWidth;
-      const heightDbg = this.gridHeight;
-      const maxTotalBufDbg = Math.max(0, heightDbg - 2);
-      const totalBufDbg = Math.max(0, Math.min(maxTotalBufDbg, this.polarBufferRows));
-      const topBufDbg = Math.floor(totalBufDbg / 2);
-      const bottomBufDbg = totalBufDbg - topBufDbg;
-      const effHeightDbg = heightDbg + topBufDbg + bottomBufDbg;
-      const uTopFracDbg = topBufDbg / effHeightDbg;
-      const uHeightFracDbg = heightDbg / effHeightDbg;
-      const dbgEl = doc.getElementById('sphere-debug');
-      if (dbgEl) {
-        dbgEl.textContent = `useWebGL: ${this._useWebGL}, width:${widthDbg}, height:${heightDbg}, topBuf:${topBufDbg}, bottomBuf:${bottomBufDbg}, effHeight:${effHeightDbg}, uTopFrac:${uTopFracDbg.toFixed(4)}, uHeightFrac:${uHeightFracDbg.toFixed(4)}`;
-      }
+      // (debug UI removed)
       if (this._useWebGL) {
         this.drawWebGL();
       } else {
@@ -167,7 +155,6 @@ export default {
   <body>
     <h1>Sphere (front view)</h1>
     <div class="row">Projection: Mercator → Sphere (front hemisphere)</div>
-      <div id="sphere-debug" style="font-size:12px;color:#444;margin:6px 0;padding:6px;border:1px dashed #ddd;background:#fafafa;max-width:700px;word-break:break-all;"></div>
     <div class="controls">
       <button id="rotate-btn">Rotate</button>
       <button id="faster-btn">Faster</button>
@@ -177,37 +164,6 @@ export default {
     <canvas id="sphere-canvas" width="700" height="700"></canvas>
   </body>
 </html>`;
-    },
-  // 画素色取得（display配列は上下左右+1の黒枠がある想定）
-  getMapColor(ix, iy) {
-      // If gridData is provided, derive color from terrain/sea per-cell
-      const width = this.gridWidth;
-      const height = this.gridHeight;
-      const originalIdx = iy * width + ix;
-      if (this.gridData && this.gridData.length === width * height) {
-        const cell = this.gridData[originalIdx];
-        if (cell && cell.terrain) {
-          const t = cell.terrain;
-          if (t.type === 'sea') {
-            if (t.sea === 'shallow') return 'rgb(60, 120, 180)';
-            if (t.sea === 'glacier') return 'rgb(255, 255, 255)';
-            return 'rgb(30, 80, 140)';
-          } else if (t.type === 'land') {
-            switch (t.land) {
-              case 'tundra': return 'rgb(180, 150, 80)';
-              case 'glacier': return 'rgb(255, 255, 255)';
-              case 'lake': return 'rgb(60, 120, 180)';
-              case 'lowland': return 'rgb(34, 139, 34)';
-              case 'highland': return 'rgb(145, 100, 75)';
-              case 'alpine': return 'rgb(95, 80, 70)';
-              case 'desert': return 'rgb(150, 130, 110)';
-              default: return 'rgb(34, 139, 34)';
-            }
-          }
-        }
-      }
-      // gridData が無い場合は空文字（プレースホルダー判定用）を返す
-      return '';
     },
     // color string like 'rgb(r,g,b)' -> [r,g,b]
     parseColorToRgb(s) {
@@ -336,9 +292,7 @@ export default {
       this._gl = gl;
       const vsSource = `
         attribute vec2 a_position;
-        varying vec2 v_uv;
         void main() {
-          v_uv = a_position * 0.5 + 0.5;
           gl_Position = vec4(a_position, 0.0, 1.0);
         }
       `;
@@ -347,7 +301,6 @@ export default {
         uniform sampler2D u_texture;
         uniform sampler2D u_classTex;
         uniform float u_offset; // fraction [0,1)
-        uniform vec2  u_texelSize;       // 1/width, 1/height for map sampling
         uniform float u_classSmoothRadius; // in texels (e.g., 0.75)
         uniform float u_topFrac;
         uniform float u_heightFrac;
@@ -361,7 +314,6 @@ export default {
         uniform float u_polarNoiseStrength;
         uniform float u_cloudAmount;      // 0..1
         uniform float u_cloudPeriod;      // e.g. 16
-        varying vec2 v_uv;
         const float PI = 3.141592653589793;
         // hash + FBM (fractal) noise (legacy, polar blend用)
         float hash(vec2 p) {
@@ -482,11 +434,11 @@ export default {
           float edge = 0.08;
           float coverage = smoothstep(t - edge, t + edge, nCloud);
           // 雲の不透明度
-          float alpha = 0.40 + 0.65 * sqrt(eff);
+          float alpha = 0.90 + 1.20 * sqrt(eff);
           // 覆われた領域内の濃淡（厚み + 高周波ディテール）で変調
           float depth = clamp((nCloud - t) / max(1e-3, 1.0 - t), 0.0, 1.0);
           float detail = fbmTile(vec2(uEff, vEff) + vec2(0.123, 0.456), max(2.0, u_cloudPeriod * 4.0));
-          float density = mix(0.5, 1.0, 0.5 * detail + 0.5 * depth);
+          float density = mix(0.3, 1.0, 0.5 * detail + 0.5 * depth);
           vec3 outCol = mix(baseCol, vec3(1.0), coverage * alpha * density);
           gl_FragColor = vec4(outCol, 1.0);
         }
@@ -617,7 +569,6 @@ export default {
         u_texture: gl.getUniformLocation(prog, 'u_texture'),
         u_classTex: gl.getUniformLocation(prog, 'u_classTex'),
         u_offset: gl.getUniformLocation(prog, 'u_offset'),
-        u_texelSize: gl.getUniformLocation(prog, 'u_texelSize'),
         u_classSmoothRadius: gl.getUniformLocation(prog, 'u_classSmoothRadius'),
         u_topFrac: gl.getUniformLocation(prog, 'u_topFrac'),
         u_heightFrac: gl.getUniformLocation(prog, 'u_heightFrac'),
@@ -635,7 +586,6 @@ export default {
       // set static uniforms
       gl.uniform1i(this._glUniforms.u_texture, 0);
       gl.uniform1i(this._glUniforms.u_classTex, 1);
-      gl.uniform2f(this._glUniforms.u_texelSize, 1.0 / Math.max(1, width), 1.0 / Math.max(1, height));
       gl.uniform1f(this._glUniforms.u_classSmoothRadius, 0.75);
       const effHeight = height + topBuf + bottomBuf;
       gl.uniform1f(this._glUniforms.u_topFrac, topBuf / effHeight);
@@ -1039,7 +989,7 @@ export default {
             const alpha = 0.35 + 0.45 * Math.sqrt(effC);
             const depth = Math.max(0, Math.min(1, (nCloud - t) / Math.max(1e-3, 1 - t)));
             const detail = this._fbmTile((uEff + 0.123) % 1, (vEff + 0.456) % 1, (this.cloudPeriod || 16) * 4);
-            const density = 0.5 + (1.0 - 0.5) * (0.5 * detail + 0.5 * depth);
+            const density = 0.3 + (1.0 - 0.3) * (0.5 * detail + 0.5 * depth);
             const k = Math.max(0, Math.min(1, coverage * alpha * density));
             rr = Math.round(rr * (1 - k) + 255 * k);
             gg = Math.round(gg * (1 - k) + 255 * k);
@@ -1103,7 +1053,7 @@ export default {
             const alpha = 0.35 + 0.45 * Math.sqrt(effC);
             const depth = Math.max(0, Math.min(1, (nCloud - t) / Math.max(1e-3, 1 - t)));
             const detail = this._fbmTile((uEff + 0.123) % 1, (vEff + 0.456) % 1, (this.cloudPeriod || 16) * 4);
-            const density = 0.5 + (1.0 - 0.5) * (0.5 * detail + 0.5 * depth);
+            const density = 0.3 + (1.0 - 0.3) * (0.5 * detail + 0.5 * depth);
             const k = Math.max(0, Math.min(1, coverage * alpha * density));
             rr = Math.round(rr * (1 - k) + 255 * k);
             gg = Math.round(gg * (1 - k) + 255 * k);
