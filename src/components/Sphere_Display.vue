@@ -4,6 +4,7 @@
 
 <script>
 import { deriveDisplayColorsFromGridData } from '../utils/colors.js';
+import { getEraTerrainColors, getEraLandTint } from '../utils/colors.js';
 export default {
   name: 'Sphere_Display',
   props: {
@@ -15,9 +16,11 @@ export default {
     polarBlendRows: { type: Number, required: false, default: 12 },
     polarNoiseStrength: { type: Number, required: false, default: 0.3 },
     polarNoiseScale: { type: Number, required: false, default: 0.01 },
-    // 陸（氷河除く）に事後的に適用する青灰色トーン
+    // 陸（氷河除く）に事後的に適用する色変更トーン
     landTintColor: { type: String, required: false, default: 'rgb(150, 165, 185)' },
     landTintStrength: { type: Number, required: false, default: 0.35 },
+    // 時代（色プリセット切替の将来拡張用）
+    era: { type: String, required: false, default: null },
     // 雲量（0..1）: 被覆度に強く、濃さ（不透明度）に弱く効かせる
     cloudAmount: { type: Number, required: false, default: 0.4 },
     // 雲ノイズのトーラス周期（uv空間上の反復数）
@@ -452,8 +455,9 @@ export default {
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
       // prepare displayColors from gridData if present, otherwise use a placeholder to keep rendering
       const expectedDisplayLen = (width + 2) * (height + 2);
-      const displayColorsFromGridData = (this.gridData && this.gridData.length === width * height)
-        ? deriveDisplayColorsFromGridData(this.gridData, width, height)
+      const eraColors = getEraTerrainColors(this.era);
+       const displayColorsFromGridData = (this.gridData && this.gridData.length === width * height)
+         ? deriveDisplayColorsFromGridData(this.gridData, width, height, undefined, eraColors, /*preferPalette*/ true)
         : [];
       let displayColors = displayColorsFromGridData;
       if (!displayColorsFromGridData || displayColorsFromGridData.length < expectedDisplayLen) {
@@ -479,7 +483,7 @@ export default {
           if (this.gridData && this.gridData.length === width * height) {
             const cell = this.gridData[y * width + x];
             if (cell && cell.terrain && cell.terrain.type === 'land' && cell.terrain.land !== 'glacier') {
-              const tint = this.parseColorToRgb(this.landTintColor);
+              const tint = this.parseColorToRgb(this.landTintColor || getEraLandTint(this.era));
               const k = Math.max(0, Math.min(1, this.landTintStrength || 0));
               rgb = [
                 Math.round(rgb[0] * (1 - k) + tint[0] * k),
@@ -732,8 +736,9 @@ export default {
       // プリコンピュートのキャッシュ条件: canvasサイズ / mapサイズ / bufs
       // drawSphere start
       // derive displayColors once (available outside precompute block)
-      let displayColors = (this.gridData && this.gridData.length === width * height)
-        ? deriveDisplayColorsFromGridData(this.gridData, width, height)
+      const eraColors = getEraTerrainColors(this.era);
+       let displayColors = (this.gridData && this.gridData.length === width * height)
+         ? deriveDisplayColorsFromGridData(this.gridData, width, height, undefined, eraColors, /*preferPalette*/ true)
         : [];
       if (!this._precompute || this._precompute.W !== W || this._precompute.H !== H || this._precompute.width !== width || this._precompute.height !== height || this._precompute.topBuf !== topBuf || this._precompute.bottomBuf !== bottomBuf) {
       const displayStride = width + 2;
@@ -895,7 +900,7 @@ export default {
             classW = this._sampleClassWeightSmooth(uCoord, vCoord, width, height, this.gridData, rUV);
             const cell = this.gridData[yMap * width + xMap];
             if (cell && cell.terrain && cell.terrain.type === 'land' && cell.terrain.land !== 'glacier') {
-              const tint = this.parseColorToRgb(this.landTintColor);
+              const tint = this.parseColorToRgb(this.landTintColor || getEraLandTint(this.era));
               const k = Math.max(0, Math.min(1, (this.landTintStrength || 0) * 0.6)); // 極はやや弱め
               colMap = [
                 Math.round(colMap[0] * (1 - k) + tint[0] * k),
@@ -984,7 +989,7 @@ export default {
             const yMap = iy;
             const cell = this.gridData[yMap * width + xMap];
             if (cell && cell.terrain && cell.terrain.type === 'land' && cell.terrain.land !== 'glacier') {
-              const tint = this.parseColorToRgb(this.landTintColor);
+              const tint = this.parseColorToRgb(this.landTintColor || getEraLandTint(this.era));
               const k = Math.max(0, Math.min(1, this.landTintStrength || 0));
               r = Math.round(r * (1 - k) + tint[0] * k);
               g = Math.round(g * (1 - k) + tint[1] * k);

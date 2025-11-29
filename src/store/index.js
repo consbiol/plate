@@ -29,7 +29,7 @@ export default createStore({
         // 気圧 (hPa)
         airPressure: 1000,
         // 時代（例: 'ancient' | 'medieval' | 'modern' | 'future' など）
-        era: 'modern'
+        era: '大森林時代'
     },
     getters: {
         averageTemperature: (state) => state.averageTemperature,

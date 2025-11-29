@@ -66,6 +66,12 @@
       <span style="margin-left:8px">{{ (local.cloudAmount || 0).toFixed(2) }}</span>
     </div>
     <div style="margin-bottom: 8px;">
+      <label>時代: </label>
+      <select v-model="local.era" @change="onEraChange">
+        <option v-for="e in eras" :key="e" :value="e">{{ e }}</option>
+      </select>
+    </div>
+    <div style="margin-bottom: 8px;">
       <label>上端・下端氷河グリッド数: </label>
       <span>{{ Math.round(local.topGlacierRows) }}</span>
     </div>
@@ -167,6 +173,7 @@
       :centerParameters="mutableCenterParams"
       :generateSignal="generateSignal"
         :deterministicSeed="local.deterministicSeed"
+      :era="local.era || ($store && $store.getters ? $store.getters.era : null)"
       @generated="onGenerated"
     />
 
@@ -178,6 +185,7 @@
       :gridData="gridDataLocal"
       :polarBufferRows="75"
       :cloudAmount="local.cloudAmount"
+      :era="$store && $store.getters ? $store.getters.era : null"
     />
   </div>
 </template>
@@ -188,6 +196,7 @@
 // - 入力欄の値は内部state(local)に保持し、必要に応じて親へemitします。
 import Grids_Calculation from './Grids_Calculation.vue';
 import Sphere_Display from './Sphere_Display.vue';
+import { getEraTerrainColors } from '../utils/colors.js';
 export default {
   name: 'Parameters_Display',
   components: { Grids_Calculation, Sphere_Display },
@@ -239,6 +248,9 @@ export default {
   mounted() {
     // 初期表示時に平均気温から氷河行数を算出（デフォルト 15℃ → 5）
     this.updateAverageTemperature();
+    // store の era をローカル初期値に同期（なければ一覧の先頭）
+    const storeEra = (this.$store && this.$store.getters && this.$store.getters.era) ? this.$store.getters.era : null;
+    this.local.era = storeEra || '大森林時代';
   },
   data() {
     return {
@@ -274,6 +286,19 @@ export default {
         averageHighlandsPerCenter: this.averageHighlandsPerCenter,
         deterministicSeed: ''
       },
+      // UI で選べる時代一覧（store.era と対応）
+      eras: [
+        '爆撃時代',
+        '嫌気性細菌誕生時代',
+        '光合成細菌誕生時代',
+        '真核生物誕生時代',
+        '多細胞生物誕生時代',
+        '海洋生物多様化時代',
+        '苔類進出時代',
+        'シダ類・裸子植物進出時代',
+        '大森林時代',
+        '文明時代'
+      ],
       // 中心点のパラメータはdeepコピーして編集可能にする
       mutableCenterParams: JSON.parse(JSON.stringify(this.centerParameters || [])),
       generateSignal: 0,
@@ -344,6 +369,11 @@ export default {
   methods: {
     emitField(field, value) {
       this.$emit(`update:${field}`, value);
+    },
+    onEraChange() {
+      if (this.$store && typeof this.$store.dispatch === 'function') {
+        this.$store.dispatch('updateEra', this.local.era);
+      }
     },
     // 平均気温から上端・下端氷河グリッド数を線形補間で算出（2℃刻み入力想定）
     updateAverageTemperature(value) {
@@ -421,11 +451,15 @@ export default {
         tundra: '#698736',
         glacier: '#FFFFFF'
       };
-      const tc = DEFAULT_TERRAIN_COLORS;
+      const eraColors = (typeof getEraTerrainColors === 'function')
+        ? getEraTerrainColors(this.local && this.local.era ? this.local.era : null)
+        : null;
+      const tc = eraColors && typeof eraColors === 'object' ? eraColors : DEFAULT_TERRAIN_COLORS;
       for (let i = 0; i < N; i++) {
         let c = null;
         const cell = gridData[i];
-        if (cell && typeof cell.colorHex === 'string') {
+        // eraColors が有効な場合は、colorHex より時代パレットを優先
+        if (!eraColors && cell && typeof cell.colorHex === 'string') {
           c = cell.colorHex;
         } else if (cell && cell.terrain) {
           if (cell.terrain.type === 'sea') {

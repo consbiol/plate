@@ -3,6 +3,7 @@
 </template>
 
 <script>
+import { getEraTerrainColors } from '../utils/colors.js';
 // Default terrain colors (store-independent)
 const DEFAULT_TERRAIN_COLORS = {
   deepSea: '#1E508C',
@@ -70,7 +71,9 @@ export default {
     // 大陸の歪みの強さを方向角度に対して適用する係数（デフォルト 2.0）
     directionDistortionScale: { type: Number, required: false, default: 4.0 },
     // 指定要素のみ決定化するためのシード（未指定時は従来通り）
-    deterministicSeed: { type: [Number, String], required: false, default: null }
+    deterministicSeed: { type: [Number, String], required: false, default: null },
+    // 時代（パレット切替用、未指定ならデフォルト色）
+    era: { type: String, required: false, default: null }
   },
   data() {
     return {};
@@ -313,8 +316,8 @@ export default {
     },
     // 基本色の集約定義（機能不変）
     _getBaseColors() {
-      // デフォルトカラーを直接使用（store参照なし）
-      const tc = DEFAULT_TERRAIN_COLORS;
+      // 時代指定があれば時代パレットを優先、なければデフォルト
+      const tc = this.era ? getEraTerrainColors(this.era) : DEFAULT_TERRAIN_COLORS;
       return {
         deepSeaColor: tc.deepSea,
         shallowSeaColor: tc.shallowSea,
@@ -1087,12 +1090,13 @@ export default {
             else if (col === desertColor) terrain = { type: 'land', land: 'desert' };
             else terrain = { type: 'land', land: 'lowland' };
           }
-          gridData[idx] = {
-            temperature,
-            precipitation,
-            terrain,
-            colorHex: col
-          };
+  gridData[idx] = {
+    temperature,
+    precipitation,
+    terrain,
+    colorHex: col,
+    cultivated: null
+  };
         }
       }
       // 収集したシード決定情報を centerParameters に埋め込む
