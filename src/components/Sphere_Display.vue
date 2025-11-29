@@ -441,7 +441,7 @@ export default {
       // create texture from derived colors
       const tex = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, tex);
-      // Use nearest filtering to avoid linear interpolation blur when the texture is scaled
+      // Use linear filtering for smoother appearance when the texture is scaled
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       // For non-power-of-two textures, REPEAT is not allowed in WebGL1.
