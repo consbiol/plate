@@ -233,8 +233,6 @@ export default {
     averageHighlandsPerCenter: { type: Number, required: false, default: 5 },
     // 中心点のパラメータ配列（デフォルト: 空配列）: 各中心点の影響係数、減衰率、方向角度などの詳細パラメータ。
     centerParameters: { type: Array, required: false, default: () => [] },
-    // 親(App)から現在の描画用色配列（+2枠つき）を渡してもらう
-      gridData: { type: Array, required: false, default: () => [] },
     // 雲量（0..1）: 被覆度優先で効く
     cloudAmount: { type: Number, required: false, default: 0.4 }
   },
@@ -407,13 +405,55 @@ export default {
       if (payload && typeof payload.deterministicSeed !== 'undefined') {
         this.local.deterministicSeed = payload.deterministicSeed || '';
       }
+      // 1.5) 平面描画用の色配列を生成（優先: gridData.colorHex > デフォルトマップ）
+      const width = this.gridWidth;
+      const height = this.gridHeight;
+      const N = width * height;
+      const planeColors = new Array(N);
+      const gridData = Array.isArray(payload.gridData) ? payload.gridData : [];
+      const DEFAULT_TERRAIN_COLORS = {
+        deepSea: '#1E508C',
+        shallowSea: '#3C78B4',
+        lowland: '#228B22',
+        desert: '#96826E',
+        highland: '#91644B',
+        alpine: '#5F5046',
+        tundra: '#698736',
+        glacier: '#FFFFFF'
+      };
+      const tc = DEFAULT_TERRAIN_COLORS;
+      for (let i = 0; i < N; i++) {
+        let c = null;
+        const cell = gridData[i];
+        if (cell && typeof cell.colorHex === 'string') {
+          c = cell.colorHex;
+        } else if (cell && cell.terrain) {
+          if (cell.terrain.type === 'sea') {
+            if (cell.terrain.sea === 'shallow') c = tc.shallowSea;
+            else if (cell.terrain.sea === 'glacier') c = tc.glacier;
+            else c = tc.deepSea;
+          } else if (cell.terrain.type === 'land') {
+            const l = cell.terrain.land;
+            if (l === 'tundra') c = tc.tundra;
+            else if (l === 'glacier') c = tc.glacier;
+            else if (l === 'lake') c = tc.shallowSea;
+            else if (l === 'highland') c = tc.highland;
+            else if (l === 'alpine') c = tc.alpine;
+            else if (l === 'desert') c = tc.desert;
+            else c = tc.lowland;
+          }
+        }
+        planeColors[i] = c || tc.lowland;
+      }
       this.openOrUpdatePopup();
       // 2) 親へ伝搬（AppからTerrain_Displayへ受け渡し用）
       this.$emit('generated', {
         gridData: payload.gridData || null,
         gridWidth: this.gridWidth,
         gridHeight: this.gridHeight,
-        centerParameters: payload.centerParameters
+        centerParameters: payload.centerParameters,
+        displayColors: payload.displayColors || null,
+        planeColors
       });
       // 2.5) Sphere 用にローカルにも保持
       this.gridDataLocal = Array.isArray(payload.gridData) ? payload.gridData : [];

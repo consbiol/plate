@@ -3,6 +3,18 @@
 </template>
 
 <script>
+// Default terrain colors (store-independent)
+const DEFAULT_TERRAIN_COLORS = {
+  deepSea: '#1E508C',
+  shallowSea: '#3C78B4',
+  lowland: '#228B22',
+  desert: '#96826E',
+  highland: '#91644B',
+  alpine: '#5F5046',
+  tundra: '#698736',
+  glacier: '#FFFFFF',
+  border: '#000000'
+};
 // このコンポーネントは「計算専用」です（UIや描画は行いません）。
 // 概要:
 // 1) 陸中心のサンプリングと各中心の影響（スコア）計算
@@ -67,9 +79,6 @@ export default {
     generateSignal() {
       this.runGenerate();
     }
-  },
-  mounted() {
-    // 何もしない（初期マウント時の処理は不要）
   },
   methods: {
     // サブRNG（サブストリーム）生成: ベースの deterministicSeed にラベルを連結して独立RNGを作る
@@ -304,19 +313,8 @@ export default {
     },
     // 基本色の集約定義（機能不変）
     _getBaseColors() {
-      const tc = (this.$store && this.$store.getters && this.$store.getters.terrainColors)
-        ? this.$store.getters.terrainColors
-        : {
-            deepSea: '#1E508C',
-            shallowSea: '#3C78B4',
-            lowland: '#228B22',
-            desert: '#96826E',
-            highland: '#91644B',
-            alpine: '#5F5046',
-            tundra: '#698736',
-            glacier: '#FFFFFF',
-            border: '#000000'
-          };
+      // デフォルトカラーを直接使用（store参照なし）
+      const tc = DEFAULT_TERRAIN_COLORS;
       return {
         deepSeaColor: tc.deepSea,
         shallowSeaColor: tc.shallowSea,
@@ -426,66 +424,6 @@ export default {
           const threshold = this.topTundraRows + noise;
           if (distanceFromBottom < threshold) {
             colors[idx] = tundraColor;
-          }
-        }
-      }
-    },
-    // 氷河の適用（上端）
-    _applyGlaciersTop(colors, glacierNoiseTable, landNoiseAmplitude, shallowSeaColor, deepSeaColor, lowlandColor, tundraColor, desertColor, highlandColor, alpineColor, glacierColor) {
-      const computedTopGlacierRows = this._computeTopGlacierRowsFromAverageTemperature();
-      for (let gy = 0; gy < this.gridHeight; gy++) {
-        for (let gx = 0; gx < this.gridWidth; gx++) {
-          const idx = gy * this.gridWidth + gx;
-          const distanceFromTop = gy;
-          const noise = glacierNoiseTable[idx] * landNoiseAmplitude;
-          let additionalGrids = 0;
-          if (colors[idx] === shallowSeaColor || colors[idx] === deepSeaColor) {
-            additionalGrids = 0;
-          } else if (colors[idx] === lowlandColor) {
-            additionalGrids = this.landGlacierExtraRows;
-          } else if (colors[idx] === tundraColor) {
-            additionalGrids = this.landGlacierExtraRows;
-          } else if (colors[idx] === desertColor) {
-            additionalGrids = this.landGlacierExtraRows;
-          } else if (colors[idx] === highlandColor) {
-            additionalGrids = this.highlandGlacierExtraRows;
-          } else if (colors[idx] === alpineColor) {
-            additionalGrids = this.alpineGlacierExtraRows;
-          }
-          const base = computedTopGlacierRows + additionalGrids;
-          const threshold = base > 0 ? Math.max(0, base + noise) : 0;
-          if (distanceFromTop < threshold) {
-            colors[idx] = glacierColor;
-          }
-        }
-      }
-    },
-    // 氷河の適用（下端）
-    _applyGlaciersBottom(colors, glacierNoiseTable, landNoiseAmplitude, shallowSeaColor, deepSeaColor, lowlandColor, tundraColor, desertColor, highlandColor, alpineColor, glacierColor) {
-      const computedTopGlacierRows = this._computeTopGlacierRowsFromAverageTemperature();
-      for (let gy = 0; gy < this.gridHeight; gy++) {
-        for (let gx = 0; gx < this.gridWidth; gx++) {
-          const idx = gy * this.gridWidth + gx;
-          const distanceFromBottom = this.gridHeight - 1 - gy;
-          const noise = glacierNoiseTable[idx] * landNoiseAmplitude;
-          let additionalGrids = 0;
-          if (colors[idx] === shallowSeaColor || colors[idx] === deepSeaColor) {
-            additionalGrids = 0;
-          } else if (colors[idx] === lowlandColor) {
-            additionalGrids = this.landGlacierExtraRows;
-          } else if (colors[idx] === tundraColor) {
-            additionalGrids = this.landGlacierExtraRows;
-          } else if (colors[idx] === desertColor) {
-            additionalGrids = this.landGlacierExtraRows;
-          } else if (colors[idx] === highlandColor) {
-            additionalGrids = this.highlandGlacierExtraRows;
-          } else if (colors[idx] === alpineColor) {
-            additionalGrids = this.alpineGlacierExtraRows;
-          }
-          const base = computedTopGlacierRows + additionalGrids;
-          const threshold = base > 0 ? Math.max(0, base + noise) : 0;
-          if (distanceFromBottom < threshold) {
-            colors[idx] = glacierColor;
           }
         }
       }
@@ -1007,16 +945,7 @@ export default {
       for (let i = 0; i < N; i++) distanceToSea[i] = Infinity;
       const distToSea = this._computeDistanceMap(seaSources, N, directions);
       for (let i = 0; i < N; i++) distanceToSea[i] = distToSea[i];
-      const lowlandMask = new Array(N).fill(false);
-      for (let gy = 0; gy < this.gridHeight; gy++) {
-        for (let gx = 0; gx < this.gridWidth; gx++) {
-          const idx = gy * this.gridWidth + gx;
-          if (!landMask[idx]) continue;
-          const bandThreshold = this._getLandDistanceThresholdForRow(gy, gx);
-          const landThreshold = bandThreshold + noiseGrid[idx] * landNoiseAmplitude;
-          lowlandMask[idx] = distanceToSea[idx] <= landThreshold;
-        }
-      }
+      
       const colors = new Array(N);
       for (let gy = 0; gy < this.gridHeight; gy++) {
         for (let gx = 0; gx < this.gridWidth; gx++) {
@@ -1161,7 +1090,8 @@ export default {
           gridData[idx] = {
             temperature,
             precipitation,
-            terrain
+            terrain,
+            colorHex: col
           };
         }
       }
@@ -1175,8 +1105,13 @@ export default {
           seededLakeStarts: Array.isArray(log.lakeStarts) ? log.lakeStarts : []
         };
       }
-      // 結果をemit（描画用の色配列は gridData の派生として扱い、gridDataのみ送出）
-      this.$emit('generated', { centerParameters: localCenterParameters, gridData, deterministicSeed: this.deterministicSeed });
+      // 結果をemit（平面グリッド用に displayColors も明示的に渡す）
+      this.$emit('generated', {
+        centerParameters: localCenterParameters,
+        gridData,
+        displayColors,
+        deterministicSeed: this.deterministicSeed
+      });
     }
   }
 }

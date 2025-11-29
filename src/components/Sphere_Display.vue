@@ -3,6 +3,7 @@
 </template>
 
 <script>
+import { deriveDisplayColorsFromGridData } from '../utils/colors.js';
 export default {
   name: 'Sphere_Display',
   props: {
@@ -23,6 +24,7 @@ export default {
     cloudPeriod: { type: Number, required: false, default: 16 }
   },
   methods: {
+    // colors utils are imported
     openSpherePopup() {
       const w = window.open('', 'SphereView', 'width=700,height=900');
       if (!w) return;
@@ -88,65 +90,7 @@ export default {
         this._isRotating = false;
       });
     },
-    // gridData -> display color array (+2 border)
-    _deriveDisplayColorsFromGridData(gridData, width, height) {
-      const displayWidth = width + 2;
-      const displayHeight = height + 2;
-      const displayColors = new Array(displayWidth * displayHeight);
-      const tc = (this.$store && this.$store.getters && this.$store.getters.terrainColors)
-        ? this.$store.getters.terrainColors
-        : {
-            deepSea: '#1E508C',
-            shallowSea: '#3C78B4',
-            lowland: '#228B22',
-            desert: '#96826E',
-            highland: '#91644B',
-            alpine: '#5F5046',
-            tundra: '#698736',
-            glacier: '#FFFFFF',
-            border: '#000000'
-          };
-      const deepSea = tc.deepSea;
-      const shallowSea = tc.shallowSea;
-      const lowland = tc.lowland;
-      const desert = tc.desert;
-      const highland = tc.highland;
-      const alpine = tc.alpine;
-      const tundra = tc.tundra;
-      const glacier = tc.glacier;
-      for (let gy = 0; gy < displayHeight; gy++) {
-        for (let gx = 0; gx < displayWidth; gx++) {
-          const displayIdx = gy * displayWidth + gx;
-          if (gy === 0 || gy === displayHeight - 1 || gx === 0 || gx === displayWidth - 1) {
-            displayColors[displayIdx] = (tc.border || '#000000');
-          } else {
-            const originalGy = gy - 1;
-            const originalGx = gx - 1;
-            const idx = originalGy * width + originalGx;
-            const cell = gridData[idx];
-            let col = lowland;
-            if (cell && cell.terrain) {
-              if (cell.terrain.type === 'sea') {
-                if (cell.terrain.sea === 'shallow') col = shallowSea;
-                else if (cell.terrain.sea === 'glacier') col = glacier;
-                else col = deepSea;
-              } else if (cell.terrain.type === 'land') {
-                const l = cell.terrain.land;
-                if (l === 'tundra') col = tundra;
-                else if (l === 'glacier') col = glacier;
-                else if (l === 'lake') col = shallowSea;
-                else if (l === 'highland') col = highland;
-                else if (l === 'alpine') col = alpine;
-                else if (l === 'desert') col = desert;
-                else col = lowland;
-              }
-            }
-            displayColors[displayIdx] = col;
-          }
-        }
-      }
-      return displayColors;
-    },
+    // derive display colors is imported
     buildHtml() {
       return `
 <!doctype html>
@@ -509,7 +453,7 @@ export default {
       // prepare displayColors from gridData if present, otherwise use a placeholder to keep rendering
       const expectedDisplayLen = (width + 2) * (height + 2);
       const displayColorsFromGridData = (this.gridData && this.gridData.length === width * height)
-        ? this._deriveDisplayColorsFromGridData(this.gridData, width, height)
+        ? deriveDisplayColorsFromGridData(this.gridData, width, height)
         : [];
       let displayColors = displayColorsFromGridData;
       if (!displayColorsFromGridData || displayColorsFromGridData.length < expectedDisplayLen) {
@@ -789,7 +733,7 @@ export default {
       // drawSphere start
       // derive displayColors once (available outside precompute block)
       let displayColors = (this.gridData && this.gridData.length === width * height)
-        ? this._deriveDisplayColorsFromGridData(this.gridData, width, height)
+        ? deriveDisplayColorsFromGridData(this.gridData, width, height)
         : [];
       if (!this._precompute || this._precompute.W !== W || this._precompute.H !== H || this._precompute.width !== width || this._precompute.height !== height || this._precompute.topBuf !== topBuf || this._precompute.bottomBuf !== bottomBuf) {
       const displayStride = width + 2;
@@ -803,20 +747,12 @@ export default {
       }
         // パレット作成（display配列インデックス -> RGB）
         const palette = new Uint8ClampedArray(displayColors.length * 3);
-        const parseRgb = (s, outIdx) => {
-          if (typeof s === 'string') {
-            const m = s.match(/rgba?\s*\(\s*([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9]+)/i);
-            if (m) {
-              palette[outIdx] = Number(m[1]);
-              palette[outIdx + 1] = Number(m[2]);
-              palette[outIdx + 2] = Number(m[3]);
-              return;
-            }
-          }
-          palette[outIdx] = 255; palette[outIdx + 1] = 255; palette[outIdx + 2] = 255;
-        };
         for (let i = 0; i < displayColors.length; i++) {
-          parseRgb(displayColors[i], i * 3);
+          const rgb = this.parseColorToRgb(displayColors[i]);
+          const outIdx = i * 3;
+          palette[outIdx] = rgb[0];
+          palette[outIdx + 1] = rgb[1];
+          palette[outIdx + 2] = rgb[2];
         }
         // ピクセルごとのマップ参照情報を作成
         const pixels = [];

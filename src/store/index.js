@@ -8,13 +8,13 @@ export default createStore({
         cloudAmount: 0.5,
         // グリッド地形ごとのカラー定義（Hex）
         terrainColors: {
-            deepSea: '#1E508C',     // rgb(30,80,140)
+            deepSea: '#1e508c',     // rgb(30,80,140)
             shallowSea: '#3C78B4',  // rgb(60,120,180)
             lowland: '#228B22',     // rgb(34,139,34)
             desert: '#96826E',      // rgb(150,130,110)
             highland: '#91644B',    // rgb(145,100,75)
             alpine: '#5F5046',      // rgb(95,80,70)
-            tundra: '#698736',      // 指定色
+            tundra: '#698736',      // 赤
             glacier: '#FFFFFF',     // rgb(255,255,255)
             border: '#000000'       // rgb(0,0,0)
         },
