@@ -4,7 +4,7 @@
 
 <script>
 import { deriveDisplayColorsFromGridData } from '../utils/colors.js';
-import { getEraTerrainColors, getEraLandTint } from '../utils/colors.js';
+import { getEraTerrainColors, getEraLandTint, getEraCloudTint } from '../utils/colors.js';
 export default {
   name: 'Sphere_Display',
   props: {
@@ -17,7 +17,7 @@ export default {
     polarNoiseStrength: { type: Number, required: false, default: 0.3 },
     polarNoiseScale: { type: Number, required: false, default: 0.01 },
     // 陸（氷河除く）に事後的に適用する色変更トーン
-    landTintColor: { type: String, required: false, default: 'rgb(150, 165, 185)' },
+    landTintColor: { type: String, required: false, default: null },
     landTintStrength: { type: Number, required: false, default: 0.35 },
     // 時代（色プリセット切替の将来拡張用）
     era: { type: String, required: false, default: null },
@@ -27,6 +27,29 @@ export default {
     cloudPeriod: { type: Number, required: false, default: 16 },
     // 極周辺での雲生成ブースト強度（0..1）。0で無効、1で強ブースト
     polarCloudBoost: { type: Number, required: false, default: 1.0 }
+  },
+  watch: {
+    era() {
+      // 時代変更時に即時再描画（回転していない場合の反映用）
+      if (this._sphereCanvas) {
+        if (this._useWebGL) this.drawWebGL(); else this.drawSphere(this._sphereCanvas);
+      }
+    },
+    cloudAmount() {
+      if (this._sphereCanvas) {
+        if (this._useWebGL) this.drawWebGL(); else this.drawSphere(this._sphereCanvas);
+      }
+    },
+    cloudPeriod() {
+      if (this._sphereCanvas) {
+        if (this._useWebGL) this.drawWebGL(); else this.drawSphere(this._sphereCanvas);
+      }
+    },
+    polarCloudBoost() {
+      if (this._sphereCanvas) {
+        if (this._useWebGL) this.drawWebGL(); else this.drawSphere(this._sphereCanvas);
+      }
+    }
   },
   methods: {
     // colors utils are imported
@@ -282,6 +305,7 @@ export default {
         uniform float u_cloudAmount;      // 0..1
         uniform float u_cloudPeriod;      // e.g. 16
         uniform float u_polarCloudBoost;  // 0..1
+        uniform vec3 u_cloudColor;        // 0..1
         const float PI = 3.141592653589793;
         // hash + FBM (fractal) noise (legacy, polar blend用)
         float hash(vec2 p) {
@@ -412,7 +436,7 @@ export default {
           float depth = clamp((nCloud - t) / max(1e-3, 1.0 - t), 0.0, 1.0);
           float detail = fbmTile(vec2(uEff, vEff) + vec2(0.123, 0.456), max(2.0, u_cloudPeriod * 4.0));
           float density = mix(0.3, 1.0, 0.5 * detail + 0.5 * depth);
-          vec3 outCol = mix(baseCol, vec3(1.0), coverage * alpha * density);
+          vec3 outCol = mix(baseCol, u_cloudColor, coverage * alpha * density);
           gl_FragColor = vec4(outCol, 1.0);
         }
       `;
@@ -556,7 +580,8 @@ export default {
         u_polarNoiseStrength: gl.getUniformLocation(prog, 'u_polarNoiseStrength'),
         u_cloudAmount: gl.getUniformLocation(prog, 'u_cloudAmount'),
         u_cloudPeriod: gl.getUniformLocation(prog, 'u_cloudPeriod'),
-        u_polarCloudBoost: gl.getUniformLocation(prog, 'u_polarCloudBoost')
+        u_polarCloudBoost: gl.getUniformLocation(prog, 'u_polarCloudBoost'),
+        u_cloudColor: gl.getUniformLocation(prog, 'u_cloudColor')
       };
       // set static uniforms
       gl.uniform1i(this._glUniforms.u_texture, 0);
@@ -605,6 +630,19 @@ export default {
       if (this._glUniforms.u_polarCloudBoost) {
         gl.uniform1f(this._glUniforms.u_polarCloudBoost, Math.max(0, Math.min(1, this.polarCloudBoost || 0)));
       }
+      // era-based cloud color (normalized 0..1)
+      try {
+        const cloudHex = getEraCloudTint(this.era);
+        const c = this.parseColorToRgb(cloudHex);
+        this._glCloudColor = new Float32Array([ (c[0]||255)/255, (c[1]||255)/255, (c[2]||255)/255 ]);
+        if (this._glUniforms.u_cloudColor) {
+          gl.uniform3fv(this._glUniforms.u_cloudColor, this._glCloudColor);
+        }
+      } catch (e) {
+        if (this._glUniforms.u_cloudColor) {
+          gl.uniform3fv(this._glUniforms.u_cloudColor, new Float32Array([1,1,1]));
+        }
+      }
       // viewport
       gl.viewport(0, 0, canvas.width, canvas.height);
       this._gl = gl;
@@ -644,6 +682,13 @@ export default {
       }
       if (this._glUniforms && this._glUniforms.u_polarCloudBoost) {
         gl.uniform1f(this._glUniforms.u_polarCloudBoost, Math.max(0, Math.min(1, this.polarCloudBoost || 0)));
+      }
+      // keep cloud color in sync (in case era changes dynamically)
+      if (this._glUniforms && this._glUniforms.u_cloudColor) {
+        const cloudHex = getEraCloudTint(this.era);
+        const c = this.parseColorToRgb(cloudHex);
+        const v = new Float32Array([ (c[0]||255)/255, (c[1]||255)/255, (c[2]||255)/255 ]);
+        gl.uniform3fv(this._glUniforms.u_cloudColor, v);
       }
       // draw
       gl.clearColor(0,0,0,1);
@@ -970,9 +1015,10 @@ export default {
             const detail = this._fbmTile((uEff + 0.123) % 1, (vEff + 0.456) % 1, (this.cloudPeriod || 16) * 4);
             const density = 0.3 + (1.0 - 0.3) * (0.5 * detail + 0.5 * depth);
             const k = Math.max(0, Math.min(1, coverage * alpha * density));
-            rr = Math.round(rr * (1 - k) + 255 * k);
-            gg = Math.round(gg * (1 - k) + 255 * k);
-            bb = Math.round(bb * (1 - k) + 255 * k);
+            const cloudTint = this.parseColorToRgb(getEraCloudTint(this.era));
+            rr = Math.round(rr * (1 - k) + cloudTint[0] * k);
+            gg = Math.round(gg * (1 - k) + cloudTint[1] * k);
+            bb = Math.round(bb * (1 - k) + cloudTint[2] * k);
           }
           data[offset] = rr;
           data[offset + 1] = gg;
@@ -1039,9 +1085,10 @@ export default {
             const detail = this._fbmTile((uEff + 0.123) % 1, (vEff + 0.456) % 1, (this.cloudPeriod || 16) * 4);
             const density = 0.3 + (1.0 - 0.3) * (0.5 * detail + 0.5 * depth);
             const k = Math.max(0, Math.min(1, coverage * alpha * density));
-            rr = Math.round(rr * (1 - k) + 255 * k);
-            gg = Math.round(gg * (1 - k) + 255 * k);
-            bb = Math.round(bb * (1 - k) + 255 * k);
+            const cloudTint = this.parseColorToRgb(getEraCloudTint(this.era));
+            rr = Math.round(rr * (1 - k) + cloudTint[0] * k);
+            gg = Math.round(gg * (1 - k) + cloudTint[1] * k);
+            bb = Math.round(bb * (1 - k) + cloudTint[2] * k);
           }
           data[offset] = rr;
           data[offset + 1] = gg;

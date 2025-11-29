@@ -6,6 +6,8 @@ export default createStore({
         averageTemperature: 15,
         // 雲量（0..1）
         cloudAmount: 0.5,
+        // 平面地図の1グリッドのピクセル数（1..10）
+        planeGridCellPx: 3,
 
         // 地表反射率（アルベド、0..1）
         albedo: 0.3,
@@ -23,7 +25,8 @@ export default createStore({
     getters: {
         averageTemperature: (state) => state.averageTemperature,
         era: (state) => state.era,
-        terrainColors: (state) => state.terrainColors
+        terrainColors: (state) => state.terrainColors,
+        planeGridCellPx: (state) => state.planeGridCellPx
     },
     mutations: {
         setAverageTemperature(state, value) {
@@ -31,6 +34,9 @@ export default createStore({
         },
         setEra(state, value) {
             state.era = value;
+        },
+        setPlaneGridCellPx(state, value) {
+            state.planeGridCellPx = value;
         }
     },
     actions: {
@@ -39,6 +45,14 @@ export default createStore({
         },
         updateEra({ commit }, value) {
             commit('setEra', value);
+        },
+        updatePlaneGridCellPx({ commit }, value) {
+            // 安全側に丸め＋クランプ
+            let v = Math.round(Number(value));
+            if (!isFinite(v)) v = 3;
+            if (v < 1) v = 1;
+            if (v > 10) v = 10;
+            commit('setPlaneGridCellPx', v);
         }
     }
 });

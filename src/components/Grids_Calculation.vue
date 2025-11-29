@@ -1060,6 +1060,11 @@ export default {
       const cultivatedMask = new Array(N).fill(false);
       const rCity = this._getDerivedRng('city') || Math.random;
       const rCult = this._getDerivedRng('cultivated') || Math.random;
+      // 地域差ノイズ（都市の発生率に地域バイアスを付与）
+      // fractalNoise2D は [-1,1] を返す。これを [cityBiasMin, cityBiasMax] に線形マップして倍率とする
+      const cityBiasScale = 0.01; // 小さいほど広域パッチ
+      const cityBiasMin = 0.05;   // 発生しにくい地域
+      const cityBiasMax = 8.0;    // 発生しやすい地域
       const isAdjacentToSea = (gx, gy) => {
         const dirs4 = [{dx:-1,dy:0},{dx:1,dy:0},{dx:0,dy:-1},{dx:0,dy:1}];
         for (const d of dirs4) {
@@ -1069,6 +1074,24 @@ export default {
           if (!landMask[nIdx]) return true; // 海
         }
         return false;
+      };
+      // 1グリッド島（周囲8近傍に陸が存在しない）なら city 開始セルにしない
+      const isOneCellIsland = (gx, gy) => {
+        const idx0 = gy * this.gridWidth + gx;
+        if (!landMask[idx0]) return false; // 陸でなければ対象外
+        const dirs8 = [
+          { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+          { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+          { dx: -1, dy: -1 }, { dx: 1, dy: -1 },
+          { dx: -1, dy: 1 }, { dx: 1, dy: 1 }
+        ];
+        for (const d of dirs8) {
+          const w = this.torusWrap(gx + d.dx, gy + d.dy);
+          if (!w) continue;
+          const nIdx = w.y * this.gridWidth + w.x;
+          if (landMask[nIdx]) return false; // 近傍に陸があれば1セル島ではない
+        }
+        return true;
       };
       // 文明時代のみ city/cultivated を生成
       const isCivilizationEra = (this.era === '文明時代');
@@ -1082,8 +1105,16 @@ export default {
             if (cityMask[idx]) continue;
             // city
             const baseCity = Math.max(0, this.cityGenerationProbability || 0);
-            const pcCity = isAdjacentToSea(gx, gy) ? Math.min(1, baseCity * 10) : baseCity;
-            if (pcCity > 0 && (rCity() < pcCity) && !cityMask[idx]) {
+            // 地域差ノイズによる倍率
+            // 座標はそのまま渡し、スケールは引数で指定（ダブルスケーリングを避ける）
+            const nCity = this.fractalNoise2D(gx, gy, 4, 0.5, cityBiasScale);
+            const uCity = (nCity + 1) * 0.5; // [0,1]
+            const cityBias = Math.max(cityBiasMin, Math.min(cityBiasMax, cityBiasMin + uCity * (cityBiasMax - cityBiasMin)));
+            const biasedBaseCity = baseCity * cityBias;
+            const pcCity = isAdjacentToSea(gx, gy) ? Math.min(1, biasedBaseCity * 10) : Math.min(1, biasedBaseCity);
+            // 開始セルの採択は座標由来のシードで決定（安定化）
+            const startCityRng = this._getDerivedRng('city-start', gx, gy) || rCity;
+            if (pcCity > 0 && !isOneCellIsland(gx, gy) && (startCityRng() < pcCity) && !cityMask[idx]) {
               // クラスタ生成: 平均 ~3 グリッドの面積（Poissonサンプル）
               const clusterRng = this._getDerivedRng('city-cluster', gx, gy) || Math.random;
               const targetSize = Math.max(1, this._poissonSample(3, 50, clusterRng));
@@ -1121,7 +1152,9 @@ export default {
             // cultivated
             const baseCult = Math.max(0, this.cultivatedGenerationProbability || 0);
             const pcCult = isAdjacentToSea(gx, gy) ? Math.min(1, baseCult * 10) : baseCult;
-            if (pcCult > 0 && (rCult() < pcCult) && !cultivatedMask[idx]) {
+            // 開始セルの採択は座標由来のシードで決定（安定化）
+            const startCultRng = this._getDerivedRng('cultivated-start', gx, gy) || rCult;
+            if (pcCult > 0 && (startCultRng() < pcCult) && !cultivatedMask[idx]) {
               // クラスタ生成: 平均 ~5 グリッドの面積（Poissonサンプル）
               const clusterRng = this._getDerivedRng('cultivated-cluster', gx, gy) || Math.random;
               const targetSize = Math.max(1, this._poissonSample(5, 50, clusterRng));

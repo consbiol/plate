@@ -137,6 +137,22 @@ export function getEraColors_PteridophyteGymnospermExpansion() {
         cultivated: '#ffff00'
     };
 }
+// 新名称対応: PteridophyteExpansion（表示名: シダ植物時代）
+export function getEraColors_PteridophyteExpansion() {
+    return {
+        deepSea: '#1E508C',
+        shallowSea: '#3C78B4',
+        lowland: '#228B22',
+        desert: '#96826E',
+        highland: '#91644B',
+        alpine: '#5F5046',
+        tundra: '#7ea836',
+        glacier: '#FFFFFF',
+        border: '#000000',
+        city: '#F15A22',
+        cultivated: '#ffff00'
+    };
+}
 export function getEraColors_GreatForest() {
     return {
         deepSea: '#1E508C',
@@ -176,7 +192,7 @@ const ERA_COLOR_FACTORIES = {
     '多細胞生物誕生時代': getEraColors_Multicellular,
     '海洋生物多様化時代': getEraColors_MarineDiversification,
     '苔類進出時代': getEraColors_BryophyteExpansion,
-    'シダ類・裸子植物進出時代': getEraColors_PteridophyteGymnospermExpansion,
+    'シダ植物時代': getEraColors_PteridophyteExpansion,
     '大森林時代': getEraColors_GreatForest,
     '文明時代': getEraColors_Civilization
 };
@@ -188,22 +204,48 @@ export function getEraTerrainColors(era) {
 }
 
 // Sphere 用: 時代別の陸トーン（既定は大森林時代と同じ値）
+// 時代別の陸トーン色（Sphere の陸に貼るトーン）。初期値は全時代とも #96A5B9。
+// 後で個別に変更したい場合は、このマップの値を編集してください。
+const ERA_LAND_TINTS = {
+    '爆撃時代': '#96A5B9',
+    '嫌気性細菌誕生時代': '#96A5B9',
+    '光合成細菌誕生時代': '#FF0000',
+    '真核生物誕生時代': '#96A5B9',
+    '多細胞生物誕生時代': '#96A5B9',
+    '海洋生物多様化時代': '#96A5B9',
+    '苔類進出時代': '#96A5B9',
+    'シダ植物時代': '#96A5B9',
+    '大森林時代': '#96A5B9',
+    '文明時代': '#96A5B9'
+};
 export function getEraLandTint(era) {
-    const def = 'rgb(150, 165, 185)';
-    const ERA_TINT_FACTORIES = {
-        '爆撃時代': () => def,
-        '嫌気性細菌誕生時代': () => def,
-        '光合成細菌誕生時代': () => def,
-        '真核生物誕生時代': () => def,
-        '多細胞生物誕生時代': () => def,
-        '海洋生物多様化時代': () => def,
-        '苔類進出時代': () => def,
-        'シダ類・裸子植物進出時代': () => def,
-        '大森林時代': () => def,
-        '文明時代': () => def
-    };
-    const fn = era && Object.prototype.hasOwnProperty.call(ERA_TINT_FACTORIES, era) ? ERA_TINT_FACTORIES[era] : null;
-    return fn ? fn() : def;
+    const def = '#96A5B9';
+    if (era && Object.prototype.hasOwnProperty.call(ERA_LAND_TINTS, era)) {
+        return ERA_LAND_TINTS[era];
+    }
+    return def;
+}
+
+// 時代別の雲トーン色（Sphere の雲レイヤに貼る色）。初期値は全時代とも #FFFFFF。
+// 後で個別に変更したい場合は、このマップの値を編集してください。
+const ERA_CLOUD_TINTS = {
+    '爆撃時代': '#FFFFFF',
+    '嫌気性細菌誕生時代': '#FFFFFF',
+    '光合成細菌誕生時代': '#FFFFFF',
+    '真核生物誕生時代': '#FFFFFF',
+    '多細胞生物誕生時代': '#ED1A3D',
+    '海洋生物多様化時代': '#FFFFFF',
+    '苔類進出時代': '#FFFFFF',
+    'シダ植物時代': '#FFFFFF',
+    '大森林時代': '#FFFFFF',
+    '文明時代': '#FFFFFF'
+};
+export function getEraCloudTint(era) {
+    const def = '#FFFFFF';
+    if (era && Object.prototype.hasOwnProperty.call(ERA_CLOUD_TINTS, era)) {
+        return ERA_CLOUD_TINTS[era];
+    }
+    return def;
 }
 
 function cellToColor(cell, tc, preferPalette) {
@@ -211,32 +253,32 @@ function cellToColor(cell, tc, preferPalette) {
     if (!preferPalette && cell && typeof cell.colorHex === 'string') {
         return cell.colorHex;
     }
-    // 城市エリアの色設定: city 名称がある場合は中間灰色で表示
+    // 基礎色（地形種）を決定
+    let base = tc.lowland;
+    if (cell && cell.terrain) {
+        if (cell.terrain.type === 'sea') {
+            if (cell.terrain.sea === 'shallow') base = tc.shallowSea;
+            else if (cell.terrain.sea === 'glacier') base = tc.glacier;
+            else base = tc.deepSea;
+        } else if (cell.terrain.type === 'land') {
+            const l = cell.terrain.land;
+            if (l === 'tundra') base = tc.tundra;
+            else if (l === 'glacier') base = tc.glacier;
+            else if (l === 'lake') base = tc.shallowSea;
+            else if (l === 'highland') base = tc.highland;
+            else if (l === 'alpine') base = tc.alpine;
+            else if (l === 'desert') base = tc.desert;
+            else base = tc.lowland;
+        }
+    }
+    // 上書き（city/cultivated は最優先）
     if (cell && cell.city) {
         return (tc && tc.city) ? tc.city : '#808080';
     }
-    // 農耕地/耕作地の色設定
     if (cell && cell.cultivated) {
         return (tc && tc.cultivated) ? tc.cultivated : '#556655';
     }
-    let col = tc.lowland;
-    if (cell && cell.terrain) {
-        if (cell.terrain.type === 'sea') {
-            if (cell.terrain.sea === 'shallow') col = tc.shallowSea;
-            else if (cell.terrain.sea === 'glacier') col = tc.glacier;
-            else col = tc.deepSea;
-        } else if (cell.terrain.type === 'land') {
-            const l = cell.terrain.land;
-            if (l === 'tundra') col = tc.tundra;
-            else if (l === 'glacier') col = tc.glacier;
-            else if (l === 'lake') col = tc.shallowSea;
-            else if (l === 'highland') col = tc.highland;
-            else if (l === 'alpine') col = tc.alpine;
-            else if (l === 'desert') col = tc.desert;
-            else col = tc.lowland;
-        }
-    }
-    return col;
+    return base;
 }
 
 // gridData -> display color array (+2 border)

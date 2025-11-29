@@ -66,6 +66,11 @@
       <span style="margin-left:8px">{{ (local.cloudAmount || 0).toFixed(2) }}</span>
     </div>
     <div style="margin-bottom: 8px;">
+      <label>平面地図のグリッド1マスのピクセル数: </label>
+      <input type="range" min="1" max="10" step="1" v-model.number="planeGridCellPx" />
+      <span style="margin-left:8px">{{ planeGridCellPx }} px</span>
+    </div>
+    <div style="margin-bottom: 8px;">
       <label>時代: </label>
       <select v-model="local.era" @change="onEraChange">
         <option v-for="e in eras" :key="e" :value="e">{{ e }}</option>
@@ -311,7 +316,7 @@ export default {
         '多細胞生物誕生時代',
         '海洋生物多様化時代',
         '苔類進出時代',
-        'シダ類・裸子植物進出時代',
+        'シダ植物時代',
         '大森林時代',
         '文明時代'
       ],
@@ -376,6 +381,23 @@ export default {
           this.$store.dispatch('updateAverageTemperature', num);
         }
         this.updateAverageTemperature(num);
+      }
+    },
+    planeGridCellPx: {
+      get() {
+        if (this.$store && this.$store.getters && typeof this.$store.getters.planeGridCellPx === 'number') {
+          return this.$store.getters.planeGridCellPx;
+        }
+        return 3;
+      },
+      set(val) {
+        let v = Math.round(Number(val));
+        if (!isFinite(v)) v = 3;
+        if (v < 1) v = 1;
+        if (v > 10) v = 10;
+        if (this.$store && typeof this.$store.dispatch === 'function') {
+          this.$store.dispatch('updatePlaneGridCellPx', v);
+        }
       }
     },
     topTundraRowsComputed() {

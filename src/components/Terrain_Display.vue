@@ -4,7 +4,7 @@
       v-for="(color, idx) in displayColors"
       :key="idx"
       class="cell"
-      :style="{ backgroundColor: color }"
+      :style="{ backgroundColor: color, width: (cellSizePx + 'px'), height: (cellSizePx + 'px') }"
     />
   </div>
 </template>
@@ -27,6 +27,16 @@ export default {
     era: { type: String, required: false, default: null }
   },
   computed: {
+    cellSizePx() {
+      const v = (this.$store && this.$store.getters && typeof this.$store.getters.planeGridCellPx === 'number')
+        ? this.$store.getters.planeGridCellPx
+        : 3;
+      const iv = Math.round(Number(v));
+      if (!isFinite(iv)) return 3;
+      if (iv < 1) return 1;
+      if (iv > 10) return 10;
+      return iv;
+    },
     displayColors() {
       const width = this.gridWidth;
       const height = this.gridHeight;
@@ -66,8 +76,8 @@ export default {
       const displayGridWidth = this.gridWidth + 2;
       return {
         display: 'grid',
-        gridTemplateColumns: `repeat(${displayGridWidth}, 6px)`,
-        gridAutoRows: '6px'
+        gridTemplateColumns: `repeat(${displayGridWidth}, ${this.cellSizePx}px)`,
+        gridAutoRows: `${this.cellSizePx}px`
       };
     }
   }
