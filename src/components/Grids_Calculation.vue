@@ -54,7 +54,9 @@ export default {
     averageLakesPerCenter: { type: Number, required: true },
     averageHighlandsPerCenter: { type: Number, required: true },
     centerParameters: { type: Array, required: true },
-    generateSignal: { type: Number, required: true }
+    generateSignal: { type: Number, required: true },
+    // 歪みの強さを方向角度に対して適用する係数（デフォルト 2.0）
+    directionDistortionScale: { type: Number, required: false, default: 4.0 }
   },
   data() {
     return {};
@@ -261,15 +263,28 @@ export default {
     },
     // 基本色の集約定義（機能不変）
     _getBaseColors() {
+      const tc = (this.$store && this.$store.getters && this.$store.getters.terrainColors)
+        ? this.$store.getters.terrainColors
+        : {
+            deepSea: '#1E508C',
+            shallowSea: '#3C78B4',
+            lowland: '#228B22',
+            desert: '#96826E',
+            highland: '#91644B',
+            alpine: '#5F5046',
+            tundra: '#698736',
+            glacier: '#FFFFFF',
+            border: '#000000'
+          };
       return {
-        deepSeaColor: 'rgb(30, 80, 140)',
-        shallowSeaColor: 'rgb(60, 120, 180)',
-        lowlandColor: 'rgb(34, 139, 34)',
-        desertColor: 'rgb(150, 130, 110)',   // 乾燥地: 茶色がかった灰色
-        highlandColor: 'rgb(145, 100, 75)',  // 高地: 灰色がかった茶色
-        alpineColor: 'rgb(95, 80, 70)',      // 高山: 灰色がかった焦げ茶色
-        tundraColor: 'rgb(104, 131, 56)',    // ツンドラ: モスグリーン
-        glacierColor: 'rgb(255, 255, 255)'
+        deepSeaColor: tc.deepSea,
+        shallowSeaColor: tc.shallowSea,
+        lowlandColor: tc.lowland,
+        desertColor: tc.desert,     // 乾燥地
+        highlandColor: tc.highland, // 高地
+        alpineColor: tc.alpine,     // 高山
+        tundraColor: tc.tundra,     // ツンドラ
+        glacierColor: tc.glacier
       };
     },
     // Poissonサンプリング（湖/高地の個数決定用）- 既存ロジックの関数化（乱数消費順不変）
@@ -687,7 +702,8 @@ export default {
             const n = fractalN * 0.60 + simpleNoise * 0.40; // フラクタルノイズの比率を上げて形状を不規則に
             let angleDiff = Math.abs(angle - centerNoise.directionAngle);
             if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
-            const directionalBoost = 1.0 + Math.max(0, Math.cos(angleDiff)) * 0.8;
+            const distortionScale = (this.directionDistortionScale != null) ? this.directionDistortionScale : 2.0;
+            const directionalBoost = 1.0 + Math.max(0, Math.cos(angleDiff)) * (0.8 * distortionScale);
             const score = (base + this.noiseAmp * n) * centerNoise.influenceMultiplier * directionalBoost;
             if (score > maxScore) maxScore = score;
           }
@@ -962,7 +978,9 @@ export default {
       }
       const displayGridWidth = this.gridWidth + 2;
       const displayGridHeight = this.gridHeight + 2;
-      const borderColor = 'rgb(0, 0, 0)';
+      const borderColor = (this.$store && this.$store.getters && this.$store.getters.terrainColors && this.$store.getters.terrainColors.border)
+        ? this.$store.getters.terrainColors.border
+        : '#000000';
       const displayColors = new Array(displayGridWidth * displayGridHeight);
       for (let gy = 0; gy < displayGridHeight; gy++) {
         for (let gx = 0; gx < displayGridWidth; gx++) {

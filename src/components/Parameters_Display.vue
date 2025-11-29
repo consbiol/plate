@@ -12,7 +12,7 @@
     </div>
     <div style="margin-bottom: 8px;">
       <label>陸の割合 x: </label>
-      <input type="number" min="0.01" max="0.99" step="0.01" v-model.number="local.seaLandRatio" @change="emitField('seaLandRatio', local.seaLandRatio)" />
+      <input type="number" min="0.01" max="0.99" step="0.1" v-model.number="local.seaLandRatio" @change="emitField('seaLandRatio', local.seaLandRatio)" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>中心間の排他距離 (グリッド): </label>

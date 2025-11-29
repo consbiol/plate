@@ -93,19 +93,32 @@ export default {
       const displayWidth = width + 2;
       const displayHeight = height + 2;
       const displayColors = new Array(displayWidth * displayHeight);
-      const deepSea = 'rgb(30, 80, 140)';
-      const shallowSea = 'rgb(60, 120, 180)';
-      const lowland = 'rgb(34, 139, 34)';
-      const desert = 'rgb(150, 130, 110)';
-      const highland = 'rgb(145, 100, 75)';
-      const alpine = 'rgb(95, 80, 70)';
-      const tundra = 'rgb(180, 150, 80)';
-      const glacier = 'rgb(255, 255, 255)';
+      const tc = (this.$store && this.$store.getters && this.$store.getters.terrainColors)
+        ? this.$store.getters.terrainColors
+        : {
+            deepSea: '#1E508C',
+            shallowSea: '#3C78B4',
+            lowland: '#228B22',
+            desert: '#96826E',
+            highland: '#91644B',
+            alpine: '#5F5046',
+            tundra: '#698736',
+            glacier: '#FFFFFF',
+            border: '#000000'
+          };
+      const deepSea = tc.deepSea;
+      const shallowSea = tc.shallowSea;
+      const lowland = tc.lowland;
+      const desert = tc.desert;
+      const highland = tc.highland;
+      const alpine = tc.alpine;
+      const tundra = tc.tundra;
+      const glacier = tc.glacier;
       for (let gy = 0; gy < displayHeight; gy++) {
         for (let gx = 0; gx < displayWidth; gx++) {
           const displayIdx = gy * displayWidth + gx;
           if (gy === 0 || gy === displayHeight - 1 || gx === 0 || gx === displayWidth - 1) {
-            displayColors[displayIdx] = 'rgb(0, 0, 0)';
+            displayColors[displayIdx] = (tc.border || '#000000');
           } else {
             const originalGy = gy - 1;
             const originalGx = gx - 1;
@@ -165,11 +178,16 @@ export default {
   </body>
 </html>`;
     },
-    // color string like 'rgb(r,g,b)' -> [r,g,b]
+    // color string like 'rgb(r,g,b)' or '#RRGGBB' -> [r,g,b]
     parseColorToRgb(s) {
       if (!s) return [255,255,255];
       if (Array.isArray(s)) return s;
       if (typeof s === 'string') {
+        const hx = s.trim().match(/^#([0-9a-fA-F]{6})$/);
+        if (hx) {
+          const v = parseInt(hx[1], 16);
+          return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+        }
         const m = s.match(/rgba?\s*\(\s*([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9]+)/i);
         if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
       }
@@ -434,7 +452,7 @@ export default {
           float edge = 0.08;
           float coverage = smoothstep(t - edge, t + edge, nCloud);
           // 雲の不透明度
-          float alpha = 0.90 + 1.20 * sqrt(eff);
+          float alpha = 0.70 + 1.0 * sqrt(eff);
           // 覆われた領域内の濃淡（厚み + 高周波ディテール）で変調
           float depth = clamp((nCloud - t) / max(1e-3, 1.0 - t), 0.0, 1.0);
           float detail = fbmTile(vec2(uEff, vEff) + vec2(0.123, 0.456), max(2.0, u_cloudPeriod * 4.0));
