@@ -55,8 +55,10 @@ export default {
     averageHighlandsPerCenter: { type: Number, required: true },
     centerParameters: { type: Array, required: true },
     generateSignal: { type: Number, required: true },
-    // 歪みの強さを方向角度に対して適用する係数（デフォルト 2.0）
-    directionDistortionScale: { type: Number, required: false, default: 4.0 }
+    // 大陸の歪みの強さを方向角度に対して適用する係数（デフォルト 2.0）
+    directionDistortionScale: { type: Number, required: false, default: 4.0 },
+    // 指定要素のみ決定化するためのシード（未指定時は従来通り）
+    deterministicSeed: { type: [Number, String], required: false, default: null }
   },
   data() {
     return {};
@@ -70,6 +72,42 @@ export default {
     // 何もしない（初期マウント時の処理は不要）
   },
   methods: {
+    // サブRNG（サブストリーム）生成: ベースの deterministicSeed にラベルを連結して独立RNGを作る
+    _getDerivedRng(...labels) {
+      if (this.deterministicSeed === null || this.deterministicSeed === undefined || this.deterministicSeed === '') return null;
+      const seedStr = [String(this.deterministicSeed), ...labels.map(v => String(v))].join('|');
+      const h = this._xmur3(seedStr)();
+      return this._mulberry32(h);
+    },
+    // --- シード対応RNG（mulberry32 + xmur3） ---
+    _xmur3(str) {
+      const s = String(str);
+      let h = 1779033703 ^ s.length;
+      for (let i = 0; i < s.length; i++) {
+        h = Math.imul(h ^ s.charCodeAt(i), 3432918353);
+        h = (h << 13) | (h >>> 19);
+      }
+      return function() {
+        h = Math.imul(h ^ (h >>> 16), 2246822507);
+        h = Math.imul(h ^ (h >>> 13), 3266489909);
+        h ^= h >>> 16;
+        return h >>> 0;
+      };
+    },
+    _mulberry32(a) {
+      return function() {
+        let t = (a += 0x6D2B79F5);
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    },
+    _getSeededRng() {
+      if (this.deterministicSeed === null || this.deterministicSeed === undefined || this.deterministicSeed === '') return null;
+      const seedFn = this._xmur3(this.deterministicSeed);
+      const s = seedFn();
+      return this._mulberry32(s);
+    },
     // トーラス上の距離（xは通常ラップ、yは端で半分ずらして接続）
     torusDistance(x1, y1, x2, y2) {
       const dx = Math.min(Math.abs(x1 - x2), this.gridWidth - Math.abs(x1 - x2));
@@ -184,8 +222,11 @@ export default {
       const wobbleRows = Math.max(0, Math.floor(this.landBandVerticalWobbleRows || 0));
       let yShifted = y;
       if (wobbleRows > 0) {
-        // noise2D returns -1..1; scale to wobbleRows and round
-        const shift = Math.round(this.noise2D((x || 0) * (this.landBandWobbleXScale || 0.05), 0) * wobbleRows);
+        // 実行ごと完全ランダム（シード非依存）。runGenerateで列ごと事前計算があればそれを使用。
+        const pre = this._wobbleShiftByX && Number.isFinite(this._wobbleShiftByX[x]) ? this._wobbleShiftByX[x] : null;
+        const shift = (pre != null)
+          ? pre
+          : Math.round((Math.random() * 2 - 1) * wobbleRows);
         yShifted = Math.max(0, Math.min(this.gridHeight - 1, y + shift));
       }
       const dPole = Math.min(yShifted, this.gridHeight - 1 - yShifted);
@@ -288,10 +329,10 @@ export default {
       };
     },
     // Poissonサンプリング（湖/高地の個数決定用）- 既存ロジックの関数化（乱数消費順不変）
-    _poissonSample(lambda, maxK = 20) {
+    _poissonSample(lambda, maxK = 20, rng) {
       let count = 0;
       let p = Math.exp(-lambda);
-      let rand = Math.random();
+      let rand = (rng || Math.random)();
       let sum = p;
       for (let k = 0; k < maxK; k++) {
         if (rand < sum) { count = k; break; }
@@ -368,7 +409,8 @@ export default {
           const idx = gy * this.gridWidth + gx;
           if (colors[idx] !== lowlandColor) continue;
           const distanceFromTop = gy;
-          const noise = this.noise2D(gx, gy) * landNoiseAmplitude;
+          // ツンドラ幅は完全ランダム（シード非依存）
+          const noise = (Math.random() * 2 - 1) * landNoiseAmplitude;
           const threshold = this.topTundraRows + noise;
           if (distanceFromTop < threshold) {
             colors[idx] = tundraColor;
@@ -380,7 +422,7 @@ export default {
           const idx = gy * this.gridWidth + gx;
           if (colors[idx] !== lowlandColor) continue;
           const distanceFromBottom = this.gridHeight - 1 - gy;
-          const noise = this.noise2D(gx, gy) * landNoiseAmplitude;
+          const noise = (Math.random() * 2 - 1) * landNoiseAmplitude;
           const threshold = this.topTundraRows + noise;
           if (distanceFromBottom < threshold) {
             colors[idx] = tundraColor;
@@ -449,22 +491,29 @@ export default {
       }
     },
     // 湖の生成（各中心ごと）＋周囲低地化（縁取り）
-    _generateLakes(centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor) {
+    _generateLakes(centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog) {
       const N = this.gridWidth * this.gridHeight;
       const lakeMask = new Array(N).fill(false);
       for (let ci = 0; ci < centers.length; ci++) {
         const lambda = this.averageLakesPerCenter;
+        // 湖の個数はランダム（シード非依存）だが、開始セルはシードで決定する
         const numLakes = this._poissonSample(lambda, 20);
         const centerLandGrids = centerLandCells[ci] || [];
         for (let lakeIdx = 0; lakeIdx < numLakes; lakeIdx++) {
           if (centerLandGrids.length === 0) break;
           let start = null;
           for (let attempt = 0; attempt < 10; attempt++) {
-            const startIdx = Math.floor(Math.random() * centerLandGrids.length);
+            const r = seededRng || Math.random; // 開始セルのみシードで決定
+            const startIdx = Math.floor(r() * centerLandGrids.length);
             const cand = centerLandGrids[startIdx];
             if (landMask[cand.idx] && !lakeMask[cand.idx]) { start = cand; break; }
           }
           if (!start) continue;
+          // シードで決定された湖の開始セルを記録
+          if (seededLog && seededLog[ci]) {
+            if (!Array.isArray(seededLog[ci].lakeStarts)) seededLog[ci].lakeStarts = [];
+            seededLog[ci].lakeStarts.push({ x: start.x, y: start.y });
+          }
           const targetSize = 3 + Math.floor(Math.random() * 13);
           const lakeQueue = [{ x: start.x, y: start.y, idx: start.idx }];
           const visited = new Set([start.idx]);
@@ -526,27 +575,43 @@ export default {
       return lakeMask;
     },
     // 高地生成（各中心ごと）
-    _generateHighlands(centers, centerLandCells, landMask, lakeMask, colors, highlandColor) {
+    _generateHighlands(centers, centerLandCellsPre, preLandMask, lakeMask, colors, highlandColor, seededRng, seededLog) {
       const N = this.gridWidth * this.gridHeight;
       const highlandMask = new Array(N).fill(false);
       for (let ci = 0; ci < centers.length; ci++) {
+        // 高地（中心単位）のサブRNG
+        const centerRng = this._getDerivedRng('highland-center', ci);
         const lambda = this.averageHighlandsPerCenter;
-        const numHighlands = this._poissonSample(lambda, 20);
-        const centerLandGrids = centerLandCells[ci] || [];
+        const numHighlands = this._poissonSample(lambda, 20, centerRng || seededRng); // 個数はシードで決定
+        if (seededLog && seededLog[ci]) {
+          seededLog[ci].highlandsCount = numHighlands;
+          if (!Array.isArray(seededLog[ci].highlandClusters)) seededLog[ci].highlandClusters = [];
+        }
+        const centerLandGrids = centerLandCellsPre[ci] || [];
         for (let highlandIdx = 0; highlandIdx < numHighlands; highlandIdx++) {
+          // 高地（クラスター単位）のサブRNG
+          const clusterRng = this._getDerivedRng('highland-cluster', ci, highlandIdx);
           if (centerLandGrids.length === 0) break;
           let start = null;
           for (let attempt = 0; attempt < 10; attempt++) {
-            const startIdx = Math.floor(Math.random() * centerLandGrids.length);
+            const r = clusterRng || seededRng || Math.random; // 開始セルはサブRNG優先
+            const startIdx = Math.floor(r() * centerLandGrids.length);
             const cand = centerLandGrids[startIdx];
-            if (landMask[cand.idx] && !lakeMask[cand.idx] && !highlandMask[cand.idx]) { start = cand; break; }
+            if (preLandMask[cand.idx] && !lakeMask[cand.idx] && !highlandMask[cand.idx]) { start = cand; break; }
           }
           if (!start) continue;
-          const targetSize = 30 + Math.floor(Math.random() * 121);
-          const mainAngle = Math.random() * Math.PI * 2;
+          const rForSize = clusterRng || seededRng || Math.random; // サイズはサブRNG優先
+          const targetSize = 30 + Math.floor(rForSize() * 121);
+          // シードで決定された高地クラスターの開始セル・サイズを記録
+          if (seededLog && seededLog[ci]) {
+            seededLog[ci].highlandClusters.push({ x: start.x, y: start.y, size: targetSize });
+          }
+          const rDir = clusterRng || seededRng || Math.random; // 主方向はサブRNG優先
+          const mainAngle = rDir() * Math.PI * 2;
           const mainDx = Math.cos(mainAngle);
           const mainDy = Math.sin(mainAngle);
-          const spreadIntensity = 0.5 + Math.random() * 1.0;
+          const rSpread = clusterRng || seededRng || Math.random; // 横方向強度もサブRNG優先
+          const spreadIntensity = 0.5 + rSpread() * 1.0;
           const perpDx = -mainDy;
           const perpDy = mainDx;
           const highlandCells = [start.idx];
@@ -564,13 +629,15 @@ export default {
                 if (!wrapped) continue;
                 const nIdx = wrapped.y * this.gridWidth + wrapped.x;
                 if (visited.has(nIdx)) continue;
-                if (!landMask[nIdx]) continue;
+                if (!preLandMask[nIdx]) continue;
                 if (lakeMask[nIdx]) continue;
                 const relX = wrapped.x - start.x;
                 const relY = wrapped.y - start.y;
                 const progress = relX * mainDx + relY * mainDy;
                 const perpOffset = relX * perpDx + relY * perpDy;
-                const noise = this.noise2D(wrapped.x, wrapped.y) * 2.0;
+                // 高地生成時のノイズもサブRNGに基づく（無ければフォールバック）
+                const rNoise = clusterRng || seededRng || Math.random;
+                const noise = (rNoise() * 2 - 1) * 2.0;
                 const allowedPerpSpread = spreadIntensity * (1 + Math.abs(noise));
                 if (progress >= currentProgress - 0.5 && Math.abs(perpOffset) <= allowedPerpSpread) {
                   visited.add(nIdx);
@@ -623,7 +690,7 @@ export default {
         }
       }
     },
-    sampleLandCenters() {
+    sampleLandCenters(rng) {
       const centers = [];
       const yCenters = Math.max(1, Math.min(10, Math.min(this.gridHeight, this.centersY)));
       const minDistance = this.minCenterDistance;
@@ -634,8 +701,9 @@ export default {
         let attempts = 0;
         let valid = false;
         while (!valid && attempts < maxAttempts) {
-          const cx = Math.floor(Math.random() * this.gridWidth);
-          const cy = Math.floor(Math.random() * this.gridHeight);
+          const r = rng || Math.random;
+          const cx = Math.floor(r() * this.gridWidth);
+          const cy = Math.floor(r() * this.gridHeight);
           newCenter = { x: cx, y: cy };
           // 外縁から10グリッド以内の座標を除外
           const isNearEdge = cx < edgeMargin || cx >= this.gridWidth - edgeMargin ||
@@ -714,22 +782,50 @@ export default {
     },
     runGenerate() {
       const N = this.gridWidth * this.gridHeight;
+      const seededRng = this._getSeededRng();
+      const seededLog = Array.from({ length: (this.centersY || 0) * 1 || 1 }, () => ({
+        highlandsCount: 0,
+        highlandClusters: [],
+        lakeStarts: []
+      }));
+      // 帯の縦揺らぎ（列ごと）の事前生成（完全ランダム、シード非依存）
+      const wobbleRows = Math.max(0, Math.floor(this.landBandVerticalWobbleRows || 0));
+      if (wobbleRows > 0) {
+        this._wobbleShiftByX = new Array(this.gridWidth);
+        for (let x = 0; x < this.gridWidth; x++) {
+          this._wobbleShiftByX[x] = Math.round((Math.random() * 2 - 1) * wobbleRows);
+        }
+      } else {
+        this._wobbleShiftByX = null;
+      }
       const glacierNoiseTable = new Array(N);
       for (let i = 0; i < N; i++) {
         glacierNoiseTable[i] = (Math.random() * 2 - 1);
       }
-      let centers = this.sampleLandCenters();
+      let centers = this.sampleLandCenters(seededRng); // 中心座標をシードで決定
       // ノイズから中心パラメータを生成（propsは直接変更しない）
       let localCenterParameters = centers.map((c) => {
-        const n1 = this.noise2D(c.x * 0.1, c.y * 0.1);
-        const n2 = this.noise2D(c.x * 0.15, c.y * 0.15);
-        return {
-          x: c.x,
-          y: c.y,
-          influenceMultiplier: 1.0 + n1 * 0.75, // 影響係数を小さくして陸グリッドサイズを縮小
-          kDecayVariation: this.kDecay * (1.0 + n1 * 0.75),
-          directionAngle: n2 * Math.PI * 2 * 1.5
-        };
+        if (seededRng) {
+          const u1 = seededRng() * 2 - 1; // [-1,1)
+          const u2 = seededRng();         // [0,1)
+          return {
+            x: c.x,
+            y: c.y,
+            influenceMultiplier: 1.0 + u1 * 0.75,
+            kDecayVariation: this.kDecay * (1.0 + u1 * 0.75),
+            directionAngle: (u2 * 2 * Math.PI * 1.5)
+          };
+        } else {
+          const n1 = this.noise2D(c.x * 0.1, c.y * 0.1);
+          const n2 = this.noise2D(c.x * 0.15, c.y * 0.15);
+          return {
+            x: c.x,
+            y: c.y,
+            influenceMultiplier: 1.0 + n1 * 0.75,
+            kDecayVariation: this.kDecay * (1.0 + n1 * 0.75),
+            directionAngle: n2 * Math.PI * 2 * 1.5
+          };
+        }
       });
       let scores, threshold;
       let success = false;
@@ -748,7 +844,7 @@ export default {
         if (anyCenterLand) {
           success = true;
         } else {
-          centers = this.sampleLandCenters();
+          centers = this.sampleLandCenters(seededRng);
         }
       }
       const landMask = new Array(N).fill(false);
@@ -758,7 +854,8 @@ export default {
       for (let gy = 0; gy < this.gridHeight; gy++) {
         for (let gx = 0; gx < this.gridWidth; gx++) {
           const idx = gy * this.gridWidth + gx;
-          noiseGrid[idx] = this.noise2D(gx, gy);
+          // 乾燥地・海エッジなど「見た目ノイズ」は完全ランダム（シード非依存）
+          noiseGrid[idx] = (Math.random() * 2 - 1);
         }
       }
       // 前計算: 各セルの最寄り中心インデックス（湖/高地生成の所属チェック高速化）
@@ -836,6 +933,43 @@ export default {
         }
       }
     }
+    // 高地用に「海岸線ジッター前」の landMask をスナップショット
+    const preJitterLandMask = landMask.slice();
+    // --- 海岸線のランダム微摂動（同じシードでも海岸線だけ見た目に変化を出す） ---
+    // 近傍に異なる陸海があるセル（=海岸線セル）のうち、スコアが閾値近傍のものだけ微小確率で反転
+    // 他の要素（座標/影響/減衰/方向）はシード固定のまま
+    let minScore = Infinity, maxScore = -Infinity;
+    for (let i = 0; i < N; i++) {
+      const s = scores[i];
+      if (s < minScore) minScore = s;
+      if (s > maxScore) maxScore = s;
+    }
+    const scoreBand = Math.max(1e-6, (maxScore - minScore) * 0.05); // 閾値±2%帯
+    const flipProb = 0.30; // 反転確率（控えめ）
+    const hasOppNeighbor = (x, y) => {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const w = this.torusWrap(x + dx, y + dy);
+          if (!w) continue;
+          const a = y * this.gridWidth + x;
+          const b = w.y * this.gridWidth + w.x;
+          if (landMask[a] !== landMask[b]) return true;
+        }
+      }
+      return false;
+    };
+    for (let gy = 0; gy < this.gridHeight; gy++) {
+      for (let gx = 0; gx < this.gridWidth; gx++) {
+        const idx = gy * this.gridWidth + gx;
+        const s = scores[idx];
+        if (Math.abs(s - threshold) <= scoreBand && hasOppNeighbor(gx, gy)) {
+          if (Math.random() < flipProb) {
+            landMask[idx] = !landMask[idx];
+          }
+        }
+      }
+    }
       const seaNoiseAmplitude = 1.5;
       const landNoiseAmplitude = 2.5;
       const {
@@ -901,18 +1035,24 @@ export default {
 
       // 各中心の陸セル一覧を前計算（湖/高地で再利用）
       const centerLandCells = Array.from({ length: centers.length }, () => []);
+      const centerLandCellsPre = Array.from({ length: centers.length }, () => []);
       for (let gy = 0; gy < this.gridHeight; gy++) {
         for (let gx = 0; gx < this.gridWidth; gx++) {
           const idx = gy * this.gridWidth + gx;
-          if (!landMask[idx]) continue;
-          const ciOwner = ownerCenterIdx[idx];
-          if (ciOwner >= 0) centerLandCells[ciOwner].push({ x: gx, y: gy, idx });
+          if (landMask[idx]) {
+            const ciOwner = ownerCenterIdx[idx];
+            if (ciOwner >= 0) centerLandCells[ciOwner].push({ x: gx, y: gy, idx });
+          }
+          if (preJitterLandMask[idx]) {
+            const ciOwner2 = ownerCenterIdx[idx];
+            if (ciOwner2 >= 0) centerLandCellsPre[ciOwner2].push({ x: gx, y: gy, idx });
+          }
         }
       }
-      // 湖の生成と適用
-      const lakeMask = this._generateLakes(centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor);
+      // 湖生成と適用（ジッター後のマスクに基づく）
+      const lakeMask = this._generateLakes(centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog);
       // 高地生成と適用
-      this._generateHighlands(centers, centerLandCells, landMask, lakeMask, colors, highlandColor);
+      this._generateHighlands(centers, centerLandCells, landMask, lakeMask, colors, highlandColor, seededRng, seededLog);
       // 高山生成と適用
       this._generateAlpines(colors, highlandColor, lowlandColor, desertColor, alpineColor, directions);
       // --- ツンドラの適用（上端・下端） ---
@@ -1025,8 +1165,18 @@ export default {
           };
         }
       }
+      // 収集したシード決定情報を centerParameters に埋め込む
+      for (let ci = 0; ci < centers.length; ci++) {
+        const log = seededLog[ci] || {};
+        localCenterParameters[ci] = {
+          ...(localCenterParameters[ci] || {}),
+          seededHighlandsCount: log.highlandsCount || 0,
+          seededHighlandClusters: Array.isArray(log.highlandClusters) ? log.highlandClusters : [],
+          seededLakeStarts: Array.isArray(log.lakeStarts) ? log.lakeStarts : []
+        };
+      }
       // 結果をemit（描画用の色配列は gridData の派生として扱い、gridDataのみ送出）
-      this.$emit('generated', { centerParameters: localCenterParameters, gridData });
+      this.$emit('generated', { centerParameters: localCenterParameters, gridData, deterministicSeed: this.deterministicSeed });
     }
   }
 }

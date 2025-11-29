@@ -57,6 +57,10 @@
       </div>
     </details>
     <div style="margin-bottom: 8px;">
+      <label>シード: </label>
+      <input type="text" v-model="local.deterministicSeed" @change="emitField('deterministicSeed', local.deterministicSeed)" placeholder="任意（空=完全ランダム）" />
+    </div>
+    <div style="margin-bottom: 8px;">
       <label>雲量: </label>
       <input type="range" min="0" max="1" step="0.1" v-model.number="local.cloudAmount" @change="emitField('cloudAmount', local.cloudAmount)" />
       <span style="margin-left:8px">{{ (local.cloudAmount || 0).toFixed(2) }}</span>
@@ -162,6 +166,7 @@
       :averageHighlandsPerCenter="local.averageHighlandsPerCenter"
       :centerParameters="mutableCenterParams"
       :generateSignal="generateSignal"
+        :deterministicSeed="local.deterministicSeed"
       @generated="onGenerated"
     />
 
@@ -268,7 +273,8 @@ export default {
         highlandGlacierExtraRows: this.highlandGlacierExtraRows,
         alpineGlacierExtraRows: this.alpineGlacierExtraRows,
         averageLakesPerCenter: this.averageLakesPerCenter,
-        averageHighlandsPerCenter: this.averageHighlandsPerCenter
+        averageHighlandsPerCenter: this.averageHighlandsPerCenter,
+        deterministicSeed: ''
       },
       // 中心点のパラメータはdeepコピーして編集可能にする
       mutableCenterParams: JSON.parse(JSON.stringify(this.centerParameters || [])),
@@ -398,6 +404,9 @@ export default {
     onGenerated(payload) {
       // 1) パラメータの出力HTMLをポップアップ表示・更新
       this.mutableCenterParams = JSON.parse(JSON.stringify(payload.centerParameters || []));
+      if (payload && typeof payload.deterministicSeed !== 'undefined') {
+        this.local.deterministicSeed = payload.deterministicSeed || '';
+      }
       this.openOrUpdatePopup();
       // 2) 親へ伝搬（AppからTerrain_Displayへ受け渡し用）
       this.$emit('generated', {
@@ -432,10 +441,28 @@ export default {
       const centersHtml = centers.map((p, i) => `
         <div style="margin-bottom:8px;padding:8px;border:1px solid #ddd;border-radius:4px;">
           <div style="font-weight:bold;margin-bottom:4px;">中心点 ${i + 1}:</div>
-          <div>座標 (x, y): (${escape(p.x)}, ${escape(p.y)})</div>
-          <div>影響係数: ${escape(p.influenceMultiplier)}</div>
-          <div>減衰率 kDecay: ${escape(p.kDecayVariation)}</div>
-          <div>方向角度 (deg): ${Math.round(((p.directionAngle || 0) * 180) / Math.PI) % 360}</div>
+          <div>座標 (x, y): (${escape(p.x)}, ${escape(p.y)}) <span style="color:#666">（シード固定）</span></div>
+          <div>影響係数: ${escape(p.influenceMultiplier)} <span style="color:#666">（シード固定）</span></div>
+          <div>減衰率 kDecay: ${escape(p.kDecayVariation)} <span style="color:#666">（シード固定）</span></div>
+          <div>方向角度 (deg): ${Math.round(((p.directionAngle || 0) * 180) / Math.PI) % 360} <span style="color:#666">（シード固定）</span></div>
+          <div style="margin-top:6px;font-weight:bold;">[シードで決定される項目]</div>
+          <div>高地の個数（シード）: ${escape((p.seededHighlandsCount != null ? p.seededHighlandsCount : 0))}</div>
+          <div>高地クラスター（開始セル/サイズ）:</div>
+          <ul style="margin:4px 0 6px 16px;">
+            ${
+              (Array.isArray(p.seededHighlandClusters) && p.seededHighlandClusters.length > 0)
+                ? p.seededHighlandClusters.map(c => `<li>start=(${escape(c.x)}, ${escape(c.y)}), size=${escape(c.size)}</li>`).join('')
+                : '<li>(なし)</li>'
+            }
+          </ul>
+          <div>湖の開始セル（シード）:</div>
+          <ul style="margin:4px 0 0 16px;">
+            ${
+              (Array.isArray(p.seededLakeStarts) && p.seededLakeStarts.length > 0)
+                ? p.seededLakeStarts.map(c => `<li>(${escape(c.x)}, ${escape(c.y)})</li>`).join('')
+                : '<li>(なし)</li>'
+            }
+          </ul>
         </div>
       `).join('');
       return `
@@ -455,6 +482,7 @@ export default {
   </head>
   <body>
     <h1>Parameters</h1>
+        <div class="row"><label>シード:</label><span>${escape(params.deterministicSeed || '(未指定)')}</span></div>
     <div class="row"><label>陸の中心点の数 y:</label><span>${escape(params.centersY)}</span></div>
     <div class="row"><label>陸の割合 x:</label><span>${escape(params.seaLandRatio)}</span></div>
     <div class="row"><label>中心間の排他距離 (グリッド):</label><span>${escape(params.minCenterDistance)}</span></div>
