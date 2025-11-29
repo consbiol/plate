@@ -1052,9 +1052,6 @@ export default {
           }
         }
       }
-      const borderColor = (this.$store && this.$store.getters && this.$store.getters.terrainColors && this.$store.getters.terrainColors.border)
-        ? this.$store.getters.terrainColors.border
-        : '#000000';
       // 追加: city/cultivated の生成（低地のみ、海隣接で確率10倍）
       const cityMask = new Array(N).fill(false);
       const cultivatedMask = new Array(N).fill(false);
@@ -1228,6 +1225,7 @@ export default {
       }
       // displayColors は gridData から導出（city/cultivated を反映）
       const eraColors = getEraTerrainColors(this.era);
+      const borderColor = (eraColors && eraColors.border) ? eraColors.border : '#000000';
       const displayColors = deriveDisplayColorsFromGridData(
         gridData,
         this.gridWidth,

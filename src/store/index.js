@@ -25,7 +25,6 @@ export default createStore({
     getters: {
         averageTemperature: (state) => state.averageTemperature,
         era: (state) => state.era,
-        terrainColors: (state) => state.terrainColors,
         planeGridCellPx: (state) => state.planeGridCellPx
     },
     mutations: {

@@ -86,7 +86,6 @@ export default {
 
 <style scoped>
 .grid { display: grid; }
-.cell { width: 6px; height: 6px; }
 </style>
 
 

@@ -8,19 +8,19 @@
     </button>
     <div style="margin-bottom: 8px;">
       <label>陸の中心点の数 y: </label>
-      <input type="number" min="1" max="10" v-model.number="local.centersY" @change="emitField('centersY', local.centersY)" />
+      <input type="number" min="1" max="10" v-model.number="local.centersY" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>陸の割合 x: </label>
-      <input type="number" min="0.01" max="0.99" step="0.1" v-model.number="local.seaLandRatio" @change="emitField('seaLandRatio', local.seaLandRatio)" />
+      <input type="number" min="0.01" max="0.99" step="0.1" v-model.number="local.seaLandRatio" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>中心間の排他距離 (グリッド): </label>
-      <input type="number" min="1" max="50" step="1" v-model.number="local.minCenterDistance" @change="emitField('minCenterDistance', local.minCenterDistance)" />
+      <input type="number" min="1" max="50" step="1" v-model.number="local.minCenterDistance" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>浅瀬・深海間の距離閾値 (グリッド): </label>
-      <input type="number" min="1" max="20" step="1" v-model.number="local.baseSeaDistanceThreshold" @change="emitField('baseSeaDistanceThreshold', local.baseSeaDistanceThreshold)" />
+      <input type="number" min="1" max="20" step="1" v-model.number="local.baseSeaDistanceThreshold" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>平均気温 (°C): </label>
@@ -29,40 +29,40 @@
     </div>
     <div style="margin-bottom: 8px;">
       <label>低地・乾燥地間の距離閾値 (グリッド): </label>
-      <input type="number" min="1" max="30" step="1" v-model.number="local.baseLandDistanceThreshold" @change="emitField('baseLandDistanceThreshold', local.baseLandDistanceThreshold)" />
+      <input type="number" min="1" max="30" step="1" v-model.number="local.baseLandDistanceThreshold" />
     </div>
     <details style="margin-bottom:8px;max-width:600px;margin-left:auto;margin-right:auto;">
       <summary style="cursor:pointer;font-weight:bold;margin-bottom:6px;">低地・乾燥地間の距離閾値（帯別）</summary>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
-        <div style="width:48%;"><label>帯01 (極): </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold1" @change="emitField('landDistanceThreshold1', local.landDistanceThreshold1)" /></div>
-        <div style="width:48%;"><label>帯02: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold2" @change="emitField('landDistanceThreshold2', local.landDistanceThreshold2)" /></div>
-        <div style="width:48%;"><label>帯03: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold3" @change="emitField('landDistanceThreshold3', local.landDistanceThreshold3)" /></div>
-        <div style="width:48%;"><label>帯04: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold4" @change="emitField('landDistanceThreshold4', local.landDistanceThreshold4)" /></div>
-        <div style="width:48%;"><label>帯05: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold5" @change="emitField('landDistanceThreshold5', local.landDistanceThreshold5)" /></div>
-        <div style="width:48%;"><label>帯06: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold6" @change="emitField('landDistanceThreshold6', local.landDistanceThreshold6)" /></div>
-        <div style="width:48%;"><label>帯07: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold7" @change="emitField('landDistanceThreshold7', local.landDistanceThreshold7)" /></div>
-        <div style="width:48%;"><label>帯08: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold8" @change="emitField('landDistanceThreshold8', local.landDistanceThreshold8)" /></div>
-        <div style="width:48%;"><label>帯09: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold9" @change="emitField('landDistanceThreshold9', local.landDistanceThreshold9)" /></div>
-        <div style="width:48%;"><label>帯10 (赤道): </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold10" @change="emitField('landDistanceThreshold10', local.landDistanceThreshold10)" /></div>
+        <div style="width:48%;"><label>帯01 (極): </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold1" /></div>
+        <div style="width:48%;"><label>帯02: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold2" /></div>
+        <div style="width:48%;"><label>帯03: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold3" /></div>
+        <div style="width:48%;"><label>帯04: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold4" /></div>
+        <div style="width:48%;"><label>帯05: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold5" /></div>
+        <div style="width:48%;"><label>帯06: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold6" /></div>
+        <div style="width:48%;"><label>帯07: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold7" /></div>
+        <div style="width:48%;"><label>帯08: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold8" /></div>
+        <div style="width:48%;"><label>帯09: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold9" /></div>
+        <div style="width:48%;"><label>帯10 (赤道): </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold10" /></div>
       </div>
       <div style="width:100%;margin-top:8px;">
         <label>帯の縦揺らぎ（行数）: </label>
-        <input type="number" min="0" max="50" step="1" v-model.number="local.landBandVerticalWobbleRows" @change="emitField('landBandVerticalWobbleRows', local.landBandVerticalWobbleRows)" />
+        <input type="number" min="0" max="50" step="1" v-model.number="local.landBandVerticalWobbleRows" />
         <span style="margin-left:8px;color:#666">（0で固定）</span>
       </div>
       <div style="width:100%;margin-top:6px;">
         <label>帯揺らぎの X スケール: </label>
-        <input type="number" min="0" max="1" step="0.01" v-model.number="local.landBandWobbleXScale" @change="emitField('landBandWobbleXScale', local.landBandWobbleXScale)" />
+        <input type="number" min="0" max="1" step="0.01" v-model.number="local.landBandWobbleXScale" />
         <span style="margin-left:8px;color:#666">（ノイズの横スケール）</span>
       </div>
     </details>
     <div style="margin-bottom: 8px;">
       <label>シード: </label>
-      <input type="text" v-model="local.deterministicSeed" @change="emitField('deterministicSeed', local.deterministicSeed)" placeholder="任意（空=完全ランダム）" />
+      <input type="text" v-model="local.deterministicSeed" placeholder="任意（空=完全ランダム）" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>雲量: </label>
-      <input type="range" min="0" max="1" step="0.1" v-model.number="local.cloudAmount" @change="emitField('cloudAmount', local.cloudAmount)" />
+      <input type="range" min="0" max="1" step="0.1" v-model.number="local.cloudAmount" />
       <span style="margin-left:8px">{{ (local.cloudAmount || 0).toFixed(2) }}</span>
     </div>
     <div style="margin-bottom: 8px;">
@@ -82,35 +82,35 @@
     </div>
     <div style="margin-bottom: 8px;">
       <label>陸(低地・乾燥地・ツンドラ)の氷河追加グリッド数: </label>
-      <input type="number" min="0" max="50" step="1" v-model.number="local.landGlacierExtraRows" @change="emitField('landGlacierExtraRows', local.landGlacierExtraRows)" />
+      <input type="number" min="0" max="50" step="1" v-model.number="local.landGlacierExtraRows" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>上端・下端ツンドラグリッド追加数: </label>
-      <input type="number" min="0" max="50" step="1" v-model.number="local.tundraExtraRows" @change="emitField('tundraExtraRows', local.tundraExtraRows)" />
+      <input type="number" min="0" max="50" step="1" v-model.number="local.tundraExtraRows" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>高地の氷河追加グリッド数: </label>
-      <input type="number" min="0" max="50" step="1" v-model.number="local.highlandGlacierExtraRows" @change="emitField('highlandGlacierExtraRows', local.highlandGlacierExtraRows)" />
+      <input type="number" min="0" max="50" step="1" v-model.number="local.highlandGlacierExtraRows" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>高山の氷河追加グリッド数: </label>
-      <input type="number" min="0" max="50" step="1" v-model.number="local.alpineGlacierExtraRows" @change="emitField('alpineGlacierExtraRows', local.alpineGlacierExtraRows)" />
+      <input type="number" min="0" max="50" step="1" v-model.number="local.alpineGlacierExtraRows" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>湖の数（平均）: </label>
-      <input type="number" min="0" max="10" step="0.5" v-model.number="local.averageLakesPerCenter" @change="emitField('averageLakesPerCenter', local.averageLakesPerCenter)" />
+      <input type="number" min="0" max="10" step="0.5" v-model.number="local.averageLakesPerCenter" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>高地の数（平均）: </label>
-      <input type="number" min="0" max="10" step="0.5" v-model.number="local.averageHighlandsPerCenter" @change="emitField('averageHighlandsPerCenter', local.averageHighlandsPerCenter)" />
+      <input type="number" min="0" max="10" step="0.5" v-model.number="local.averageHighlandsPerCenter" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>都市生成確率 (低地, 海隣接で×10): </label>
-      <input type="number" min="0" max="1" step="0.001" v-model.number="local.cityProbability" @change="emitField('cityProbability', local.cityProbability)" />
+      <input type="number" min="0" max="1" step="0.001" v-model.number="local.cityProbability" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>耕作地生成確率 (低地, 海隣接で×10): </label>
-      <input type="number" min="0" max="1" step="0.01" v-model.number="local.cultivatedProbability" @change="emitField('cultivatedProbability', local.cultivatedProbability)" />
+      <input type="number" min="0" max="1" step="0.01" v-model.number="local.cultivatedProbability" />
     </div>
 
     <div v-if="centerParameters && centerParameters.length > 0" style="margin-top: 20px; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto;">
@@ -123,11 +123,11 @@
         </div>
         <div style="margin-bottom: 4px;">
           <label style="display: inline-block; width: 150px;">影響係数 (influence): </label>
-          <input type="number" min="0.1" max="3.0" step="0.1" v-model.number="param.influenceMultiplier" style="width: 100px;" @change="emitCenterParams" />
+          <input type="number" min="0.1" max="3.0" step="0.1" v-model.number="param.influenceMultiplier" style="width: 100px;" />
         </div>
         <div style="margin-bottom: 4px;">
           <label style="display: inline-block; width: 150px;">減衰率 (kDecay): </label>
-          <input type="number" min="0.5" max="5.0" step="0.1" v-model.number="param.kDecayVariation" style="width: 100px;" @change="emitCenterParams" />
+          <input type="number" min="0.5" max="5.0" step="0.1" v-model.number="param.kDecayVariation" style="width: 100px;" />
         </div>
         <div>
           <label style="display: inline-block; width: 150px;">方向角度 (direction): </label>
@@ -327,41 +327,6 @@ export default {
       stats: null
     };
   },
-  watch: {
-    centersY(val) { this.local.centersY = val; },
-    seaLandRatio(val) { this.local.seaLandRatio = val; },
-    cloudAmount(val) { this.local.cloudAmount = val; },
-    minCenterDistance(val) { this.local.minCenterDistance = val; },
-    baseSeaDistanceThreshold(val) { this.local.baseSeaDistanceThreshold = val; },
-    baseLandDistanceThreshold(val) { this.local.baseLandDistanceThreshold = val; },
-    tundraExtraRows(val) { this.local.tundraExtraRows = val; },
-    landDistanceThreshold1(val) { this.local.landDistanceThreshold1 = val; },
-    landDistanceThreshold2(val) { this.local.landDistanceThreshold2 = val; },
-    landDistanceThreshold3(val) { this.local.landDistanceThreshold3 = val; },
-    landDistanceThreshold4(val) { this.local.landDistanceThreshold4 = val; },
-    landDistanceThreshold5(val) { this.local.landDistanceThreshold5 = val; },
-    landDistanceThreshold6(val) { this.local.landDistanceThreshold6 = val; },
-    landDistanceThreshold7(val) { this.local.landDistanceThreshold7 = val; },
-    landDistanceThreshold8(val) { this.local.landDistanceThreshold8 = val; },
-    landDistanceThreshold9(val) { this.local.landDistanceThreshold9 = val; },
-    landDistanceThreshold10(val) { this.local.landDistanceThreshold10 = val; },
-    landBandVerticalWobbleRows(val) { this.local.landBandVerticalWobbleRows = val; },
-    landBandWobbleXScale(val) { this.local.landBandWobbleXScale = val; },
-    topGlacierRows(val) { this.local.topGlacierRows = val; },
-    landGlacierExtraRows(val) { this.local.landGlacierExtraRows = val; },
-    highlandGlacierExtraRows(val) { this.local.highlandGlacierExtraRows = val; },
-    alpineGlacierExtraRows(val) { this.local.alpineGlacierExtraRows = val; },
-    averageLakesPerCenter(val) { this.local.averageLakesPerCenter = val; },
-    averageHighlandsPerCenter(val) { this.local.averageHighlandsPerCenter = val; },
-    cityProbability(val) { this.local.cityProbability = val; },
-    cultivatedProbability(val) { this.local.cultivatedProbability = val; },
-    centerParameters: {
-      handler(val) {
-        this.mutableCenterParams = JSON.parse(JSON.stringify(val || []));
-      },
-      deep: true
-    }
-  },
   computed: {
     averageTemperature: {
       get() {
@@ -407,9 +372,6 @@ export default {
     }
   },
   methods: {
-    emitField(field, value) {
-      this.$emit(`update:${field}`, value);
-    },
     onEraChange() {
       if (this.$store && typeof this.$store.dispatch === 'function') {
         this.$store.dispatch('updateEra', this.local.era);
@@ -448,17 +410,12 @@ export default {
       }
       // 端数は四捨五入。負も許容（海氷河は作成しないよう計算側でガード）
       this.local.topGlacierRows = Math.round(v);
-      this.emitField('topGlacierRows', this.local.topGlacierRows);
-    },
-    emitCenterParams() {
-      this.$emit('update:centerParameters', JSON.parse(JSON.stringify(this.mutableCenterParams)));
     },
     updateDirection(idx, degVal) {
       const deg = (degVal % 360 + 360) % 360;
       const rad = (deg * Math.PI) / 180;
       if (this.mutableCenterParams[idx]) {
         this.mutableCenterParams[idx].directionAngle = rad;
-        this.emitCenterParams();
       }
     },
     onClickGenerate() {
