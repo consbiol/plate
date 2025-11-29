@@ -3,7 +3,7 @@
 </template>
 
 <script>
-import { getEraTerrainColors } from '../utils/colors.js';
+import { getEraTerrainColors, deriveDisplayColorsFromGridData } from '../utils/colors.js';
 // Default terrain colors (store-independent)
 const DEFAULT_TERRAIN_COLORS = {
   deepSea: '#1E508C',
@@ -70,6 +70,10 @@ export default {
     generateSignal: { type: Number, required: true },
     // 大陸の歪みの強さを方向角度に対して適用する係数（デフォルト 2.0）
     directionDistortionScale: { type: Number, required: false, default: 4.0 },
+    // 都市グリッド生成の確率（低地のみ、海隣接で10倍）
+    cityGenerationProbability: { type: Number, required: false, default: 0.002 },
+    // 耕作地グリッド生成の確率（低地のみ、海隣接で10倍）
+    cultivatedGenerationProbability: { type: Number, required: false, default: 0.05 },
     // 指定要素のみ決定化するためのシード（未指定時は従来通り）
     deterministicSeed: { type: [Number, String], required: false, default: null },
     // 時代（パレット切替用、未指定ならデフォルト色）
@@ -1048,26 +1052,114 @@ export default {
           }
         }
       }
-      const displayGridWidth = this.gridWidth + 2;
-      const displayGridHeight = this.gridHeight + 2;
       const borderColor = (this.$store && this.$store.getters && this.$store.getters.terrainColors && this.$store.getters.terrainColors.border)
         ? this.$store.getters.terrainColors.border
         : '#000000';
-      const displayColors = new Array(displayGridWidth * displayGridHeight);
-      for (let gy = 0; gy < displayGridHeight; gy++) {
-        for (let gx = 0; gx < displayGridWidth; gx++) {
-          const displayIdx = gy * displayGridWidth + gx;
-          if (gy === 0 || gy === displayGridHeight - 1 || gx === 0 || gx === displayGridWidth - 1) {
-            displayColors[displayIdx] = borderColor;
-          } else {
-            const originalGy = gy - 1;
-            const originalGx = gx - 1;
-            const originalIdx = originalGy * this.gridWidth + originalGx;
-            displayColors[displayIdx] = colors[originalIdx];
+      // 追加: city/cultivated の生成（低地のみ、海隣接で確率10倍）
+      const cityMask = new Array(N).fill(false);
+      const cultivatedMask = new Array(N).fill(false);
+      const rCity = this._getDerivedRng('city') || Math.random;
+      const rCult = this._getDerivedRng('cultivated') || Math.random;
+      const isAdjacentToSea = (gx, gy) => {
+        const dirs4 = [{dx:-1,dy:0},{dx:1,dy:0},{dx:0,dy:-1},{dx:0,dy:1}];
+        for (const d of dirs4) {
+          const w = this.torusWrap(gx + d.dx, gy + d.dy);
+          if (!w) continue;
+          const nIdx = w.y * this.gridWidth + w.x;
+          if (!landMask[nIdx]) return true; // 海
+        }
+        return false;
+      };
+      // 文明時代のみ city/cultivated を生成
+      const isCivilizationEra = (this.era === '文明時代');
+      if (isCivilizationEra) {
+        for (let gy = 0; gy < this.gridHeight; gy++) {
+          for (let gx = 0; gx < this.gridWidth; gx++) {
+            const idx = gy * this.gridWidth + gx;
+            // 最終色が低地のみ対象（ツンドラ/砂漠/高地/高山/氷河/海などは除外）
+            if (colors[idx] !== lowlandColor) continue;
+            // 既に city に含まれているセルはスキップ（cultivatedとの二重指定を回避）
+            if (cityMask[idx]) continue;
+            // city
+            const baseCity = Math.max(0, this.cityGenerationProbability || 0);
+            const pcCity = isAdjacentToSea(gx, gy) ? Math.min(1, baseCity * 10) : baseCity;
+            if (pcCity > 0 && (rCity() < pcCity) && !cityMask[idx]) {
+              // クラスタ生成: 平均 ~3 グリッドの面積（Poissonサンプル）
+              const clusterRng = this._getDerivedRng('city-cluster', gx, gy) || Math.random;
+              const targetSize = Math.max(1, this._poissonSample(3, 50, clusterRng));
+              const dirs = [
+                { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+                { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+                { dx: -1, dy: -1 }, { dx: 1, dy: -1 },
+                { dx: -1, dy: 1 }, { dx: 1, dy: 1 }
+              ];
+              const queue = [{ x: gx, y: gy, idx }];
+              const visited = new Set([idx]);
+              cityMask[idx] = true;
+              let count = 1;
+              while (queue.length > 0 && count < targetSize) {
+                const cur = queue.shift();
+                for (const d of dirs) {
+                  // 隣接セルを確率的に拡張（密になり過ぎないよう 0.6 で採択）
+                  if ((clusterRng() || Math.random()) > 0.6) continue;
+                  const w = this.torusWrap(cur.x + d.dx, cur.y + d.dy);
+                  if (!w) continue;
+                  const nIdx = w.y * this.gridWidth + w.x;
+                  if (visited.has(nIdx)) continue;
+                  visited.add(nIdx);
+                  // 拡張条件: 低地・未city
+                  if (colors[nIdx] !== lowlandColor) continue;
+                  if (cityMask[nIdx]) continue;
+                  cityMask[nIdx] = true;
+                  count++;
+                  if (count >= targetSize) break;
+                  queue.push({ x: w.x, y: w.y, idx: nIdx });
+                }
+              }
+              continue; // city 優先、同セルで cultivated は生成しない
+            }
+            // cultivated
+            const baseCult = Math.max(0, this.cultivatedGenerationProbability || 0);
+            const pcCult = isAdjacentToSea(gx, gy) ? Math.min(1, baseCult * 10) : baseCult;
+            if (pcCult > 0 && (rCult() < pcCult) && !cultivatedMask[idx]) {
+              // クラスタ生成: 平均 ~5 グリッドの面積（Poissonサンプル）
+              const clusterRng = this._getDerivedRng('cultivated-cluster', gx, gy) || Math.random;
+              const targetSize = Math.max(1, this._poissonSample(5, 50, clusterRng));
+              const dirs = [
+                { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+                { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+                { dx: -1, dy: -1 }, { dx: 1, dy: -1 },
+                { dx: -1, dy: 1 }, { dx: 1, dy: 1 }
+              ];
+              const queue = [{ x: gx, y: gy, idx }];
+              const visited = new Set([idx]);
+              cultivatedMask[idx] = true;
+              let count = 1;
+              while (queue.length > 0 && count < targetSize) {
+                const cur = queue.shift();
+                for (const d of dirs) {
+                  // 隣接セルを確率的に拡張（密になり過ぎないよう 0.6 で採択）
+                  if ((clusterRng() || Math.random()) > 0.6) continue;
+                  const w = this.torusWrap(cur.x + d.dx, cur.y + d.dy);
+                  if (!w) continue;
+                  const nIdx = w.y * this.gridWidth + w.x;
+                  if (visited.has(nIdx)) continue;
+                  visited.add(nIdx);
+                  // 拡張条件: 低地・未city・未cultivated
+                  if (colors[nIdx] !== lowlandColor) continue;
+                  if (cityMask[nIdx]) continue;
+                  if (cultivatedMask[nIdx]) continue;
+                  cultivatedMask[nIdx] = true;
+                  count++;
+                  if (count >= targetSize) break;
+                  queue.push({ x: w.x, y: w.y, idx: nIdx });
+                }
+              }
+            }
           }
         }
       }
-      // 追加: 各グリッドのプロパティ構造を作成（互換性のため既存の displayColors は維持）
+      // 追加: 各グリッドのプロパティ構造を作成
       const gridData = new Array(this.gridWidth * this.gridHeight);
       for (let gy = 0; gy < this.gridHeight; gy++) {
         for (let gx = 0; gx < this.gridWidth; gx++) {
@@ -1095,10 +1187,22 @@ export default {
     precipitation,
     terrain,
     colorHex: col,
-    cultivated: null
+    // 都市/耕作地フラグ（色は colors.js でパレットから解決）
+    city: !!cityMask[idx],
+    cultivated: !!cultivatedMask[idx]
   };
         }
       }
+      // displayColors は gridData から導出（city/cultivated を反映）
+      const eraColors = getEraTerrainColors(this.era);
+      const displayColors = deriveDisplayColorsFromGridData(
+        gridData,
+        this.gridWidth,
+        this.gridHeight,
+        borderColor,
+        eraColors,
+        /*preferPalette*/ true
+      );
       // 収集したシード決定情報を centerParameters に埋め込む
       for (let ci = 0; ci < centers.length; ci++) {
         const log = seededLog[ci] || {};

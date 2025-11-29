@@ -99,6 +99,14 @@
       <label>高地の数（平均）: </label>
       <input type="number" min="0" max="10" step="0.5" v-model.number="local.averageHighlandsPerCenter" @change="emitField('averageHighlandsPerCenter', local.averageHighlandsPerCenter)" />
     </div>
+    <div style="margin-bottom: 8px;">
+      <label>都市生成確率 (低地, 海隣接で×10): </label>
+      <input type="number" min="0" max="1" step="0.001" v-model.number="local.cityProbability" @change="emitField('cityProbability', local.cityProbability)" />
+    </div>
+    <div style="margin-bottom: 8px;">
+      <label>耕作地生成確率 (低地, 海隣接で×10): </label>
+      <input type="number" min="0" max="1" step="0.01" v-model.number="local.cultivatedProbability" @change="emitField('cultivatedProbability', local.cultivatedProbability)" />
+    </div>
 
     <div v-if="centerParameters && centerParameters.length > 0" style="margin-top: 20px; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto;">
       <div style="font-weight: bold; margin-bottom: 8px;">各中心点のパラメーター:</div>
@@ -174,6 +182,8 @@
       :generateSignal="generateSignal"
         :deterministicSeed="local.deterministicSeed"
       :era="local.era || ($store && $store.getters ? $store.getters.era : null)"
+      :cityGenerationProbability="local.cityProbability"
+      :cultivatedGenerationProbability="local.cultivatedProbability"
       @generated="onGenerated"
     />
 
@@ -243,7 +253,11 @@ export default {
     // 中心点のパラメータ配列（デフォルト: 空配列）: 各中心点の影響係数、減衰率、方向角度などの詳細パラメータ。
     centerParameters: { type: Array, required: false, default: () => [] },
     // 雲量（0..1）: 被覆度優先で効く
-    cloudAmount: { type: Number, required: false, default: 0.4 }
+    cloudAmount: { type: Number, required: false, default: 0.4 },
+    // 都市生成確率（低地、海隣接で10倍）
+    cityProbability: { type: Number, required: false, default: 0.002 },
+    // 耕作地生成確率（低地、海隣接で10倍）
+    cultivatedProbability: { type: Number, required: false, default: 0.05 }
   },
   mounted() {
     // 初期表示時に平均気温から氷河行数を算出（デフォルト 15℃ → 5）
@@ -284,7 +298,9 @@ export default {
         alpineGlacierExtraRows: this.alpineGlacierExtraRows,
         averageLakesPerCenter: this.averageLakesPerCenter,
         averageHighlandsPerCenter: this.averageHighlandsPerCenter,
-        deterministicSeed: ''
+        deterministicSeed: '',
+        cityProbability: this.cityProbability,
+        cultivatedProbability: this.cultivatedProbability
       },
       // UI で選べる時代一覧（store.era と対応）
       eras: [
@@ -332,6 +348,8 @@ export default {
     alpineGlacierExtraRows(val) { this.local.alpineGlacierExtraRows = val; },
     averageLakesPerCenter(val) { this.local.averageLakesPerCenter = val; },
     averageHighlandsPerCenter(val) { this.local.averageHighlandsPerCenter = val; },
+    cityProbability(val) { this.local.cityProbability = val; },
+    cultivatedProbability(val) { this.local.cultivatedProbability = val; },
     centerParameters: {
       handler(val) {
         this.mutableCenterParams = JSON.parse(JSON.stringify(val || []));

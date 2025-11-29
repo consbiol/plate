@@ -24,7 +24,9 @@ export default {
     // 雲量（0..1）: 被覆度に強く、濃さ（不透明度）に弱く効かせる
     cloudAmount: { type: Number, required: false, default: 0.4 },
     // 雲ノイズのトーラス周期（uv空間上の反復数）
-    cloudPeriod: { type: Number, required: false, default: 16 }
+    cloudPeriod: { type: Number, required: false, default: 16 },
+    // 極周辺での雲生成ブースト強度（0..1）。0で無効、1で強ブースト
+    polarCloudBoost: { type: Number, required: false, default: 1.0 }
   },
   methods: {
     // colors utils are imported
@@ -279,6 +281,7 @@ export default {
         uniform float u_polarNoiseStrength;
         uniform float u_cloudAmount;      // 0..1
         uniform float u_cloudPeriod;      // e.g. 16
+        uniform float u_polarCloudBoost;  // 0..1
         const float PI = 3.141592653589793;
         // hash + FBM (fractal) noise (legacy, polar blend用)
         float hash(vec2 p) {
@@ -396,6 +399,11 @@ export default {
           float nCloud = fbmTile(vec2(uEff, vEff), max(2.0, u_cloudPeriod));
           // 被覆度の閾値（雲量で強く変化）: 雲量↑で閾値↓ → coverage↑
           float t = mix(0.9, 0.2, eff);
+          // 極ブースト: vEffが0/1に近いほど強い（閾値を下げる）
+          float pole = abs(vEff - 0.5) / 0.5; // 端(極)で1, 赤道で0
+          pole = clamp(pole, 0.0, 1.0);
+          float tAdj = 0.25 * clamp(u_polarCloudBoost, 0.0, 1.0) * pole;
+          t = clamp(t - tAdj, 0.0, 1.0);
           float edge = 0.08;
           float coverage = smoothstep(t - edge, t + edge, nCloud);
           // 雲の不透明度
@@ -547,7 +555,8 @@ export default {
         u_polarNoiseScale: gl.getUniformLocation(prog, 'u_polarNoiseScale'),
         u_polarNoiseStrength: gl.getUniformLocation(prog, 'u_polarNoiseStrength'),
         u_cloudAmount: gl.getUniformLocation(prog, 'u_cloudAmount'),
-        u_cloudPeriod: gl.getUniformLocation(prog, 'u_cloudPeriod')
+        u_cloudPeriod: gl.getUniformLocation(prog, 'u_cloudPeriod'),
+        u_polarCloudBoost: gl.getUniformLocation(prog, 'u_polarCloudBoost')
       };
       // set static uniforms
       gl.uniform1i(this._glUniforms.u_texture, 0);
@@ -593,6 +602,9 @@ export default {
       // cloud params
       gl.uniform1f(this._glUniforms.u_cloudAmount, Math.max(0, Math.min(1, this.cloudAmount || 0)));
       gl.uniform1f(this._glUniforms.u_cloudPeriod, Math.max(2, this.cloudPeriod || 16));
+      if (this._glUniforms.u_polarCloudBoost) {
+        gl.uniform1f(this._glUniforms.u_polarCloudBoost, Math.max(0, Math.min(1, this.polarCloudBoost || 0)));
+      }
       // viewport
       gl.viewport(0, 0, canvas.width, canvas.height);
       this._gl = gl;
@@ -629,6 +641,9 @@ export default {
       }
       if (this._glUniforms && this._glUniforms.u_cloudPeriod) {
         gl.uniform1f(this._glUniforms.u_cloudPeriod, Math.max(2, this.cloudPeriod || 16));
+      }
+      if (this._glUniforms && this._glUniforms.u_polarCloudBoost) {
+        gl.uniform1f(this._glUniforms.u_polarCloudBoost, Math.max(0, Math.min(1, this.polarCloudBoost || 0)));
       }
       // draw
       gl.clearColor(0,0,0,1);
@@ -938,7 +953,12 @@ export default {
           let rr = r, gg = g, bb = b;
           if (effC > 0) {
             const nCloud = this._fbmTile(uEff, vEff, this.cloudPeriod || 16);
-            const t = 0.9 + (0.2 - 0.9) * effC; // mix(0.9,0.2,effC)
+            let t = 0.9 + (0.2 - 0.9) * effC; // mix(0.9,0.2,effC)
+            // 極ブースト: vEffが0/1に近いほど閾値を下げる（端で1, 赤道で0）
+            const pole = Math.max(0, Math.min(1, Math.abs(0.5 - vEff) / 0.5));
+            const boost = Math.max(0, Math.min(1, this.polarCloudBoost || 0));
+            const tAdj = 0.25 * boost * pole;
+            t = Math.max(0, Math.min(1, t - tAdj));
             const edge = 0.08;
             // smoothstep(t-edge, t+edge, nCloud)
             let coverage = 0;
@@ -1003,7 +1023,12 @@ export default {
           let rr = r, gg = g, bb = b;
           if (effC > 0) {
             const nCloud = this._fbmTile(uEff, vEff, this.cloudPeriod || 16);
-            const t = 0.9 + (0.2 - 0.9) * effC;
+            let t = 0.9 + (0.2 - 0.9) * effC;
+            // 極ブースト（端で1, 赤道で0）
+            const pole = Math.max(0, Math.min(1, Math.abs(0.5 - vEff) / 0.5));
+            const boost = Math.max(0, Math.min(1, this.polarCloudBoost || 0));
+            const tAdj = 0.25 * boost * pole;
+            t = Math.max(0, Math.min(1, t - tAdj));
             const edge = 0.08;
             let coverage = 0;
             if (nCloud <= t - edge) coverage = 0;

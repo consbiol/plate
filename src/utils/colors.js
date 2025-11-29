@@ -11,8 +11,8 @@ export function getDefaultTerrainColors() {
         tundra: '#7ea836',
         glacier: '#FFFFFF',
         border: '#000000',
-        city: '#808080',
-        cultivated: '#556655'
+        city: '#F15A22',
+        cultivated: '#ffff00'
     };
 }
 
@@ -28,8 +28,8 @@ export function getEraColors_Bombardment() {
         tundra: '#7ea836',
         glacier: '#FFFFFF',
         border: '#000000',
-        city: '#808080',
-        cultivated: '#556655'
+        city: '#F15A22',
+        cultivated: '#ffff00'
     };
 }
 export function getEraColors_AnaerobicBacteria() {
@@ -43,8 +43,8 @@ export function getEraColors_AnaerobicBacteria() {
         tundra: '#7ea836',
         glacier: '#FFFFFF',
         border: '#000000',
-        city: '#808080',
-        cultivated: '#556655'
+        city: '#F15A22',
+        cultivated: '#ffff00'
     };
 }
 export function getEraColors_PhotosyntheticBacteria() {
@@ -58,8 +58,8 @@ export function getEraColors_PhotosyntheticBacteria() {
         tundra: '#7ea836',
         glacier: '#FFFFFF',
         border: '#000000',
-        city: '#808080',
-        cultivated: '#556655'
+        city: '#F15A22',
+        cultivated: '#ffff00'
     };
 }
 export function getEraColors_Eukaryotes() {
@@ -73,8 +73,8 @@ export function getEraColors_Eukaryotes() {
         tundra: '#7ea836',
         glacier: '#FFFFFF',
         border: '#000000',
-        city: '#808080',
-        cultivated: '#556655'
+        city: '#F15A22',
+        cultivated: '#ffff00'
     };
 }
 export function getEraColors_Multicellular() {
@@ -88,8 +88,8 @@ export function getEraColors_Multicellular() {
         tundra: '#7ea836',
         glacier: '#FFFFFF',
         border: '#000000',
-        city: '#808080',
-        cultivated: '#556655'
+        city: '#F15A22',
+        cultivated: '#ffff00'
     };
 }
 export function getEraColors_MarineDiversification() {
@@ -103,8 +103,8 @@ export function getEraColors_MarineDiversification() {
         tundra: '#7ea836',
         glacier: '#FFFFFF',
         border: '#000000',
-        city: '#808080',
-        cultivated: '#556655'
+        city: '#F15A22',
+        cultivated: '#ffff00'
     };
 }
 export function getEraColors_BryophyteExpansion() {
@@ -118,8 +118,8 @@ export function getEraColors_BryophyteExpansion() {
         tundra: '#7ea836',
         glacier: '#FFFFFF',
         border: '#000000',
-        city: '#808080',
-        cultivated: '#556655'
+        city: '#F15A22',
+        cultivated: '#ffff00'
     };
 }
 export function getEraColors_PteridophyteGymnospermExpansion() {
@@ -133,8 +133,8 @@ export function getEraColors_PteridophyteGymnospermExpansion() {
         tundra: '#7ea836',
         glacier: '#FFFFFF',
         border: '#000000',
-        city: '#808080',
-        cultivated: '#556655'
+        city: '#F15A22',
+        cultivated: '#ffff00'
     };
 }
 export function getEraColors_GreatForest() {
@@ -148,8 +148,8 @@ export function getEraColors_GreatForest() {
         tundra: '#7ea836',
         glacier: '#FFFFFF',
         border: '#000000',
-        city: '#808080',
-        cultivated: '#556655'
+        city: '#F15A22',
+        cultivated: '#ffff00'
     };
 }
 export function getEraColors_Civilization() {
@@ -163,8 +163,8 @@ export function getEraColors_Civilization() {
         tundra: '#7ea836',
         glacier: '#FFFFFF',
         border: '#000000',
-        city: '#808080',
-        cultivated: '#556655'
+        city: '#F15A22',
+        cultivated: '#ffff00'
     };
 }
 
