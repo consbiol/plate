@@ -1,20 +1,16 @@
 <template>
   <div id="app">
     <Parameters_Display :gridWidth="gridWidth" :gridHeight="gridHeight" @generated="onGenerated" />
-    <div style="height: 16px;"></div>
-    <Terrain_Display :gridWidth="gridWidth" :gridHeight="gridHeight" :gridData="gridData" />
   </div>
 </template>
 
 <script>
 import Parameters_Display from './components/Parameters_Display.vue'
-import Terrain_Display from './components/Terrain_Display.vue'
 
 export default {
   name: 'App',
   components: {
-    Parameters_Display,
-    Terrain_Display
+    Parameters_Display
   },
   data() {
     return {

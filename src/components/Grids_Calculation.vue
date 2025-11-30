@@ -3,19 +3,7 @@
 </template>
 
 <script>
-import { getEraTerrainColors, deriveDisplayColorsFromGridData } from '../utils/colors.js';
-// Default terrain colors (store-independent)
-const DEFAULT_TERRAIN_COLORS = {
-  deepSea: '#1E508C',
-  shallowSea: '#3C78B4',
-  lowland: '#228B22',
-  desert: '#96826E',
-  highland: '#91644B',
-  alpine: '#5F5046',
-  tundra: '#698736',
-  glacier: '#FFFFFF',
-  border: '#000000'
-};
+import { getEraTerrainColors, getDefaultTerrainColors } from '../utils/colors.js';
 // このコンポーネントは「計算専用」です（UIや描画は行いません）。
 // 概要:
 // 1) 陸中心のサンプリングと各中心の影響（スコア）計算
@@ -326,8 +314,8 @@ export default {
     },
     // 基本色の集約定義（機能不変）
     _getBaseColors() {
-      // 時代指定があれば時代パレットを優先、なければデフォルト
-      const tc = this.era ? getEraTerrainColors(this.era) : DEFAULT_TERRAIN_COLORS;
+      // 時代指定があれば時代パレットを優先、なければ共通ユーティリティのデフォルト
+      const tc = this.era ? getEraTerrainColors(this.era) : getDefaultTerrainColors();
       return {
         deepSeaColor: tc.deepSea,
         shallowSeaColor: tc.shallowSea,
@@ -1382,17 +1370,6 @@ export default {
   };
         }
       }
-      // displayColors は gridData から導出（city/cultivated を反映）
-      const eraColors = getEraTerrainColors(this.era);
-      const borderColor = (eraColors && eraColors.border) ? eraColors.border : '#000000';
-      const displayColors = deriveDisplayColorsFromGridData(
-        gridData,
-        this.gridWidth,
-        this.gridHeight,
-        borderColor,
-        eraColors,
-        /*preferPalette*/ true
-      );
       // 収集したシード決定情報を centerParameters に埋め込む
       for (let ci = 0; ci < centers.length; ci++) {
         const log = seededLog[ci] || {};
@@ -1420,7 +1397,6 @@ export default {
       this.$emit('generated', {
         centerParameters: localCenterParameters,
         gridData,
-        displayColors,
         deterministicSeed: this.deterministicSeed
       });
     }

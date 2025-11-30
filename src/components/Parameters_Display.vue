@@ -1,14 +1,5 @@
 <template>
   <div class="parameters-display">
-    <!-- 平面地図（パラメーターUIより上に表示） -->
-    <div style="margin-bottom: 16px;">
-      <Terrain_Display
-        :gridWidth="gridWidth"
-        :gridHeight="gridHeight"
-        :gridData="gridDataLocal"
-        :era="$store && $store.getters ? $store.getters.era : null"
-      />
-    </div>
     <button @click="onClickGenerate" style="margin-bottom: 12px; margin-left: 8px;">
       Generate (Popup + Render)
     </button>
@@ -236,11 +227,10 @@
 // - 入力欄の値は内部state(local)に保持し、必要に応じて親へemitします。
 import Grids_Calculation from './Grids_Calculation.vue';
 import Sphere_Display from './Sphere_Display.vue';
-import Terrain_Display from './Terrain_Display.vue';
-import { getEraTerrainColors } from '../utils/colors.js';
+import { deriveDisplayColorsFromGridData, getEraTerrainColors } from '../utils/colors.js';
 export default {
   name: 'Parameters_Display',
-  components: { Grids_Calculation, Sphere_Display, Terrain_Display },
+  components: { Grids_Calculation, Sphere_Display },
   props: {
     // 陸の中心点の数（デフォルト: 5）: 地形生成の起点となる中心点の個数。多いほど複雑な地形になります。
     centersY: { type: Number, required: false, default: 5 },
@@ -309,6 +299,10 @@ export default {
       gridWidth: 200,
       gridHeight: 100,
       gridDataLocal: [],
+      // ポップアップ描画用の平面色（+2枠込み）
+      planeDisplayColors: [],
+      // 平面地図専用ポップアップ
+      planePopupRef: null,
       local: {
         centersY: this.centersY,
         seaLandRatio: this.seaLandRatio,
@@ -468,58 +462,25 @@ export default {
       if (payload && typeof payload.deterministicSeed !== 'undefined') {
         this.local.deterministicSeed = payload.deterministicSeed || '';
       }
-      // 1.5) 平面描画用の色配列を生成（優先: gridData.colorHex > デフォルトマップ）
-      const width = this.gridWidth;
-      const height = this.gridHeight;
-      const N = width * height;
-      const planeColors = new Array(N);
-      const gridData = Array.isArray(payload.gridData) ? payload.gridData : [];
-      const DEFAULT_TERRAIN_COLORS = {
-        deepSea: '#1E508C',
-        shallowSea: '#3C78B4',
-        lowland: '#228B22',
-        desert: '#96826E',
-        highland: '#91644B',
-        alpine: '#5F5046',
-        tundra: '#698736',
-        glacier: '#FFFFFF'
-      };
-      const eraColors = (typeof getEraTerrainColors === 'function')
-        ? getEraTerrainColors(this.local && this.local.era ? this.local.era : null)
-        : null;
-      const tc = eraColors && typeof eraColors === 'object' ? eraColors : DEFAULT_TERRAIN_COLORS;
-      for (let i = 0; i < N; i++) {
-        let c = null;
-        const cell = gridData[i];
-        // eraColors が有効な場合は、colorHex より時代パレットを優先
-        if (!eraColors && cell && typeof cell.colorHex === 'string') {
-          c = cell.colorHex;
-        } else if (cell && cell.terrain) {
-          if (cell.terrain.type === 'sea') {
-            if (cell.terrain.sea === 'shallow') c = tc.shallowSea;
-            else if (cell.terrain.sea === 'glacier') c = tc.glacier;
-            else c = tc.deepSea;
-          } else if (cell.terrain.type === 'land') {
-            const l = cell.terrain.land;
-            if (l === 'tundra') c = tc.tundra;
-            else if (l === 'glacier') c = tc.glacier;
-            else if (l === 'lake') c = tc.shallowSea;
-            else if (l === 'highland') c = tc.highland;
-            else if (l === 'alpine') c = tc.alpine;
-            else if (l === 'desert') c = tc.desert;
-            else c = tc.lowland;
-          }
-        }
-        planeColors[i] = c || tc.lowland;
+      // 1.2) 平面表示色（+2枠）を計算してポップアップ用に保持
+      try {
+        const era = this.local && this.local.era ? this.local.era : (this.$store && this.$store.getters ? this.$store.getters.era : null);
+        const eraColors = getEraTerrainColors(era);
+        const displayColors = Array.isArray(payload.gridData)
+          ? deriveDisplayColorsFromGridData(payload.gridData, this.gridWidth, this.gridHeight, undefined, eraColors, /*preferPalette*/ true)
+          : [];
+        this.planeDisplayColors = Array.isArray(displayColors) ? displayColors : [];
+      } catch (e) {
+        this.planeDisplayColors = [];
       }
+      // 1.3) 平面地図専用ポップアップを更新
+      this.openOrUpdatePlanePopup();
       // 2) 親へ伝搬（AppからTerrain_Displayへ受け渡し用）
       this.$emit('generated', {
         gridData: payload.gridData || null,
         gridWidth: this.gridWidth,
         gridHeight: this.gridHeight,
-        centerParameters: payload.centerParameters,
-        displayColors: payload.displayColors || null,
-        planeColors
+        centerParameters: payload.centerParameters
       });
       // 2.5) Sphere 用にローカルにも保持
       this.gridDataLocal = Array.isArray(payload.gridData) ? payload.gridData : [];
@@ -529,6 +490,8 @@ export default {
         this.stats.lowlandDistanceToSea = payload.lowlandDistanceToSeaStats;
       }
       // 3.1) グリッド種類のカウント（合計 N）
+      const gridData = Array.isArray(payload.gridData) ? payload.gridData : [];
+      const N = gridData.length || (this.gridWidth * this.gridHeight);
       const counts = {
         deepSea: 0,
         shallowSea: 0,
@@ -638,6 +601,8 @@ export default {
       .row{margin-bottom:6px}
       label{display:inline-block;min-width:220px;color:#333}
       .section-title{font-weight:bold;margin-top:16px;margin-bottom:8px}
+      .canvas-wrap{margin-top:12px}
+      canvas{border:1px solid #ccc;border-radius:4px;display:block;margin:8px auto}
     </style>
   </head>
   <body>
@@ -671,6 +636,66 @@ export default {
     <div class="row"><label>汚染地:</label><span>${typeCounts ? escape(typeCounts.polluted) : '-'} (${typeCounts ? fmtPct(typeCounts.polluted, totalN) : '-'})</span></div>
     <div class="section-title">各中心点のパラメーター:</div>
     ${centersHtml}
+  </body>
+</html>`;
+    },
+    openOrUpdatePlanePopup() {
+      const w = this.planePopupRef && !this.planePopupRef.closed ? this.planePopupRef : window.open('', 'PlaneView', 'width=900,height=700');
+      this.planePopupRef = w;
+      if (!w) return;
+      const doc = w.document;
+      const html = this.buildPlaneHtml();
+      doc.open();
+      doc.write(html);
+      doc.close();
+    },
+    buildPlaneHtml() {
+      const displayColors = Array.isArray(this.planeDisplayColors) ? this.planeDisplayColors : [];
+      const cell = Number(this.planeGridCellPx) || 3;
+      const displayW = this.gridWidth + 2;
+      const displayH = this.gridHeight + 2;
+      return `
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Plane Map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body{margin:0;padding:12px;font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;background:#000;color:#fff}
+      h1{margin:0 0 8px;font-size:16px}
+      canvas{border:1px solid #666;border-radius:4px;display:block;margin:8px auto;background:#000}
+      .row{margin:4px 0;text-align:center}
+    </style>
+  </head>
+  <body>
+    <h1>Plane Map</h1>
+    <div class="row">${displayW} x ${displayH} cells, ${cell}px each</div>
+    <canvas id="plane-canvas"></canvas>
+    <script>
+      (function(){
+        try {
+          var colors = ${JSON.stringify(displayColors)};
+          var displayW = ${displayW};
+          var displayH = ${displayH};
+          var cell = ${cell};
+          var cvs = document.getElementById('plane-canvas');
+          if (!cvs) return;
+          cvs.width = Math.max(1, displayW * cell);
+          cvs.height = Math.max(1, displayH * cell);
+          var ctx = cvs.getContext('2d');
+          if (!ctx) return;
+          var i = 0;
+          for (var y = 0; y < displayH; y++) {
+            for (var x = 0; x < displayW; x++) {
+              var col = colors[i++] || '#000000';
+              ctx.fillStyle = col;
+              ctx.fillRect(x * cell, y * cell, cell, cell);
+            }
+          }
+        } catch (e) {}
+      })();
+    </scr${''}ipt>
   </body>
 </html>`;
     }
