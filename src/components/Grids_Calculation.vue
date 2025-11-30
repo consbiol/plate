@@ -69,7 +69,7 @@ export default {
     centerParameters: { type: Array, required: true },
     generateSignal: { type: Number, required: true },
     // 大陸の歪みの強さを方向角度に対して適用する係数（デフォルト 2.0）
-    directionDistortionScale: { type: Number, required: false, default: 2.0 },
+    directionDistortionScale: { type: Number, required: false, default: 0 },
     // 都市グリッド生成の確率（低地のみ、海隣接で10倍）
     cityGenerationProbability: { type: Number, required: false, default: 0.002 },
     // 耕作地グリッド生成の確率（低地のみ、海隣接で10倍）
@@ -710,6 +710,25 @@ export default {
           directionAngle: param ? param.directionAngle : 0
         };
       });
+      // 各中心ごとの角度プロファイル（尖り/凹み）をシードで決定
+      const centerShapeProfiles = centers.map((c, ci) => {
+        const rng = this._getDerivedRng('shape-profile', ci);
+        const r = rng || Math.random;
+        const numTerms = 2 + Math.floor(r() * 3); // 2..4 項
+        const maxK = 7; // 最大 7 ハーモニクス程度
+        const used = new Set();
+        const terms = [];
+        for (let t = 0; t < numTerms; t++) {
+          let k = 2 + Math.floor(r() * maxK); // 2..8 の尖り数
+          if (used.has(k)) k = ((k + 1 - 2) % maxK) + 2;
+          used.add(k);
+          const a = 0.15 + r() * 0.25; // 0.15..0.40
+          const phi = r() * Math.PI * 2; // 0..2π
+          terms.push({ k, a, phi });
+        }
+        const globalAmp = 0.35 + r() * 0.15; // 0.35..0.50（歪みの強さ）
+        return { terms, globalAmp };
+      });
       const biasStrength = Math.max(0, Number(this.centerBias || 0));
       const biasSharpness = 6.0;
       for (let gy = 0; gy < this.gridHeight; gy++) {
@@ -722,6 +741,21 @@ export default {
             // トーラス上での最短経路の方向を計算して角度を求める
             const dir = this.torusDirection(c.x, c.y, gx, gy);
             const angle = Math.atan2(dir.dy, dir.dx);
+            // 角度プロファイルによる大きないびつさ（尖り/凹み）: 距離を角度で倍率変調
+            {
+              const prof = centerShapeProfiles[ci];
+              if (prof && Array.isArray(prof.terms)) {
+                let m = 0;
+                for (const term of prof.terms) {
+                  m += Math.sin(term.k * angle + term.phi) * term.a;
+                }
+                // 過大な影響を抑えるためソフトクリップ
+                const mod = Math.tanh(m); // おおよそ [-1,1]
+                // mod > 0 で距離短縮（膨らみ=尖り）、mod < 0 で距離拡大（凹み）
+                const shapeScale = 1 - prof.globalAmp * mod;
+                di = di * Math.max(0.25, shapeScale); // 安定化のため下限を設置
+              }
+            }
             const fractalN = this.fractalNoise2D(gx * fractalNoiseScale, gy * fractalNoiseScale, 3, 0.5);
             const angularN = this.noise2D(Math.cos(angle) * 10, Math.sin(angle) * 10);
             const distanceWarp = (fractalN * 0.30 + angularN * 0.70) * distanceWarpAmplitude * rMaxPerCenter[ci];
@@ -730,12 +764,9 @@ export default {
             const base = Math.exp(- (dn * dn) * centerNoise.kDecayVariation);
             const simpleNoise = this.noise2D(gx, gy);
             const n = fractalN * 0.60 + simpleNoise * 0.40; // フラクタルノイズの比率を上げて形状を不規則に
-            let angleDiff = Math.abs(angle - centerNoise.directionAngle);
-            if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
-            const distortionScale = (this.directionDistortionScale != null) ? this.directionDistortionScale : 2.0;
-            const directionalBoost = 1.0 + Math.max(0, Math.cos(angleDiff)) * (0.8 * distortionScale);
             const biasTerm = biasStrength > 0 ? biasStrength * Math.exp(-(dn * dn) * biasSharpness) : 0;
-            const score = (base + this.noiseAmp * n) * centerNoise.influenceMultiplier * directionalBoost + biasTerm;
+            // 角度方向のバイアス（directionalBoost）を完全に除去
+            const score = (base + this.noiseAmp * n) * centerNoise.influenceMultiplier + biasTerm;
             if (score > maxScore) maxScore = score;
           }
           scores[gy * this.gridWidth + gx] = maxScore;
@@ -771,7 +802,11 @@ export default {
           glacierNoiseTable[i] = (gRng() * 2 - 1);
         }
       }
-      let centers = this.sampleLandCenters(seededRng); // 中心座標をシードで決定
+      // 大陸中心座標の決定:
+      // - 文明時代: シードに基づいて決定
+      // - それ以外: 完全ランダム（シード非依存）
+      const seedStrictCenters = (this.era === '文明時代') && !!seededRng;
+      let centers = this.sampleLandCenters(seedStrictCenters ? seededRng : null);
       // ノイズから中心パラメータを生成（propsは直接変更しない）
       let localCenterParameters = centers.map((c) => {
         if (seededRng) {
@@ -780,8 +815,9 @@ export default {
           return {
             x: c.x,
             y: c.y,
-            influenceMultiplier: 1.0 + u1 * 0.75,
-            kDecayVariation: this.kDecay * (1.0 + u1 * 0.75),
+            // さらにばらつきを縮小（影響は狭いレンジ、減衰は強め）
+            influenceMultiplier: 0.9 + u1 * 0.05, // [0.85, 0.95]
+            kDecayVariation: this.kDecay * (1.3 + u1 * 0.1), // [1.2, 1.4] × kDecay
             directionAngle: (u2 * 2 * Math.PI * 1.5)
           };
         } else {
@@ -790,8 +826,9 @@ export default {
           return {
             x: c.x,
             y: c.y,
-            influenceMultiplier: 1.0 + n1 * 0.75,
-            kDecayVariation: this.kDecay * (1.0 + n1 * 0.75),
+            // さらにばらつきを縮小（影響は狭いレンジ、減衰は強め）
+            influenceMultiplier: 0.9 + n1 * 0.05,
+            kDecayVariation: this.kDecay * (1.3 + n1 * 0.1),
             directionAngle: n2 * Math.PI * 2 * 1.5
           };
         }
@@ -813,7 +850,7 @@ export default {
         if (anyCenterLand) {
           success = true;
         } else {
-          centers = this.sampleLandCenters(seededRng);
+          centers = this.sampleLandCenters(seedStrictCenters ? seededRng : null);
         }
       }
       const landMask = new Array(N).fill(false);
@@ -848,8 +885,8 @@ export default {
           ownerCenterIdx[idx] = closestIdx;
         }
       }
-      // 膨張のバイアス（閾値近傍の許容範囲）: 大きいほど緩い条件で陸地が拡張されます（大陸の統合を防ぐため小さめに）
-      const expansionBias = 0.20;
+      // 膨張のバイアス（閾値近傍の許容範囲）: 値を下げて過度な拡張を抑制（平均サイズ縮小）
+      const expansionBias = 0.12;
       // 最大反復回数: トーラス間の連結を確保しつつ、陸グリッドサイズを小さくするため少し減らす
       const maxIterations = 10;
       for (let iter = 0; iter < maxIterations; iter++) {
