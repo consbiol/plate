@@ -403,6 +403,8 @@ export default {
     },
     // ツンドラの適用（上端/下端）
     _applyTundra(colors, landNoiseAmplitude, lowlandColor, tundraColor) {
+      // 基準が0以下ならツンドラは生成しない（氷河と同様の扱い）
+      if (!(this.topTundraRows > 0)) return;
       for (let gy = 0; gy < this.gridHeight; gy++) {
         for (let gx = 0; gx < this.gridWidth; gx++) {
           const idx = gy * this.gridWidth + gx;
@@ -411,7 +413,8 @@ export default {
           // 文明時代のみシード固定のノイズを使用
           const rTop = (this.era === '文明時代') ? (this._getDerivedRng('tundra-top', gx, gy) || Math.random) : Math.random;
           const noise = (rTop() * 2 - 1) * landNoiseAmplitude;
-          const threshold = this.topTundraRows + noise;
+          const base = this.topTundraRows;
+          const threshold = base > 0 ? Math.max(0, base + noise) : 0;
           if (distanceFromTop < threshold) {
             colors[idx] = tundraColor;
           }
@@ -424,7 +427,8 @@ export default {
           const distanceFromBottom = this.gridHeight - 1 - gy;
           const rBot = (this.era === '文明時代') ? (this._getDerivedRng('tundra-bottom', gx, gy) || Math.random) : Math.random;
           const noise = (rBot() * 2 - 1) * landNoiseAmplitude;
-          const threshold = this.topTundraRows + noise;
+          const base = this.topTundraRows;
+          const threshold = base > 0 ? Math.max(0, base + noise) : 0;
           if (distanceFromBottom < threshold) {
             colors[idx] = tundraColor;
           }
