@@ -74,6 +74,8 @@ export default {
     cityGenerationProbability: { type: Number, required: false, default: 0.002 },
     // 耕作地グリッド生成の確率（低地のみ、海隣接で10倍）
     cultivatedGenerationProbability: { type: Number, required: false, default: 0.05 },
+    // 汚染地クラスター数（マップ全体、開始セルはシードで決定）
+    pollutedAreasCount: { type: Number, required: false, default: 1 },
     // 指定要素のみ決定化するためのシード（未指定時は従来通り）
     deterministicSeed: { type: [Number, String], required: false, default: null },
     // 時代（パレット切替用、未指定ならデフォルト色）
@@ -414,8 +416,9 @@ export default {
           const idx = gy * this.gridWidth + gx;
           if (colors[idx] !== lowlandColor) continue;
           const distanceFromTop = gy;
-          // ツンドラ幅は完全ランダム（シード非依存）
-          const noise = (Math.random() * 2 - 1) * landNoiseAmplitude;
+          // 文明時代のみシード固定のノイズを使用
+          const rTop = (this.era === '文明時代') ? (this._getDerivedRng('tundra-top', gx, gy) || Math.random) : Math.random;
+          const noise = (rTop() * 2 - 1) * landNoiseAmplitude;
           const threshold = this.topTundraRows + noise;
           if (distanceFromTop < threshold) {
             colors[idx] = tundraColor;
@@ -427,7 +430,8 @@ export default {
           const idx = gy * this.gridWidth + gx;
           if (colors[idx] !== lowlandColor) continue;
           const distanceFromBottom = this.gridHeight - 1 - gy;
-          const noise = (Math.random() * 2 - 1) * landNoiseAmplitude;
+          const rBot = (this.era === '文明時代') ? (this._getDerivedRng('tundra-bottom', gx, gy) || Math.random) : Math.random;
+          const noise = (rBot() * 2 - 1) * landNoiseAmplitude;
           const threshold = this.topTundraRows + noise;
           if (distanceFromBottom < threshold) {
             colors[idx] = tundraColor;
@@ -439,16 +443,18 @@ export default {
     _generateLakes(centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog) {
       const N = this.gridWidth * this.gridHeight;
       const lakeMask = new Array(N).fill(false);
+      const seedStrict = (this.era === '文明時代') && !!seededRng;
       for (let ci = 0; ci < centers.length; ci++) {
         const lambda = this.averageLakesPerCenter;
-        // 湖の個数はランダム（シード非依存）だが、開始セルはシードで決定する
-        const numLakes = this._poissonSample(lambda, 20);
+        // 文明時代のみ湖の個数もシードで決定（他時代は従来通り）
+        const countRng = seedStrict ? (this._getDerivedRng('lake-count', ci) || seededRng) : null;
+        const numLakes = this._poissonSample(lambda, 20, countRng || seededRng || Math.random);
         const centerLandGrids = centerLandCells[ci] || [];
         for (let lakeIdx = 0; lakeIdx < numLakes; lakeIdx++) {
           if (centerLandGrids.length === 0) break;
           let start = null;
           for (let attempt = 0; attempt < 10; attempt++) {
-            const r = seededRng || Math.random; // 開始セルのみシードで決定
+            const r = seededRng || Math.random; // 開始セルはシード優先（従来仕様維持）
             const startIdx = Math.floor(r() * centerLandGrids.length);
             const cand = centerLandGrids[startIdx];
             if (landMask[cand.idx] && !lakeMask[cand.idx]) { start = cand; break; }
@@ -459,7 +465,8 @@ export default {
             if (!Array.isArray(seededLog[ci].lakeStarts)) seededLog[ci].lakeStarts = [];
             seededLog[ci].lakeStarts.push({ x: start.x, y: start.y });
           }
-          const targetSize = 3 + Math.floor(Math.random() * 13);
+          const sizeRng = seedStrict ? (this._getDerivedRng('lake-size', ci, lakeIdx) || seededRng) : null;
+          const targetSize = 3 + Math.floor((sizeRng || Math.random)() * 13);
           const lakeQueue = [{ x: start.x, y: start.y, idx: start.idx }];
           const visited = new Set([start.idx]);
           const lakeCells = [start.idx];
@@ -470,10 +477,12 @@ export default {
             { dx: -1, dy: -1 }, { dx: 1, dy: -1 },
             { dx: -1, dy: 1 }, { dx: 1, dy: 1 }
           ];
+          const stepRng = seedStrict ? (this._getDerivedRng('lake-expand', ci, lakeIdx) || seededRng) : null;
           while (q < lakeQueue.length && lakeCells.length < targetSize) {
             const cur = lakeQueue[q++];
             for (const d of dirs) {
-              if (Math.random() > 0.4) continue;
+              const rr = (stepRng || Math.random)();
+              if (rr > 0.4) continue;
               const wrapped = this.torusWrap(cur.x + d.dx, cur.y + d.dy);
               if (!wrapped) continue;
               const nIdx = wrapped.y * this.gridWidth + wrapped.x;
@@ -523,6 +532,7 @@ export default {
     _generateHighlands(centers, centerLandCellsPre, preLandMask, lakeMask, colors, highlandColor, seededRng, seededLog) {
       const N = this.gridWidth * this.gridHeight;
       const highlandMask = new Array(N).fill(false);
+      const seedStrict = (this.era === '文明時代') && !!seededRng;
       for (let ci = 0; ci < centers.length; ci++) {
         // 高地（中心単位）のサブRNG
         const centerRng = this._getDerivedRng('highland-center', ci);
@@ -539,23 +549,24 @@ export default {
           if (centerLandGrids.length === 0) break;
           let start = null;
           for (let attempt = 0; attempt < 10; attempt++) {
-            const r = clusterRng || seededRng || Math.random; // 開始セルはサブRNG優先
+            // 文明時代かつシード有りのときは Math.random を使わず決定
+            const r = seedStrict ? (clusterRng || seededRng) : (clusterRng || seededRng || Math.random);
             const startIdx = Math.floor(r() * centerLandGrids.length);
             const cand = centerLandGrids[startIdx];
             if (preLandMask[cand.idx] && !lakeMask[cand.idx] && !highlandMask[cand.idx]) { start = cand; break; }
           }
           if (!start) continue;
-          const rForSize = clusterRng || seededRng || Math.random; // サイズはサブRNG優先
+          const rForSize = seedStrict ? (clusterRng || seededRng) : (clusterRng || seededRng || Math.random); // サイズはサブRNG優先
           const targetSize = 30 + Math.floor(rForSize() * 121);
           // シードで決定された高地クラスターの開始セル・サイズを記録
           if (seededLog && seededLog[ci]) {
             seededLog[ci].highlandClusters.push({ x: start.x, y: start.y, size: targetSize });
           }
-          const rDir = clusterRng || seededRng || Math.random; // 主方向はサブRNG優先
+          const rDir = seedStrict ? (clusterRng || seededRng) : (clusterRng || seededRng || Math.random); // 主方向はサブRNG優先
           const mainAngle = rDir() * Math.PI * 2;
           const mainDx = Math.cos(mainAngle);
           const mainDy = Math.sin(mainAngle);
-          const rSpread = clusterRng || seededRng || Math.random; // 横方向強度もサブRNG優先
+          const rSpread = seedStrict ? (clusterRng || seededRng) : (clusterRng || seededRng || Math.random); // 横方向強度もサブRNG優先
           const spreadIntensity = 0.5 + rSpread() * 1.0;
           const perpDx = -mainDy;
           const perpDy = mainDx;
@@ -581,7 +592,7 @@ export default {
                 const progress = relX * mainDx + relY * mainDy;
                 const perpOffset = relX * perpDx + relY * perpDy;
                 // 高地生成時のノイズもサブRNGに基づく（無ければフォールバック）
-                const rNoise = clusterRng || seededRng || Math.random;
+                const rNoise = seedStrict ? (clusterRng || seededRng) : (clusterRng || seededRng || Math.random);
                 const noise = (rNoise() * 2 - 1) * 2.0;
                 const allowedPerpSpread = spreadIntensity * (1 + Math.abs(noise));
                 if (progress >= currentProgress - 0.5 && Math.abs(perpOffset) <= allowedPerpSpread) {
@@ -737,15 +748,21 @@ export default {
       const wobbleRows = Math.max(0, Math.floor(this.landBandVerticalWobbleRows || 0));
       if (wobbleRows > 0) {
         this._wobbleShiftByX = new Array(this.gridWidth);
+        const seedStrictGeom = (this.era === '文明時代') && !!seededRng;
         for (let x = 0; x < this.gridWidth; x++) {
-          this._wobbleShiftByX[x] = Math.round((Math.random() * 2 - 1) * wobbleRows);
+          const r = seedStrictGeom ? (this._getDerivedRng('wobble-x', x) || seededRng) : Math.random;
+          this._wobbleShiftByX[x] = Math.round((r() * 2 - 1) * wobbleRows);
         }
       } else {
         this._wobbleShiftByX = null;
       }
       const glacierNoiseTable = new Array(N);
-      for (let i = 0; i < N; i++) {
-        glacierNoiseTable[i] = (Math.random() * 2 - 1);
+      {
+        const seedStrictGl = (this.era === '文明時代') && !!seededRng;
+        const gRng = seedStrictGl ? (this._getDerivedRng('glacier-noise') || seededRng) : Math.random;
+        for (let i = 0; i < N; i++) {
+          glacierNoiseTable[i] = (gRng() * 2 - 1);
+        }
       }
       let centers = this.sampleLandCenters(seededRng); // 中心座標をシードで決定
       // ノイズから中心パラメータを生成（propsは直接変更しない）
@@ -799,8 +816,11 @@ export default {
       for (let gy = 0; gy < this.gridHeight; gy++) {
         for (let gx = 0; gx < this.gridWidth; gx++) {
           const idx = gy * this.gridWidth + gx;
-          // 乾燥地・海エッジなど「見た目ノイズ」は完全ランダム（シード非依存）
-          noiseGrid[idx] = (Math.random() * 2 - 1);
+          // 乾燥地・海エッジなど「見た目ノイズ」
+          // 文明時代のみシードで固定（浅瀬/深海境界・砂漠/低地境界を決定論化）
+          const strict = (this.era === '文明時代') && !!seededRng;
+          const vrng = strict ? (this._getDerivedRng('vis-noise', gx, gy) || seededRng) : Math.random;
+          noiseGrid[idx] = (vrng() * 2 - 1);
         }
       }
       // 前計算: 各セルの最寄り中心インデックス（湖/高地生成の所属チェック高速化）
@@ -873,8 +893,10 @@ export default {
           if (hasLandNeighbor) break;
         }
         if (!hasLandNeighbor) {
-          // 90% の確率で海に戻す
-          if (Math.random() < 0.9) landMask[idx] = false;
+          // 90% の確率で海に戻す（文明時代はシードで決定）
+          const strict = (this.era === '文明時代') && !!seededRng;
+          const r = strict ? (this._getDerivedRng('coast-island', gx, gy) || seededRng) : Math.random;
+          if (r() < 0.9) landMask[idx] = false;
         }
       }
     }
@@ -909,7 +931,9 @@ export default {
         const idx = gy * this.gridWidth + gx;
         const s = scores[idx];
         if (Math.abs(s - threshold) <= scoreBand && hasOppNeighbor(gx, gy)) {
-          if (Math.random() < flipProb) {
+          const strict = (this.era === '文明時代') && !!seededRng;
+          const r = strict ? (this._getDerivedRng('coast-flip', gx, gy) || seededRng) : Math.random;
+          if (r() < flipProb) {
             landMask[idx] = !landMask[idx];
           }
         }
@@ -987,8 +1011,8 @@ export default {
       }
       // 湖生成と適用（ジッター後のマスクに基づく）
       const lakeMask = this._generateLakes(centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog);
-      // 高地生成と適用
-      this._generateHighlands(centers, centerLandCells, landMask, lakeMask, colors, highlandColor, seededRng, seededLog);
+      // 高地生成と適用（文明時代の決定性向上のため、海岸線ジッター前のマスクを使用）
+      this._generateHighlands(centers, centerLandCellsPre, preJitterLandMask, lakeMask, colors, highlandColor, seededRng, seededLog);
       // 高山生成と適用
       this._generateAlpines(colors, highlandColor, lowlandColor, desertColor, alpineColor, directions);
       // --- ツンドラの適用（上端・下端） ---
@@ -1055,6 +1079,7 @@ export default {
       // 追加: city/cultivated の生成（低地のみ、海隣接で確率10倍）
       const cityMask = new Array(N).fill(false);
       const cultivatedMask = new Array(N).fill(false);
+      const pollutedMask = new Array(N).fill(false);
       const rCity = this._getDerivedRng('city') || Math.random;
       const rCult = this._getDerivedRng('cultivated') || Math.random;
       // 地域差ノイズ（都市の発生率に地域バイアスを付与）
@@ -1098,9 +1123,51 @@ export default {
             const idx = gy * this.gridWidth + gx;
             // 最終色が低地のみ対象（ツンドラ/砂漠/高地/高山/氷河/海などは除外）
             if (colors[idx] !== lowlandColor) continue;
-            // 既に city に含まれているセルはスキップ（cultivatedとの二重指定を回避）
+            // cultivated（先に生成）
+            const baseCult = Math.max(0, this.cultivatedGenerationProbability || 0);
+            const pcCult = isAdjacentToSea(gx, gy) ? Math.min(1, baseCult * 10) : baseCult;
+            // 開始セルの採択は座標由来のシードで決定（安定化）
+            const startCultRng = this._getDerivedRng('cultivated-start', gx, gy) || rCult;
+            if (pcCult > 0 && (startCultRng() < pcCult) && !cultivatedMask[idx]) {
+              // クラスタ生成: 平均 ~5 グリッドの面積（Poissonサンプル）
+              const clusterRng = this._getDerivedRng('cultivated-cluster', gx, gy) || Math.random;
+              const targetSize = Math.max(1, this._poissonSample(5, 50, clusterRng));
+              const dirs = [
+                { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+                { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+                { dx: -1, dy: -1 }, { dx: 1, dy: -1 },
+                { dx: -1, dy: 1 }, { dx: 1, dy: 1 }
+              ];
+              const queue = [{ x: gx, y: gy, idx }];
+              const visited = new Set([idx]);
+              cultivatedMask[idx] = true;
+              let count = 1;
+              while (queue.length > 0 && count < targetSize) {
+                const cur = queue.shift();
+                for (const d of dirs) {
+              // 隣接セルを確率的に拡張（密になり過ぎないよう 0.6 で採択）
+              {
+                const rand = (clusterRng || seededRng || Math.random);
+                if (rand() > 0.6) continue;
+              }
+                  const w = this.torusWrap(cur.x + d.dx, cur.y + d.dy);
+                  if (!w) continue;
+                  const nIdx = w.y * this.gridWidth + w.x;
+                  if (visited.has(nIdx)) continue;
+                  visited.add(nIdx);
+                  // 拡張条件: 低地・未city・未cultivated
+                  if (colors[nIdx] !== lowlandColor) continue;
+                  if (cityMask[nIdx]) continue;
+                  if (cultivatedMask[nIdx]) continue;
+                  cultivatedMask[nIdx] = true;
+                  count++;
+                  if (count >= targetSize) break;
+                  queue.push({ x: w.x, y: w.y, idx: nIdx });
+                }
+              }
+            }
+            // city（cultivated の後で上書き）
             if (cityMask[idx]) continue;
-            // city
             const baseCity = Math.max(0, this.cityGenerationProbability || 0);
             // 地域差ノイズによる倍率
             // 座標はそのまま渡し、スケールは引数で指定（ダブルスケーリングを避ける）
@@ -1128,8 +1195,11 @@ export default {
               while (queue.length > 0 && count < targetSize) {
                 const cur = queue.shift();
                 for (const d of dirs) {
-                  // 隣接セルを確率的に拡張（密になり過ぎないよう 0.6 で採択）
-                  if ((clusterRng() || Math.random()) > 0.6) continue;
+              // 隣接セルを確率的に拡張（密になり過ぎないよう 0.6 で採択）
+              {
+                const rand = (clusterRng || seededRng || Math.random);
+                if (rand() > 0.6) continue;
+              }
                   const w = this.torusWrap(cur.x + d.dx, cur.y + d.dy);
                   if (!w) continue;
                   const nIdx = w.y * this.gridWidth + w.x;
@@ -1144,46 +1214,90 @@ export default {
                   queue.push({ x: w.x, y: w.y, idx: nIdx });
                 }
               }
-              continue; // city 優先、同セルで cultivated は生成しない
             }
-            // cultivated
-            const baseCult = Math.max(0, this.cultivatedGenerationProbability || 0);
-            const pcCult = isAdjacentToSea(gx, gy) ? Math.min(1, baseCult * 10) : baseCult;
-            // 開始セルの採択は座標由来のシードで決定（安定化）
-            const startCultRng = this._getDerivedRng('cultivated-start', gx, gy) || rCult;
-            if (pcCult > 0 && (startCultRng() < pcCult) && !cultivatedMask[idx]) {
-              // クラスタ生成: 平均 ~5 グリッドの面積（Poissonサンプル）
-              const clusterRng = this._getDerivedRng('cultivated-cluster', gx, gy) || Math.random;
-              const targetSize = Math.max(1, this._poissonSample(5, 50, clusterRng));
-              const dirs = [
-                { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
-                { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
-                { dx: -1, dy: -1 }, { dx: 1, dy: -1 },
-                { dx: -1, dy: 1 }, { dx: 1, dy: 1 }
-              ];
-              const queue = [{ x: gx, y: gy, idx }];
-              const visited = new Set([idx]);
-              cultivatedMask[idx] = true;
-              let count = 1;
-              while (queue.length > 0 && count < targetSize) {
-                const cur = queue.shift();
-                for (const d of dirs) {
-                  // 隣接セルを確率的に拡張（密になり過ぎないよう 0.6 で採択）
-                  if ((clusterRng() || Math.random()) > 0.6) continue;
-                  const w = this.torusWrap(cur.x + d.dx, cur.y + d.dy);
-                  if (!w) continue;
-                  const nIdx = w.y * this.gridWidth + w.x;
-                  if (visited.has(nIdx)) continue;
-                  visited.add(nIdx);
-                  // 拡張条件: 低地・未city・未cultivated
-                  if (colors[nIdx] !== lowlandColor) continue;
-                  if (cityMask[nIdx]) continue;
-                  if (cultivatedMask[nIdx]) continue;
-                  cultivatedMask[nIdx] = true;
-                  count++;
-                  if (count >= targetSize) break;
-                  queue.push({ x: w.x, y: w.y, idx: nIdx });
+          }
+        }
+        // 追加: 汚染地の生成（文明時代のみ、低地/都市/耕作地セル上に生成、クラスター平均サイズ ~20）
+        const countPolluted = Math.max(0, Math.floor(Number(this.pollutedAreasCount || 0)));
+        if (countPolluted > 0) {
+          const eligible = [];
+          for (let i = 0; i < N; i++) {
+            if (colors[i] === lowlandColor || cityMask[i] || cultivatedMask[i]) eligible.push(i);
+          }
+          // 海岸セルに重み10、内陸に重み1（cityと同様の海岸優遇）
+          const weights = new Array(eligible.length);
+          let totalWeight = 0;
+          for (let ei = 0; ei < eligible.length; ei++) {
+            const idx0 = eligible[ei];
+            const sx = idx0 % this.gridWidth;
+            const sy = Math.floor(idx0 / this.gridWidth);
+            const w = isAdjacentToSea(sx, sy) ? 10 : 1;
+            weights[ei] = w;
+            totalWeight += w;
+          }
+          const pickRng = this._getDerivedRng('polluted-pick') || Math.random;
+          const chosen = new Set();
+          const dirs = [
+            { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+            { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+            { dx: -1, dy: -1 }, { dx: 1, dy: -1 },
+            { dx: -1, dy: 1 }, { dx: 1, dy: 1 }
+          ];
+          for (let k = 0; k < countPolluted && eligible.length > 0; k++) {
+            // 重み付き抽選（選択済みは重み0にして再抽選）
+            let startIdx = -1;
+            let pickedEi = -1;
+            for (let tries = 0; tries < Math.max(20, eligible.length); tries++) {
+              if (totalWeight <= 0) break;
+              let r = (pickRng() || Math.random) * totalWeight;
+              let acc = 0;
+              for (let ei = 0; ei < eligible.length; ei++) {
+                const w = weights[ei] || 0;
+                if (w <= 0) continue;
+                acc += w;
+                if (acc >= r) {
+                  const idx0 = eligible[ei];
+                  if (chosen.has(idx0)) {
+                    // すでに選択済みならスキップしてやり直し
+                    continue;
+                  }
+                  startIdx = idx0;
+                  pickedEi = ei;
+                  break;
                 }
+              }
+              if (startIdx >= 0) break;
+            }
+            if (startIdx < 0) break;
+            chosen.add(startIdx);
+            if (pickedEi >= 0) {
+              totalWeight -= (weights[pickedEi] || 0);
+              weights[pickedEi] = 0;
+            }
+            const sx = startIdx % this.gridWidth;
+            const sy = Math.floor(startIdx / this.gridWidth);
+            const clusterRng = this._getDerivedRng('polluted-cluster', sx, sy) || Math.random;
+            const targetSize = Math.max(1, this._poissonSample(20, 200, clusterRng));
+            const queue = [{ x: sx, y: sy, idx: startIdx }];
+            const visited = new Set([startIdx]);
+            pollutedMask[startIdx] = true;
+            let count = 1;
+            while (queue.length > 0 && count < targetSize) {
+              const cur = queue.shift();
+              for (const d of dirs) {
+                const acceptP = 0.6 + ((clusterRng() || Math.random) - 0.5) * 0.2; // 0.5..0.7
+                if ((clusterRng() || Math.random) > acceptP) continue;
+                const w = this.torusWrap(cur.x + d.dx, cur.y + d.dy);
+                if (!w) continue;
+                const nIdx = w.y * this.gridWidth + w.x;
+                if (visited.has(nIdx)) continue;
+                visited.add(nIdx);
+                // 低地 or 都市 or 耕作地に拡張（city/cultivated は上書き）
+                if (!(colors[nIdx] === lowlandColor || cityMask[nIdx] || cultivatedMask[nIdx])) continue;
+                pollutedMask[nIdx] = true;
+                count++;
+                if (count >= targetSize) break;
+                queue.push({ x: w.x, y: w.y, idx: nIdx });
               }
             }
           }
@@ -1217,9 +1331,10 @@ export default {
     precipitation,
     terrain,
     colorHex: col,
-    // 都市/耕作地フラグ（色は colors.js でパレットから解決）
+    // 都市/耕作地/汚染地フラグ（色は colors.js でパレットから解決）
     city: !!cityMask[idx],
-    cultivated: !!cultivatedMask[idx]
+    cultivated: !!cultivatedMask[idx],
+    polluted: !!pollutedMask[idx]
   };
         }
       }

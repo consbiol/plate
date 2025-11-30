@@ -12,7 +12,8 @@ export function getDefaultTerrainColors() {
         glacier: '#FFFFFF',
         border: '#000000',
         city: '#F15A22',
-        cultivated: '#ffff00'
+        cultivated: '#ffff00',
+        polluted: '#800080'
     };
 }
 
@@ -29,9 +30,29 @@ export function getEraColors_Bombardment() {
         glacier: '#FFFFFF',
         border: '#000000',
         city: '#F15A22',
-        cultivated: '#ffff00'
+        cultivated: '#ffff00',
+        polluted: '#800080'
     };
 }
+
+// 生命発生前時代（プリバイオティック期）
+export function getEraColors_PreLife() {
+    return {
+        deepSea: '#ffff00',
+        shallowSea: '#3C78B4',
+        lowland: '#228B22',
+        desert: '#96826E',
+        highland: '#91644B',
+        alpine: '#5F5046',
+        tundra: '#7ea836',
+        glacier: '#FFFFFF',
+        border: '#000000',
+        city: '#F15A22',
+        cultivated: '#ffff00',
+        polluted: '#800080'
+    };
+}
+
 export function getEraColors_AnaerobicBacteria() {
     return {
         deepSea: '#1E508C',
@@ -44,7 +65,8 @@ export function getEraColors_AnaerobicBacteria() {
         glacier: '#FFFFFF',
         border: '#000000',
         city: '#F15A22',
-        cultivated: '#ffff00'
+        cultivated: '#ffff00',
+        polluted: '#800080'
     };
 }
 export function getEraColors_PhotosyntheticBacteria() {
@@ -59,7 +81,8 @@ export function getEraColors_PhotosyntheticBacteria() {
         glacier: '#FFFFFF',
         border: '#000000',
         city: '#F15A22',
-        cultivated: '#ffff00'
+        cultivated: '#ffff00',
+        polluted: '#800080'
     };
 }
 export function getEraColors_Eukaryotes() {
@@ -74,7 +97,8 @@ export function getEraColors_Eukaryotes() {
         glacier: '#FFFFFF',
         border: '#000000',
         city: '#F15A22',
-        cultivated: '#ffff00'
+        cultivated: '#ffff00',
+        polluted: '#800080'
     };
 }
 export function getEraColors_Multicellular() {
@@ -89,7 +113,8 @@ export function getEraColors_Multicellular() {
         glacier: '#FFFFFF',
         border: '#000000',
         city: '#F15A22',
-        cultivated: '#ffff00'
+        cultivated: '#ffff00',
+        polluted: '#800080'
     };
 }
 export function getEraColors_MarineDiversification() {
@@ -104,7 +129,8 @@ export function getEraColors_MarineDiversification() {
         glacier: '#FFFFFF',
         border: '#000000',
         city: '#F15A22',
-        cultivated: '#ffff00'
+        cultivated: '#ffff00',
+        polluted: '#800080'
     };
 }
 export function getEraColors_BryophyteExpansion() {
@@ -119,7 +145,8 @@ export function getEraColors_BryophyteExpansion() {
         glacier: '#FFFFFF',
         border: '#000000',
         city: '#F15A22',
-        cultivated: '#ffff00'
+        cultivated: '#ffff00',
+        polluted: '#800080'
     };
 }
 export function getEraColors_PteridophyteGymnospermExpansion() {
@@ -134,7 +161,8 @@ export function getEraColors_PteridophyteGymnospermExpansion() {
         glacier: '#FFFFFF',
         border: '#000000',
         city: '#F15A22',
-        cultivated: '#ffff00'
+        cultivated: '#ffff00',
+        polluted: '#800080'
     };
 }
 // 新名称対応: PteridophyteExpansion（表示名: シダ植物時代）
@@ -150,7 +178,8 @@ export function getEraColors_PteridophyteExpansion() {
         glacier: '#FFFFFF',
         border: '#000000',
         city: '#F15A22',
-        cultivated: '#ffff00'
+        cultivated: '#ffff00',
+        polluted: '#800080'
     };
 }
 export function getEraColors_GreatForest() {
@@ -165,7 +194,8 @@ export function getEraColors_GreatForest() {
         glacier: '#FFFFFF',
         border: '#000000',
         city: '#F15A22',
-        cultivated: '#ffff00'
+        cultivated: '#ffff00',
+        polluted: '#800080'
     };
 }
 export function getEraColors_Civilization() {
@@ -180,12 +210,14 @@ export function getEraColors_Civilization() {
         glacier: '#FFFFFF',
         border: '#000000',
         city: '#F15A22',
-        cultivated: '#ffff00'
+        cultivated: '#ffff00',
+        polluted: '#800080'
     };
 }
 
 const ERA_COLOR_FACTORIES = {
     '爆撃時代': getEraColors_Bombardment,
+    '生命発生前時代': getEraColors_PreLife,
     '嫌気性細菌誕生時代': getEraColors_AnaerobicBacteria,
     '光合成細菌誕生時代': getEraColors_PhotosyntheticBacteria,
     '真核生物誕生時代': getEraColors_Eukaryotes,
@@ -208,6 +240,7 @@ export function getEraTerrainColors(era) {
 // 後で個別に変更したい場合は、このマップの値を編集してください。
 const ERA_LAND_TINTS = {
     '爆撃時代': '#96A5B9',
+    '生命発生前時代': '#96A5B9',
     '嫌気性細菌誕生時代': '#96A5B9',
     '光合成細菌誕生時代': '#FF0000',
     '真核生物誕生時代': '#96A5B9',
@@ -230,9 +263,10 @@ export function getEraLandTint(era) {
 // 後で個別に変更したい場合は、このマップの値を編集してください。
 const ERA_CLOUD_TINTS = {
     '爆撃時代': '#FFFFFF',
+    '生命発生前時代': '#5E7C85',
     '嫌気性細菌誕生時代': '#FFFFFF',
     '光合成細菌誕生時代': '#FFFFFF',
-    '真核生物誕生時代': '#FFFFFF',
+    '真核生物誕生時代': '#ED1A3D',
     '多細胞生物誕生時代': '#ED1A3D',
     '海洋生物多様化時代': '#FFFFFF',
     '苔類進出時代': '#FFFFFF',
@@ -271,7 +305,10 @@ function cellToColor(cell, tc, preferPalette) {
             else base = tc.lowland;
         }
     }
-    // 上書き（city/cultivated は最優先）
+    // 上書き優先度: polluted > city > cultivated
+    if (cell && cell.polluted) {
+        return (tc && tc.polluted) ? tc.polluted : '#800080';
+    }
     if (cell && cell.city) {
         return (tc && tc.city) ? tc.city : '#808080';
     }

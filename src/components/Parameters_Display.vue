@@ -1,5 +1,14 @@
 <template>
   <div class="parameters-display">
+    <!-- 平面地図（パラメーターUIより上に表示） -->
+    <div style="margin-bottom: 16px;">
+      <Terrain_Display
+        :gridWidth="gridWidth"
+        :gridHeight="gridHeight"
+        :gridData="gridDataLocal"
+        :era="$store && $store.getters ? $store.getters.era : null"
+      />
+    </div>
     <button @click="onClickGenerate" style="margin-bottom: 12px; margin-left: 8px;">
       Generate (Popup + Render)
     </button>
@@ -112,6 +121,10 @@
       <label>耕作地生成確率 (低地, 海隣接で×10): </label>
       <input type="number" min="0" max="1" step="0.01" v-model.number="local.cultivatedProbability" />
     </div>
+    <div style="margin-bottom: 8px;">
+      <label>汚染地クラスター数（マップ全体）: </label>
+      <input type="number" min="0" max="1000" step="1" v-model.number="local.pollutedAreasCount" />
+    </div>
 
     <div v-if="centerParameters && centerParameters.length > 0" style="margin-top: 20px; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto;">
       <div style="font-weight: bold; margin-bottom: 8px;">各中心点のパラメーター:</div>
@@ -189,6 +202,7 @@
       :era="local.era || ($store && $store.getters ? $store.getters.era : null)"
       :cityGenerationProbability="local.cityProbability"
       :cultivatedGenerationProbability="local.cultivatedProbability"
+      :pollutedAreasCount="local.pollutedAreasCount"
       @generated="onGenerated"
     />
 
@@ -211,10 +225,11 @@
 // - 入力欄の値は内部state(local)に保持し、必要に応じて親へemitします。
 import Grids_Calculation from './Grids_Calculation.vue';
 import Sphere_Display from './Sphere_Display.vue';
+import Terrain_Display from './Terrain_Display.vue';
 import { getEraTerrainColors } from '../utils/colors.js';
 export default {
   name: 'Parameters_Display',
-  components: { Grids_Calculation, Sphere_Display },
+  components: { Grids_Calculation, Sphere_Display, Terrain_Display },
   props: {
     // 陸の中心点の数（デフォルト: 5）: 地形生成の起点となる中心点の個数。多いほど複雑な地形になります。
     centersY: { type: Number, required: false, default: 5 },
@@ -262,7 +277,9 @@ export default {
     // 都市生成確率（低地、海隣接で10倍）
     cityProbability: { type: Number, required: false, default: 0.002 },
     // 耕作地生成確率（低地、海隣接で10倍）
-    cultivatedProbability: { type: Number, required: false, default: 0.05 }
+    cultivatedProbability: { type: Number, required: false, default: 0.05 },
+    // 汚染地クラスター数（マップ全体、シードで開始セルを決定）
+    pollutedAreasCount: { type: Number, required: false, default: 1 }
   },
   mounted() {
     // 初期表示時に平均気温から氷河行数を算出（デフォルト 15℃ → 5）
@@ -305,11 +322,13 @@ export default {
         averageHighlandsPerCenter: this.averageHighlandsPerCenter,
         deterministicSeed: '',
         cityProbability: this.cityProbability,
-        cultivatedProbability: this.cultivatedProbability
+        cultivatedProbability: this.cultivatedProbability,
+        pollutedAreasCount: this.pollutedAreasCount
       },
       // UI で選べる時代一覧（store.era と対応）
       eras: [
         '爆撃時代',
+        '生命発生前時代',
         '嫌気性細菌誕生時代',
         '光合成細菌誕生時代',
         '真核生物誕生時代',
