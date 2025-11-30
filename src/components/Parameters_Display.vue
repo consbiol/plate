@@ -125,6 +125,15 @@
       <label>汚染地クラスター数（マップ全体）: </label>
       <input type="number" min="0" max="1000" step="1" v-model.number="local.pollutedAreasCount" />
     </div>
+    <div style="margin-bottom: 8px;">
+      <label>大陸中心点を赤で表示: </label>
+      <input type="checkbox" v-model="local.showCentersRed" />
+    </div>
+    <div style="margin-bottom: 8px;">
+      <label>中心点近傍バイアス: </label>
+      <input type="number" min="0" max="3" step="0.1" v-model.number="local.centerBias" />
+      <span style="margin-left:8px">{{ (local.centerBias || 0).toFixed(2) }}</span>
+    </div>
 
     <div v-if="centerParameters && centerParameters.length > 0" style="margin-top: 20px; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto;">
       <div style="font-weight: bold; margin-bottom: 8px;">各中心点のパラメーター:</div>
@@ -203,6 +212,8 @@
       :cityGenerationProbability="local.cityProbability"
       :cultivatedGenerationProbability="local.cultivatedProbability"
       :pollutedAreasCount="local.pollutedAreasCount"
+      :showCentersRed="local.showCentersRed"
+      :centerBias="local.centerBias"
       @generated="onGenerated"
     />
 
@@ -279,7 +290,11 @@ export default {
     // 耕作地生成確率（低地、海隣接で10倍）
     cultivatedProbability: { type: Number, required: false, default: 0.05 },
     // 汚染地クラスター数（マップ全体、シードで開始セルを決定）
-    pollutedAreasCount: { type: Number, required: false, default: 1 }
+    pollutedAreasCount: { type: Number, required: false, default: 1 },
+    // 大陸中心点を赤で表示（デフォルト: ON）
+    showCentersRed: { type: Boolean, required: false, default: true },
+    // 中心点近傍の陸生成バイアス（0で無効、値を上げると中心付近が陸になりやすい）
+    centerBias: { type: Number, required: false, default: 0.5 }
   },
   mounted() {
     // 初期表示時に平均気温から氷河行数を算出（デフォルト 15℃ → 5）
@@ -323,7 +338,9 @@ export default {
         deterministicSeed: '',
         cityProbability: this.cityProbability,
         cultivatedProbability: this.cultivatedProbability,
-        pollutedAreasCount: this.pollutedAreasCount
+        pollutedAreasCount: this.pollutedAreasCount,
+        showCentersRed: this.showCentersRed,
+        centerBias: this.centerBias
       },
       // UI で選べる時代一覧（store.era と対応）
       eras: [
@@ -495,7 +512,6 @@ export default {
         }
         planeColors[i] = c || tc.lowland;
       }
-      this.openOrUpdatePopup();
       // 2) 親へ伝搬（AppからTerrain_Displayへ受け渡し用）
       this.$emit('generated', {
         gridData: payload.gridData || null,
@@ -508,11 +524,59 @@ export default {
       // 2.5) Sphere 用にローカルにも保持
       this.gridDataLocal = Array.isArray(payload.gridData) ? payload.gridData : [];
       // 3) UI表示用の統計を保存
+      if (!this.stats) this.stats = {};
       if (payload.lowlandDistanceToSeaStats) {
-        this.stats = {
-          lowlandDistanceToSea: payload.lowlandDistanceToSeaStats
-        };
+        this.stats.lowlandDistanceToSea = payload.lowlandDistanceToSeaStats;
       }
+      // 3.1) グリッド種類のカウント（合計 N）
+      const counts = {
+        deepSea: 0,
+        shallowSea: 0,
+        glacier: 0,
+        lowland: 0,
+        desert: 0,
+        highland: 0,
+        alpine: 0,
+        lake: 0,
+        tundra: 0,
+        city: 0,
+        cultivated: 0,
+        polluted: 0,
+        total: N
+      };
+      for (let i = 0; i < N; i++) {
+        const cell = gridData[i];
+        let cat = null;
+        if (cell && cell.polluted) {
+          cat = 'polluted';
+        } else if (cell && cell.city) {
+          cat = 'city';
+        } else if (cell && cell.cultivated) {
+          cat = 'cultivated';
+        } else if (cell && cell.terrain && cell.terrain.type === 'sea') {
+          const sea = cell.terrain.sea;
+          if (sea === 'deep') cat = 'deepSea';
+          else if (sea === 'glacier') cat = 'glacier';
+          else cat = 'shallowSea';
+        } else if (cell && cell.terrain && cell.terrain.type === 'land') {
+          const l = cell.terrain.land;
+          if (l === 'lowland') cat = 'lowland';
+          else if (l === 'desert') cat = 'desert';
+          else if (l === 'highland') cat = 'highland';
+          else if (l === 'alpine') cat = 'alpine';
+          else if (l === 'tundra') cat = 'tundra';
+          else if (l === 'lake') cat = 'lake';
+          else if (l === 'glacier') cat = 'glacier';
+          else cat = 'lowland';
+        } else {
+          // フォールバック
+          cat = 'lowland';
+        }
+        counts[cat] += 1;
+      }
+      this.stats.gridTypeCounts = counts;
+      // 最後にポップアップを更新
+      this.openOrUpdatePopup();
     },
     openOrUpdatePopup() {
       const w = this.popupRef && !this.popupRef.closed ? this.popupRef : window.open('', 'ParametersOutput', 'width=520,height=700');
@@ -528,6 +592,12 @@ export default {
       const params = this.local;
       const centers = this.mutableCenterParams || [];
       const escape = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const fmtPct = (num, den) => {
+        if (!den || den <= 0) return '0.00%';
+        return (num * 100 / den).toFixed(2) + '%';
+      };
+      const typeCounts = (this.stats && this.stats.gridTypeCounts) ? this.stats.gridTypeCounts : null;
+      const totalN = typeCounts ? (typeCounts.total || (this.gridWidth * this.gridHeight)) : (this.gridWidth * this.gridHeight);
       const centersHtml = centers.map((p, i) => `
         <div style="margin-bottom:8px;padding:8px;border:1px solid #ddd;border-radius:4px;">
           <div style="font-weight:bold;margin-bottom:4px;">中心点 ${i + 1}:</div>
@@ -586,6 +656,19 @@ export default {
     <div class="row"><label>高山の氷河追加グリッド数:</label><span>${escape(params.alpineGlacierExtraRows)}</span></div>
     <div class="row"><label>グリッド幅×高さ:</label><span>${escape(this.gridWidth)} × ${escape(this.gridHeight)}</span></div>
     <div class="row"><label>湖の数（平均）:</label><span>${escape(params.averageLakesPerCenter)}</span></div>
+    <div class="section-title">グリッド種類の内訳（合計 ${escape(totalN)}）</div>
+    <div class="row"><label>深海:</label><span>${typeCounts ? escape(typeCounts.deepSea) : '-'} (${typeCounts ? fmtPct(typeCounts.deepSea, totalN) : '-'})</span></div>
+    <div class="row"><label>浅瀬:</label><span>${typeCounts ? escape(typeCounts.shallowSea) : '-'} (${typeCounts ? fmtPct(typeCounts.shallowSea, totalN) : '-'})</span></div>
+    <div class="row"><label>氷河:</label><span>${typeCounts ? escape(typeCounts.glacier) : '-'} (${typeCounts ? fmtPct(typeCounts.glacier, totalN) : '-'})</span></div>
+    <div class="row"><label>低地:</label><span>${typeCounts ? escape(typeCounts.lowland) : '-'} (${typeCounts ? fmtPct(typeCounts.lowland, totalN) : '-'})</span></div>
+    <div class="row"><label>乾燥地:</label><span>${typeCounts ? escape(typeCounts.desert) : '-'} (${typeCounts ? fmtPct(typeCounts.desert, totalN) : '-'})</span></div>
+    <div class="row"><label>高地:</label><span>${typeCounts ? escape(typeCounts.highland) : '-'} (${typeCounts ? fmtPct(typeCounts.highland, totalN) : '-'})</span></div>
+    <div class="row"><label>高山:</label><span>${typeCounts ? escape(typeCounts.alpine) : '-'} (${typeCounts ? fmtPct(typeCounts.alpine, totalN) : '-'})</span></div>
+    <div class="row"><label>ツンドラ:</label><span>${typeCounts ? escape(typeCounts.tundra) : '-'} (${typeCounts ? fmtPct(typeCounts.tundra, totalN) : '-'})</span></div>
+    <div class="row"><label>湖:</label><span>${typeCounts ? escape(typeCounts.lake) : '-'} (${typeCounts ? fmtPct(typeCounts.lake, totalN) : '-'})</span></div>
+    <div class="row"><label>都市:</label><span>${typeCounts ? escape(typeCounts.city) : '-'} (${typeCounts ? fmtPct(typeCounts.city, totalN) : '-'})</span></div>
+    <div class="row"><label>農地:</label><span>${typeCounts ? escape(typeCounts.cultivated) : '-'} (${typeCounts ? fmtPct(typeCounts.cultivated, totalN) : '-'})</span></div>
+    <div class="row"><label>汚染地:</label><span>${typeCounts ? escape(typeCounts.polluted) : '-'} (${typeCounts ? fmtPct(typeCounts.polluted, totalN) : '-'})</span></div>
     <div class="section-title">各中心点のパラメーター:</div>
     ${centersHtml}
   </body>

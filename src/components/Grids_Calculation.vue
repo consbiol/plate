@@ -69,13 +69,17 @@ export default {
     centerParameters: { type: Array, required: true },
     generateSignal: { type: Number, required: true },
     // 大陸の歪みの強さを方向角度に対して適用する係数（デフォルト 2.0）
-    directionDistortionScale: { type: Number, required: false, default: 4.0 },
+    directionDistortionScale: { type: Number, required: false, default: 2.0 },
     // 都市グリッド生成の確率（低地のみ、海隣接で10倍）
     cityGenerationProbability: { type: Number, required: false, default: 0.002 },
     // 耕作地グリッド生成の確率（低地のみ、海隣接で10倍）
     cultivatedGenerationProbability: { type: Number, required: false, default: 0.05 },
     // 汚染地クラスター数（マップ全体、開始セルはシードで決定）
     pollutedAreasCount: { type: Number, required: false, default: 1 },
+    // 大陸中心点を赤で表示（平面地図オーバーレイ）
+    showCentersRed: { type: Boolean, required: false, default: true },
+    // 中心点近傍の陸生成バイアス（0で無効、値を上げると中心付近が陸になりやすい）
+    centerBias: { type: Number, required: false, default: 0.8 },
     // 指定要素のみ決定化するためのシード（未指定時は従来通り）
     deterministicSeed: { type: [Number, String], required: false, default: null },
     // 時代（パレット切替用、未指定ならデフォルト色）
@@ -706,6 +710,8 @@ export default {
           directionAngle: param ? param.directionAngle : 0
         };
       });
+      const biasStrength = Math.max(0, Number(this.centerBias || 0));
+      const biasSharpness = 6.0;
       for (let gy = 0; gy < this.gridHeight; gy++) {
         for (let gx = 0; gx < this.gridWidth; gx++) {
           let maxScore = -Infinity;
@@ -728,7 +734,8 @@ export default {
             if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
             const distortionScale = (this.directionDistortionScale != null) ? this.directionDistortionScale : 2.0;
             const directionalBoost = 1.0 + Math.max(0, Math.cos(angleDiff)) * (0.8 * distortionScale);
-            const score = (base + this.noiseAmp * n) * centerNoise.influenceMultiplier * directionalBoost;
+            const biasTerm = biasStrength > 0 ? biasStrength * Math.exp(-(dn * dn) * biasSharpness) : 0;
+            const score = (base + this.noiseAmp * n) * centerNoise.influenceMultiplier * directionalBoost + biasTerm;
             if (score > maxScore) maxScore = score;
           }
           scores[gy * this.gridWidth + gx] = maxScore;
@@ -1358,6 +1365,19 @@ export default {
           seededHighlandClusters: Array.isArray(log.highlandClusters) ? log.highlandClusters : [],
           seededLakeStarts: Array.isArray(log.lakeStarts) ? log.lakeStarts : []
         };
+      }
+      // 中心点セルを赤で表示（フラグ埋め込み）
+      if (this.showCentersRed && Array.isArray(centers)) {
+        for (let ci = 0; ci < centers.length; ci++) {
+          const c = centers[ci];
+          if (!c) continue;
+          const cx = Math.max(0, Math.min(this.gridWidth - 1, Math.floor(c.x)));
+          const cy = Math.max(0, Math.min(this.gridHeight - 1, Math.floor(c.y)));
+          const idx = cy * this.gridWidth + cx;
+          if (gridData[idx]) {
+            gridData[idx].center = true;
+          }
+        }
       }
       // 結果をemit（平面グリッド用に displayColors も明示的に渡す）
       this.$emit('generated', {

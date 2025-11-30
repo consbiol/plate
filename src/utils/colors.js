@@ -305,7 +305,10 @@ function cellToColor(cell, tc, preferPalette) {
             else base = tc.lowland;
         }
     }
-    // 上書き優先度: polluted > city > cultivated
+    // 上書き優先度: center(red) > polluted > city > cultivated
+    if (cell && cell.center) {
+        return '#FF0000';
+    }
     if (cell && cell.polluted) {
         return (tc && tc.polluted) ? tc.polluted : '#800080';
     }
