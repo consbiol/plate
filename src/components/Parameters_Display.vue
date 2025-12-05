@@ -50,11 +50,6 @@
         <input type="number" min="0" max="50" step="1" v-model.number="local.landBandVerticalWobbleRows" />
         <span style="margin-left:8px;color:#666">（0で固定）</span>
       </div>
-      <div style="width:100%;margin-top:6px;">
-        <label>帯揺らぎの X スケール: </label>
-        <input type="number" min="0" max="1" step="0.01" v-model.number="local.landBandWobbleXScale" />
-        <span style="margin-left:8px;color:#666">（ノイズの横スケール）</span>
-      </div>
     </details>
     <div style="margin-bottom: 8px;">
       <label>シード: </label>
@@ -115,6 +110,18 @@
     <div style="margin-bottom: 8px;">
       <label>汚染地クラスター数（マップ全体）: </label>
       <input type="number" min="0" max="1000" step="1" v-model.number="local.pollutedAreasCount" />
+    </div>
+    <div style="margin-bottom: 8px;">
+      <label>海棲都市生成確率 (浅瀬, 陸隣接で×10): </label>
+      <input type="number" min="0" max="1" step="0.001" v-model.number="local.seaCityProbability" />
+    </div>
+    <div style="margin-bottom: 8px;">
+      <label>海棲耕作地生成確率 (浅瀬, 陸隣接で×10): </label>
+      <input type="number" min="0" max="1" step="0.01" v-model.number="local.seaCultivatedProbability" />
+    </div>
+    <div style="margin-bottom: 8px;">
+      <label>海棲汚染地クラスター数（マップ全体）: </label>
+      <input type="number" min="0" max="1000" step="1" v-model.number="local.seaPollutedAreasCount" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>大陸中心点を赤で表示: </label>
@@ -187,7 +194,6 @@
       :landDistanceThreshold9="local.landDistanceThreshold9"
       :landDistanceThreshold10="local.landDistanceThreshold10"
       :landBandVerticalWobbleRows="local.landBandVerticalWobbleRows"
-      :landBandWobbleXScale="local.landBandWobbleXScale"
       :averageTemperature="averageTemperature"
       :topTundraRows="topTundraRowsComputed"
       :topGlacierRows="local.topGlacierRows"
@@ -203,6 +209,9 @@
       :cityGenerationProbability="local.cityProbability"
       :cultivatedGenerationProbability="local.cultivatedProbability"
       :pollutedAreasCount="local.pollutedAreasCount"
+      :seaCityGenerationProbability="local.seaCityProbability"
+      :seaCultivatedGenerationProbability="local.seaCultivatedProbability"
+      :seaPollutedAreasCount="local.seaPollutedAreasCount"
       :showCentersRed="local.showCentersRed"
       :centerBias="local.centerBias"
       @generated="onGenerated"
@@ -255,8 +264,6 @@ export default {
     landDistanceThreshold10: { type: Number, required: false, default: 35 },
     // 帯の縦揺らぎ（行数）: 0で無効
     landBandVerticalWobbleRows: { type: Number, required: false, default: 2 },
-    // 帯揺らぎの X スケール（ノイズのサンプリング横スケール）
-    landBandWobbleXScale: { type: Number, required: false, default: 0.05 },
     // 上端・下端ツンドラグリッド追加数（デフォルト: 7）: 上端・下端氷河グリッド数からの追加グリッド数
     tundraExtraRows: { type: Number, required: false, default: 7 },
     // 上端・下端氷河グリッド数（デフォルト: 5）: 上下端から何グリッド分を氷河に上書きするかの基準値（海/湖は追加なし）。
@@ -281,6 +288,12 @@ export default {
     cultivatedProbability: { type: Number, required: false, default: 0.05 },
     // 汚染地クラスター数（マップ全体、シードで開始セルを決定）
     pollutedAreasCount: { type: Number, required: false, default: 1 },
+    // 海棲都市生成確率（浅瀬、陸隣接で10倍）
+    seaCityProbability: { type: Number, required: false, default: 0.002 },
+    // 海棲耕作地生成確率（浅瀬、陸隣接で10倍）
+    seaCultivatedProbability: { type: Number, required: false, default: 0.05 },
+    // 海棲汚染地クラスター数（マップ全体、シードで開始セルを決定）
+    seaPollutedAreasCount: { type: Number, required: false, default: 1 },
     // 大陸中心点を赤で表示（デフォルト: ON）
     showCentersRed: { type: Boolean, required: false, default: true },
     // 中心点近傍の陸生成バイアス（0で無効、値を上げると中心付近が陸になりやすい）
@@ -313,7 +326,6 @@ export default {
         tundraExtraRows: this.tundraExtraRows,
         topGlacierRows: this.topGlacierRows,
         landBandVerticalWobbleRows: this.landBandVerticalWobbleRows,
-        landBandWobbleXScale: this.landBandWobbleXScale,
         landDistanceThreshold1: this.landDistanceThreshold1,
         landDistanceThreshold2: this.landDistanceThreshold2,
         landDistanceThreshold3: this.landDistanceThreshold3,
@@ -333,6 +345,9 @@ export default {
         cityProbability: this.cityProbability,
         cultivatedProbability: this.cultivatedProbability,
         pollutedAreasCount: this.pollutedAreasCount,
+        seaCityProbability: this.seaCityProbability,
+        seaCultivatedProbability: this.seaCultivatedProbability,
+        seaPollutedAreasCount: this.seaPollutedAreasCount,
         showCentersRed: this.showCentersRed,
         centerBias: this.centerBias
       },
@@ -348,7 +363,8 @@ export default {
         '苔類進出時代',
         'シダ植物時代',
         '大森林時代',
-        '文明時代'
+        '文明時代',
+        '海棲文明時代'
       ],
       // 中心点のパラメータはdeepコピーして編集可能にする
       mutableCenterParams: JSON.parse(JSON.stringify(this.centerParameters || [])),
@@ -505,12 +521,22 @@ export default {
         city: 0,
         cultivated: 0,
         polluted: 0,
+        seaCity: 0,
+        seaCultivated: 0,
+        seaPolluted: 0,
         total: N
       };
       for (let i = 0; i < N; i++) {
         const cell = gridData[i];
         let cat = null;
-        if (cell && cell.polluted) {
+        // 海棲グリッドの優先順位: seaPolluted > seaCity > seaCultivated
+        if (cell && cell.seaPolluted) {
+          cat = 'seaPolluted';
+        } else if (cell && cell.seaCity) {
+          cat = 'seaCity';
+        } else if (cell && cell.seaCultivated) {
+          cat = 'seaCultivated';
+        } else if (cell && cell.polluted) {
           cat = 'polluted';
         } else if (cell && cell.city) {
           cat = 'city';
@@ -634,6 +660,9 @@ export default {
     <div class="row"><label>都市:</label><span>${typeCounts ? escape(typeCounts.city) : '-'} (${typeCounts ? fmtPct(typeCounts.city, totalN) : '-'})</span></div>
     <div class="row"><label>農地:</label><span>${typeCounts ? escape(typeCounts.cultivated) : '-'} (${typeCounts ? fmtPct(typeCounts.cultivated, totalN) : '-'})</span></div>
     <div class="row"><label>汚染地:</label><span>${typeCounts ? escape(typeCounts.polluted) : '-'} (${typeCounts ? fmtPct(typeCounts.polluted, totalN) : '-'})</span></div>
+    <div class="row"><label>海棲都市:</label><span>${typeCounts ? escape(typeCounts.seaCity) : '-'} (${typeCounts ? fmtPct(typeCounts.seaCity, totalN) : '-'})</span></div>
+    <div class="row"><label>海棲農地:</label><span>${typeCounts ? escape(typeCounts.seaCultivated) : '-'} (${typeCounts ? fmtPct(typeCounts.seaCultivated, totalN) : '-'})</span></div>
+    <div class="row"><label>海棲汚染地:</label><span>${typeCounts ? escape(typeCounts.seaPolluted) : '-'} (${typeCounts ? fmtPct(typeCounts.seaPolluted, totalN) : '-'})</span></div>
     <div class="section-title">各中心点のパラメーター:</div>
     ${centersHtml}
   </body>

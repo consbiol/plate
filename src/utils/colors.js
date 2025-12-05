@@ -13,7 +13,10 @@ export function getDefaultTerrainColors() {
         border: '#000000',
         city: '#F15A22',
         cultivated: '#ffff00',
-        polluted: '#800080'
+        polluted: '#800080',
+        seaCity: '#1A1F3A',
+        seaCultivated: '#2E8B57',
+        seaPolluted: '#800080'
     };
 }
 
@@ -149,22 +152,7 @@ export function getEraColors_BryophyteExpansion() {
         polluted: '#800080'
     };
 }
-export function getEraColors_PteridophyteGymnospermExpansion() {
-    return {
-        deepSea: '#1E508C',
-        shallowSea: '#3C78B4',
-        lowland: '#228B22',
-        desert: '#96826E',
-        highland: '#91644B',
-        alpine: '#5F5046',
-        tundra: '#7ea836',
-        glacier: '#FFFFFF',
-        border: '#000000',
-        city: '#F15A22',
-        cultivated: '#ffff00',
-        polluted: '#800080'
-    };
-}
+// (unused) getEraColors_PteridophyteGymnospermExpansion を削除しました
 // 新名称対応: PteridophyteExpansion（表示名: シダ植物時代）
 export function getEraColors_PteridophyteExpansion() {
     return {
@@ -211,7 +199,29 @@ export function getEraColors_Civilization() {
         border: '#000000',
         city: '#F15A22',
         cultivated: '#ffff00',
-        polluted: '#800080'
+        polluted: '#800080',
+        seaCity: '#1A1F3A',
+        seaCultivated: '#2E8B57',
+        seaPolluted: '#800080'
+    };
+}
+export function getEraColors_SeaCivilization() {
+    return {
+        deepSea: '#1E508C',
+        shallowSea: '#3C78B4',
+        lowland: '#228B22',
+        desert: '#96826E',
+        highland: '#91644B',
+        alpine: '#5F5046',
+        tundra: '#7ea836',
+        glacier: '#FFFFFF',
+        border: '#000000',
+        city: '#F15A22',
+        cultivated: '#ffff00',
+        polluted: '#800080',
+        seaCity: '#1A1F3A',
+        seaCultivated: '#F4E511',
+        seaPolluted: '#800080'
     };
 }
 
@@ -226,7 +236,8 @@ const ERA_COLOR_FACTORIES = {
     '苔類進出時代': getEraColors_BryophyteExpansion,
     'シダ植物時代': getEraColors_PteridophyteExpansion,
     '大森林時代': getEraColors_GreatForest,
-    '文明時代': getEraColors_Civilization
+    '文明時代': getEraColors_Civilization,
+    '海棲文明時代': getEraColors_SeaCivilization
 };
 
 export function getEraTerrainColors(era) {
@@ -249,7 +260,8 @@ const ERA_LAND_TINTS = {
     '苔類進出時代': '#96A5B9',
     'シダ植物時代': '#96A5B9',
     '大森林時代': '#96A5B9',
-    '文明時代': '#96A5B9'
+    '文明時代': '#96A5B9',
+    '海棲文明時代': '#96A5B9'
 };
 export function getEraLandTint(era) {
     const def = '#96A5B9';
@@ -272,7 +284,8 @@ const ERA_CLOUD_TINTS = {
     '苔類進出時代': '#FFFFFF',
     'シダ植物時代': '#FFFFFF',
     '大森林時代': '#FFFFFF',
-    '文明時代': '#FFFFFF'
+    '文明時代': '#FFFFFF',
+    '海棲文明時代': '#FFFFFF'
 };
 export function getEraCloudTint(era) {
     const def = '#FFFFFF';
@@ -305,10 +318,23 @@ function cellToColor(cell, tc, preferPalette) {
             else base = tc.lowland;
         }
     }
-    // 上書き優先度: center(red) > polluted > city > cultivated
+    // 上書き優先度: center(red) > seaPolluted > seaCity > seaCultivated > polluted > city > cultivated
     if (cell && cell.center) {
         return '#FF0000';
     }
+    // 海棲グリッドの処理（浅瀬の場合）
+    if (cell && cell.terrain && cell.terrain.type === 'sea' && cell.terrain.sea === 'shallow') {
+        if (cell.seaPolluted) {
+            return (tc && tc.seaPolluted) ? tc.seaPolluted : '#800080';
+        }
+        if (cell.seaCity) {
+            return (tc && tc.seaCity) ? tc.seaCity : '#1A1F3A';
+        }
+        if (cell.seaCultivated) {
+            return (tc && tc.seaCultivated) ? tc.seaCultivated : '#2E8B57';
+        }
+    }
+    // 陸地の汚染地・都市・農耕地
     if (cell && cell.polluted) {
         return (tc && tc.polluted) ? tc.polluted : '#800080';
     }

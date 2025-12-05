@@ -34,8 +34,6 @@ export default {
     averageTemperature: { type: Number, required: false, default: 15 },
     // per-latitude-band vertical wobble (rows): integer number of rows to shift (+/-)
     landBandVerticalWobbleRows: { type: Number, required: false, default: 2 },
-    // X scale for wobble noise sampling
-    landBandWobbleXScale: { type: Number, required: false, default: 0.05 },
     // per-latitude-band land distance thresholds (bands 1..10, pole->equator)
     landDistanceThreshold1: { type: Number, required: false, default: 35 },
     landDistanceThreshold2: { type: Number, required: false, default: 35 },
@@ -56,14 +54,18 @@ export default {
     averageHighlandsPerCenter: { type: Number, required: true },
     centerParameters: { type: Array, required: true },
     generateSignal: { type: Number, required: true },
-    // 大陸の歪みの強さを方向角度に対して適用する係数（デフォルト 2.0）
-    directionDistortionScale: { type: Number, required: false, default: 0 },
     // 都市グリッド生成の確率（低地のみ、海隣接で10倍）
     cityGenerationProbability: { type: Number, required: false, default: 0.002 },
     // 耕作地グリッド生成の確率（低地のみ、海隣接で10倍）
     cultivatedGenerationProbability: { type: Number, required: false, default: 0.05 },
     // 汚染地クラスター数（マップ全体、開始セルはシードで決定）
     pollutedAreasCount: { type: Number, required: false, default: 1 },
+    // 海棲都市グリッド生成の確率（浅瀬のみ、陸隣接で10倍）
+    seaCityGenerationProbability: { type: Number, required: false, default: 0.002 },
+    // 海棲耕作地グリッド生成の確率（浅瀬のみ、陸隣接で10倍）
+    seaCultivatedGenerationProbability: { type: Number, required: false, default: 0.05 },
+    // 海棲汚染地クラスター数（マップ全体、開始セルはシードで決定）
+    seaPollutedAreasCount: { type: Number, required: false, default: 1 },
     // 大陸中心点を赤で表示（平面地図オーバーレイ）
     showCentersRed: { type: Boolean, required: false, default: true },
     // 中心点近傍の陸生成バイアス（0で無効、値を上げると中心付近が陸になりやすい）
@@ -410,8 +412,8 @@ export default {
           const idx = gy * this.gridWidth + gx;
           if (colors[idx] !== lowlandColor) continue;
           const distanceFromTop = gy;
-          // 文明時代のみシード固定のノイズを使用
-          const rTop = (this.era === '文明時代') ? (this._getDerivedRng('tundra-top', gx, gy) || Math.random) : Math.random;
+          // 文明時代・海棲文明時代のみシード固定のノイズを使用
+          const rTop = (this.era === '文明時代' || this.era === '海棲文明時代') ? (this._getDerivedRng('tundra-top', gx, gy) || Math.random) : Math.random;
           const noise = (rTop() * 2 - 1) * landNoiseAmplitude;
           const base = this.topTundraRows;
           const threshold = base > 0 ? Math.max(0, base + noise) : 0;
@@ -425,7 +427,7 @@ export default {
           const idx = gy * this.gridWidth + gx;
           if (colors[idx] !== lowlandColor) continue;
           const distanceFromBottom = this.gridHeight - 1 - gy;
-          const rBot = (this.era === '文明時代') ? (this._getDerivedRng('tundra-bottom', gx, gy) || Math.random) : Math.random;
+          const rBot = (this.era === '文明時代' || this.era === '海棲文明時代') ? (this._getDerivedRng('tundra-bottom', gx, gy) || Math.random) : Math.random;
           const noise = (rBot() * 2 - 1) * landNoiseAmplitude;
           const base = this.topTundraRows;
           const threshold = base > 0 ? Math.max(0, base + noise) : 0;
@@ -439,10 +441,10 @@ export default {
     _generateLakes(centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog) {
       const N = this.gridWidth * this.gridHeight;
       const lakeMask = new Array(N).fill(false);
-      const seedStrict = (this.era === '文明時代') && !!seededRng;
+      const seedStrict = (this.era === '文明時代' || this.era === '海棲文明時代') && !!seededRng;
       for (let ci = 0; ci < centers.length; ci++) {
         const lambda = this.averageLakesPerCenter;
-        // 文明時代のみ湖の個数もシードで決定（他時代は従来通り）
+        // 文明時代・海棲文明時代のみ湖の個数もシードで決定（他時代は従来通り）
         const countRng = seedStrict ? (this._getDerivedRng('lake-count', ci) || seededRng) : null;
         const numLakes = this._poissonSample(lambda, 20, countRng || seededRng || Math.random);
         const centerLandGrids = centerLandCells[ci] || [];
@@ -528,7 +530,7 @@ export default {
     _generateHighlands(centers, centerLandCellsPre, preLandMask, lakeMask, colors, highlandColor, seededRng, seededLog) {
       const N = this.gridWidth * this.gridHeight;
       const highlandMask = new Array(N).fill(false);
-      const seedStrict = (this.era === '文明時代') && !!seededRng;
+      const seedStrict = (this.era === '文明時代' || this.era === '海棲文明時代') && !!seededRng;
       for (let ci = 0; ci < centers.length; ci++) {
         // 高地（中心単位）のサブRNG
         const centerRng = this._getDerivedRng('highland-center', ci);
@@ -778,7 +780,7 @@ export default {
       const wobbleRows = Math.max(0, Math.floor(this.landBandVerticalWobbleRows || 0));
       if (wobbleRows > 0) {
         this._wobbleShiftByX = new Array(this.gridWidth);
-        const seedStrictGeom = (this.era === '文明時代') && !!seededRng;
+        const seedStrictGeom = (this.era === '文明時代' || this.era === '海棲文明時代') && !!seededRng;
         for (let x = 0; x < this.gridWidth; x++) {
           const r = seedStrictGeom ? (this._getDerivedRng('wobble-x', x) || seededRng) : Math.random;
           this._wobbleShiftByX[x] = Math.round((r() * 2 - 1) * wobbleRows);
@@ -788,16 +790,16 @@ export default {
       }
       const glacierNoiseTable = new Array(N);
       {
-        const seedStrictGl = (this.era === '文明時代') && !!seededRng;
+        const seedStrictGl = (this.era === '文明時代' || this.era === '海棲文明時代') && !!seededRng;
         const gRng = seedStrictGl ? (this._getDerivedRng('glacier-noise') || seededRng) : Math.random;
         for (let i = 0; i < N; i++) {
           glacierNoiseTable[i] = (gRng() * 2 - 1);
         }
       }
       // 大陸中心座標の決定:
-      // - 文明時代: シードに基づいて決定
+      // - 文明時代・海棲文明時代: シードに基づいて決定
       // - それ以外: 完全ランダム（シード非依存）
-      const seedStrictCenters = (this.era === '文明時代') && !!seededRng;
+      const seedStrictCenters = (this.era === '文明時代' || this.era === '海棲文明時代') && !!seededRng;
       let centers = this.sampleLandCenters(seedStrictCenters ? seededRng : null);
       // ノイズから中心パラメータを生成（propsは直接変更しない）
       let localCenterParameters = centers.map((c) => {
@@ -853,8 +855,8 @@ export default {
         for (let gx = 0; gx < this.gridWidth; gx++) {
           const idx = gy * this.gridWidth + gx;
           // 乾燥地・海エッジなど「見た目ノイズ」
-          // 文明時代のみシードで固定（浅瀬/深海境界・砂漠/低地境界を決定論化）
-          const strict = (this.era === '文明時代') && !!seededRng;
+          // 文明時代・海棲文明時代のみシードで固定（浅瀬/深海境界・砂漠/低地境界を決定論化）
+          const strict = (this.era === '文明時代' || this.era === '海棲文明時代') && !!seededRng;
           const vrng = strict ? (this._getDerivedRng('vis-noise', gx, gy) || seededRng) : Math.random;
           noiseGrid[idx] = (vrng() * 2 - 1);
         }
@@ -929,8 +931,8 @@ export default {
           if (hasLandNeighbor) break;
         }
         if (!hasLandNeighbor) {
-          // 90% の確率で海に戻す（文明時代はシードで決定）
-          const strict = (this.era === '文明時代') && !!seededRng;
+          // 90% の確率で海に戻す（文明時代・海棲文明時代はシードで決定）
+          const strict = (this.era === '文明時代' || this.era === '海棲文明時代') && !!seededRng;
           const r = strict ? (this._getDerivedRng('coast-island', gx, gy) || seededRng) : Math.random;
           if (r() < 0.9) landMask[idx] = false;
         }
@@ -967,7 +969,7 @@ export default {
         const idx = gy * this.gridWidth + gx;
         const s = scores[idx];
         if (Math.abs(s - threshold) <= scoreBand && hasOppNeighbor(gx, gy)) {
-          const strict = (this.era === '文明時代') && !!seededRng;
+          const strict = (this.era === '文明時代' || this.era === '海棲文明時代') && !!seededRng;
           const r = strict ? (this._getDerivedRng('coast-flip', gx, gy) || seededRng) : Math.random;
           if (r() < flipProb) {
             landMask[idx] = !landMask[idx];
@@ -1047,7 +1049,7 @@ export default {
       }
       // 湖生成と適用（ジッター後のマスクに基づく）
       const lakeMask = this._generateLakes(centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog);
-      // 高地生成と適用（文明時代の決定性向上のため、海岸線ジッター前のマスクを使用）
+      // 高地生成と適用（文明時代・海棲文明時代の決定性向上のため、海岸線ジッター前のマスクを使用）
       this._generateHighlands(centers, centerLandCellsPre, preJitterLandMask, lakeMask, colors, highlandColor, seededRng, seededLog);
       // 高山生成と適用
       this._generateAlpines(colors, highlandColor, lowlandColor, desertColor, alpineColor, directions);
@@ -1339,6 +1341,210 @@ export default {
           }
         }
       }
+      // 追加: 海棲city/cultivated/polluted の生成（浅瀬のみ、陸隣接で確率10倍）
+      const seaCityMask = new Array(N).fill(false);
+      const seaCultivatedMask = new Array(N).fill(false);
+      const seaPollutedMask = new Array(N).fill(false);
+      const rSeaCity = this._getDerivedRng('sea-city') || Math.random;
+      const rSeaCult = this._getDerivedRng('sea-cultivated') || Math.random;
+      // 陸隣接チェック関数
+      const isAdjacentToLand = (gx, gy) => {
+        const dirs4 = [{dx:-1,dy:0},{dx:1,dy:0},{dx:0,dy:-1},{dx:0,dy:1}];
+        for (const d of dirs4) {
+          const w = this.torusWrap(gx + d.dx, gy + d.dy);
+          if (!w) continue;
+          const nIdx = w.y * this.gridWidth + w.x;
+          if (landMask[nIdx]) return true; // 陸
+        }
+        return false;
+      };
+      // 海棲文明時代のみ seaCity/seaCultivated/seaPolluted を生成
+      const isSeaCivilizationEra = (this.era === '海棲文明時代');
+      if (isSeaCivilizationEra) {
+        for (let gy = 0; gy < this.gridHeight; gy++) {
+          for (let gx = 0; gx < this.gridWidth; gx++) {
+            const idx = gy * this.gridWidth + gx;
+            // 最終色が浅瀬のみ対象
+            if (colors[idx] !== shallowSeaColor) continue;
+            // seaCultivated（先に生成）
+            const baseSeaCult = Math.max(0, this.seaCultivatedGenerationProbability || 0);
+            const pcSeaCult = isAdjacentToLand(gx, gy) ? Math.min(1, baseSeaCult * 10) : baseSeaCult;
+            // 開始セルの採択は座標由来のシードで決定（安定化）
+            const startSeaCultRng = this._getDerivedRng('sea-cultivated-start', gx, gy) || rSeaCult;
+            if (pcSeaCult > 0 && (startSeaCultRng() < pcSeaCult) && !seaCultivatedMask[idx]) {
+              // クラスタ生成: 平均 ~5 グリッドの面積（Poissonサンプル）
+              const clusterRng = this._getDerivedRng('sea-cultivated-cluster', gx, gy) || Math.random;
+              const targetSize = Math.max(1, this._poissonSample(5, 50, clusterRng));
+              const dirs = [
+                { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+                { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+                { dx: -1, dy: -1 }, { dx: 1, dy: -1 },
+                { dx: -1, dy: 1 }, { dx: 1, dy: 1 }
+              ];
+              const queue = [{ x: gx, y: gy, idx }];
+              const visited = new Set([idx]);
+              seaCultivatedMask[idx] = true;
+              let count = 1;
+              while (queue.length > 0 && count < targetSize) {
+                const cur = queue.shift();
+                for (const d of dirs) {
+                  // 隣接セルを確率的に拡張（密になり過ぎないよう 0.6 で採択）
+                  {
+                    const rand = (clusterRng || seededRng || Math.random);
+                    if (rand() > 0.6) continue;
+                  }
+                  const w = this.torusWrap(cur.x + d.dx, cur.y + d.dy);
+                  if (!w) continue;
+                  const nIdx = w.y * this.gridWidth + w.x;
+                  if (visited.has(nIdx)) continue;
+                  visited.add(nIdx);
+                  // 拡張条件: 浅瀬・未seaCity・未seaCultivated
+                  if (colors[nIdx] !== shallowSeaColor) continue;
+                  if (seaCityMask[nIdx]) continue;
+                  if (seaCultivatedMask[nIdx]) continue;
+                  seaCultivatedMask[nIdx] = true;
+                  count++;
+                  if (count >= targetSize) break;
+                  queue.push({ x: w.x, y: w.y, idx: nIdx });
+                }
+              }
+            }
+            // seaCity（seaCultivated の後で上書き）
+            if (seaCityMask[idx]) continue;
+            const baseSeaCity = Math.max(0, this.seaCityGenerationProbability || 0);
+            // 地域差ノイズによる倍率
+            const nSeaCity = this.fractalNoise2D(gx, gy, 4, 0.5, cityBiasScale);
+            const uSeaCity = (nSeaCity + 1) * 0.5; // [0,1]
+            const seaCityBias = Math.max(cityBiasMin, Math.min(cityBiasMax, cityBiasMin + uSeaCity * (cityBiasMax - cityBiasMin)));
+            const biasedBaseSeaCity = baseSeaCity * seaCityBias;
+            const pcSeaCity = isAdjacentToLand(gx, gy) ? Math.min(1, biasedBaseSeaCity * 10) : Math.min(1, biasedBaseSeaCity);
+            // 開始セルの採択は座標由来のシードで決定（安定化）
+            const startSeaCityRng = this._getDerivedRng('sea-city-start', gx, gy) || rSeaCity;
+            if (pcSeaCity > 0 && (startSeaCityRng() < pcSeaCity) && !seaCityMask[idx]) {
+              // クラスタ生成: 平均 ~3 グリッドの面積（Poissonサンプル）
+              const clusterRng = this._getDerivedRng('sea-city-cluster', gx, gy) || Math.random;
+              const targetSize = Math.max(1, this._poissonSample(3, 50, clusterRng));
+              const dirs = [
+                { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+                { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+                { dx: -1, dy: -1 }, { dx: 1, dy: -1 },
+                { dx: -1, dy: 1 }, { dx: 1, dy: 1 }
+              ];
+              const queue = [{ x: gx, y: gy, idx }];
+              const visited = new Set([idx]);
+              seaCityMask[idx] = true;
+              let count = 1;
+              while (queue.length > 0 && count < targetSize) {
+                const cur = queue.shift();
+                for (const d of dirs) {
+                  // 隣接セルを確率的に拡張（密になり過ぎないよう 0.6 で採択）
+                  {
+                    const rand = (clusterRng || seededRng || Math.random);
+                    if (rand() > 0.6) continue;
+                  }
+                  const w = this.torusWrap(cur.x + d.dx, cur.y + d.dy);
+                  if (!w) continue;
+                  const nIdx = w.y * this.gridWidth + w.x;
+                  if (visited.has(nIdx)) continue;
+                  visited.add(nIdx);
+                  // 拡張条件: 浅瀬・未seaCity
+                  if (colors[nIdx] !== shallowSeaColor) continue;
+                  if (seaCityMask[nIdx]) continue;
+                  seaCityMask[nIdx] = true;
+                  count++;
+                  if (count >= targetSize) break;
+                  queue.push({ x: w.x, y: w.y, idx: nIdx });
+                }
+              }
+            }
+          }
+        }
+        // 追加: 海棲汚染地の生成（海棲文明時代のみ、浅瀬/海棲都市/海棲耕作地セル上に生成、クラスター平均サイズ ~20）
+        const countSeaPolluted = Math.max(0, Math.floor(Number(this.seaPollutedAreasCount || 0)));
+        if (countSeaPolluted > 0) {
+          const eligible = [];
+          for (let i = 0; i < N; i++) {
+            if (colors[i] === shallowSeaColor || seaCityMask[i] || seaCultivatedMask[i]) eligible.push(i);
+          }
+          // 陸隣接セルに重み10、内陸に重み1（seaCityと同様の陸隣接優遇）
+          const weights = new Array(eligible.length);
+          let totalWeight = 0;
+          for (let ei = 0; ei < eligible.length; ei++) {
+            const idx0 = eligible[ei];
+            const sx = idx0 % this.gridWidth;
+            const sy = Math.floor(idx0 / this.gridWidth);
+            const w = isAdjacentToLand(sx, sy) ? 10 : 1;
+            weights[ei] = w;
+            totalWeight += w;
+          }
+          const pickRng = this._getDerivedRng('sea-polluted-pick') || Math.random;
+          const chosen = new Set();
+          const dirs = [
+            { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+            { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+            { dx: -1, dy: -1 }, { dx: 1, dy: -1 },
+            { dx: -1, dy: 1 }, { dx: 1, dy: 1 }
+          ];
+          for (let k = 0; k < countSeaPolluted && eligible.length > 0; k++) {
+            // 重み付き抽選（選択済みは重み0にして再抽選）
+            let startIdx = -1;
+            let pickedEi = -1;
+            for (let tries = 0; tries < Math.max(20, eligible.length); tries++) {
+              if (totalWeight <= 0) break;
+              let r = (pickRng() || Math.random) * totalWeight;
+              let acc = 0;
+              for (let ei = 0; ei < eligible.length; ei++) {
+                const w = weights[ei] || 0;
+                if (w <= 0) continue;
+                acc += w;
+                if (acc >= r) {
+                  const idx0 = eligible[ei];
+                  if (chosen.has(idx0)) {
+                    // すでに選択済みならスキップしてやり直し
+                    continue;
+                  }
+                  startIdx = idx0;
+                  pickedEi = ei;
+                  break;
+                }
+              }
+              if (startIdx >= 0) break;
+            }
+            if (startIdx < 0) break;
+            chosen.add(startIdx);
+            if (pickedEi >= 0) {
+              totalWeight -= (weights[pickedEi] || 0);
+              weights[pickedEi] = 0;
+            }
+            const sx = startIdx % this.gridWidth;
+            const sy = Math.floor(startIdx / this.gridWidth);
+            const clusterRng = this._getDerivedRng('sea-polluted-cluster', sx, sy) || Math.random;
+            const targetSize = Math.max(1, this._poissonSample(20, 200, clusterRng));
+            const queue = [{ x: sx, y: sy, idx: startIdx }];
+            const visited = new Set([startIdx]);
+            seaPollutedMask[startIdx] = true;
+            let count = 1;
+            while (queue.length > 0 && count < targetSize) {
+              const cur = queue.shift();
+              for (const d of dirs) {
+                const acceptP = 0.6 + ((clusterRng() || Math.random) - 0.5) * 0.2; // 0.5..0.7
+                if ((clusterRng() || Math.random) > acceptP) continue;
+                const w = this.torusWrap(cur.x + d.dx, cur.y + d.dy);
+                if (!w) continue;
+                const nIdx = w.y * this.gridWidth + w.x;
+                if (visited.has(nIdx)) continue;
+                visited.add(nIdx);
+                // 浅瀬 or 海棲都市 or 海棲耕作地に拡張（seaCity/seaCultivated は上書き）
+                if (!(colors[nIdx] === shallowSeaColor || seaCityMask[nIdx] || seaCultivatedMask[nIdx])) continue;
+                seaPollutedMask[nIdx] = true;
+                count++;
+                if (count >= targetSize) break;
+                queue.push({ x: w.x, y: w.y, idx: nIdx });
+              }
+            }
+          }
+        }
+      }
       // 追加: 各グリッドのプロパティ構造を作成
       const gridData = new Array(this.gridWidth * this.gridHeight);
       for (let gy = 0; gy < this.gridHeight; gy++) {
@@ -1370,7 +1576,11 @@ export default {
     // 都市/耕作地/汚染地フラグ（色は colors.js でパレットから解決）
     city: !!cityMask[idx],
     cultivated: !!cultivatedMask[idx],
-    polluted: !!pollutedMask[idx]
+    polluted: !!pollutedMask[idx],
+    // 海棲都市/海棲耕作地/海棲汚染地フラグ（色は colors.js でパレットから解決）
+    seaCity: !!seaCityMask[idx],
+    seaCultivated: !!seaCultivatedMask[idx],
+    seaPolluted: !!seaPollutedMask[idx]
   };
         }
       }
