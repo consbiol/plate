@@ -141,6 +141,27 @@ export default {
       }
       return Math.hypot(dx, dy);
     },
+    // トーラス上のChebyshev距離（xは通常ラップ、yは端で半分ずらして接続）
+    torusChebyshevDistance(x1, y1, x2, y2) {
+      const dx = Math.min(Math.abs(x1 - x2), this.gridWidth - Math.abs(x1 - x2));
+      let dy = Math.abs(y1 - y2);
+      if (y1 === 0 && y2 === 0) {
+        const halfSize = this.gridWidth / 2;
+        if ((x1 < halfSize && x2 >= halfSize) || (x1 >= halfSize && x2 < halfSize)) {
+          const leftX = x1 < halfSize ? x1 : x2;
+          const rightX = x1 >= halfSize ? x1 : x2;
+          dy = Math.min(dy, Math.abs((leftX + halfSize) - rightX));
+        }
+      } else if (y1 === this.gridHeight - 1 && y2 === this.gridHeight - 1) {
+        const halfSize = this.gridWidth / 2;
+        if ((x1 < halfSize && x2 >= halfSize) || (x1 >= halfSize && x2 < halfSize)) {
+          const leftX = x1 < halfSize ? x1 : x2;
+          const rightX = x1 >= halfSize ? x1 : x2;
+          dy = Math.min(dy, Math.abs((leftX + halfSize) - rightX));
+        }
+      }
+      return Math.max(dx, dy);
+    },
     // トーラス上での最短経路の方向ベクトルを計算（角度計算用）
     // 戻り値: { dx, dy } トーラス上での最短経路の方向
     torusDirection(x1, y1, x2, y2) {
@@ -931,10 +952,10 @@ export default {
           if (hasLandNeighbor) break;
         }
         if (!hasLandNeighbor) {
-          // 90% の確率で海に戻す（文明時代・海棲文明時代はシードで決定）
+          // 40% の確率で海に戻す（文明時代・海棲文明時代はシードで決定）
           const strict = (this.era === '文明時代' || this.era === '海棲文明時代') && !!seededRng;
           const r = strict ? (this._getDerivedRng('coast-island', gx, gy) || seededRng) : Math.random;
-          if (r() < 0.9) landMask[idx] = false;
+          if (r() < 0.4) landMask[idx] = false;
         }
       }
     }
@@ -1607,11 +1628,31 @@ export default {
           }
         }
       }
+      // 各中心点から最近傍の中心点へのChebyshev距離の平均を計算
+      let avgNearestChebyshevDistance = 0;
+      if (centers && centers.length > 1) {
+        let sum = 0;
+        for (let i = 0; i < centers.length; i++) {
+          let minDist = Infinity;
+          for (let j = 0; j < centers.length; j++) {
+            if (i === j) continue;
+            const dist = this.torusChebyshevDistance(centers[i].x, centers[i].y, centers[j].x, centers[j].y);
+            if (dist < minDist) {
+              minDist = dist;
+            }
+          }
+          if (minDist < Infinity) {
+            sum += minDist;
+          }
+        }
+        avgNearestChebyshevDistance = sum / centers.length;
+      }
       // 結果をemit（平面グリッド用に displayColors も明示的に渡す）
       this.$emit('generated', {
         centerParameters: localCenterParameters,
         gridData,
-        deterministicSeed: this.deterministicSeed
+        deterministicSeed: this.deterministicSeed,
+        avgNearestChebyshevDistance
       });
     }
   }

@@ -1,5 +1,19 @@
 <template>
   <div class="parameters-display">
+  <!-- T_mannen コントロールバー -->
+  <div style="display:flex;align-items:center;gap:12px;justify-content:space-between;margin:6px 8px 12px;padding:8px;border:1px solid #333;border-radius:6px;background:#1a1a1a;">
+    <div>
+      <strong>T_mannen:</strong>
+      <span style="margin-left:8px;">{{ tmannenValueDisplay }}</span>
+    </div>
+    <div>
+      <button @click="startTMannen" style="margin-right:8px;">Start</button>
+      <button @click="stopTMannen" style="margin-right:8px;">Stop</button>
+      <button @click="increaseTMSpeed" style="margin-right:8px;">+Speed</button>
+      <button @click="decreaseTMSpeed" style="margin-right:8px;">-Speed</button>
+      <button @click="resetTMSpeedToDefault" style="margin-left:8px;">デフォルト速度に設定</button>
+    </div>
+  </div>
     <button @click="onClickGenerate" style="margin-bottom: 12px; margin-left: 8px;">
       Generate (Popup + Render)
     </button>
@@ -171,6 +185,10 @@
       <div class="row"><label style="display:inline-block;min-width:160px;">最大:</label><span>{{ stats.lowlandDistanceToSea.max.toFixed(2) }}</span></div>
       <div class="row"><label style="display:inline-block;min-width:160px;">低地グリッド数:</label><span>{{ stats.lowlandDistanceToSea.count }}</span></div>
     </div>
+    <div v-if="stats && typeof stats.avgNearestChebyshevDistance === 'number'" style="margin-top: 16px; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto;">
+      <div style="font-weight: bold; margin-bottom: 6px;">最近傍 Chebyshev 距離:</div>
+      <div class="row"><label style="display:inline-block;min-width:160px;">平均:</label><span>{{ stats.avgNearestChebyshevDistance.toFixed(2) }}</span></div>
+    </div>
 
     <!-- 非表示の計算コンポーネント（テンプレート内に配置することで使用済みとして認識される） -->
     <Grids_Calculation
@@ -306,8 +324,16 @@ export default {
     const storeEra = (this.$store && this.$store.getters && this.$store.getters.era) ? this.$store.getters.era : null;
     this.local.era = storeEra || '大森林時代';
   },
+  beforeUnmount() {
+    if (this.tmannenInterval) {
+      clearInterval(this.tmannenInterval);
+      this.tmannenInterval = null;
+    }
+  },
   data() {
     return {
+      // Plane Map ポップアップ縦方向の追加余白を動的に調整できるデータプロパティ
+      planePopupVerticalExtra: 40,
       // グリッド幅・高さ（初期値: 200x100）
       gridWidth: 200,
       gridHeight: 100,
@@ -370,7 +396,8 @@ export default {
       mutableCenterParams: JSON.parse(JSON.stringify(this.centerParameters || [])),
       generateSignal: 0,
       popupRef: null,
-      stats: null
+      stats: null,
+      tmannenInterval: null
     };
   },
   computed: {
@@ -415,6 +442,11 @@ export default {
       const glacier = (this.local && typeof this.local.topGlacierRows === 'number') ? this.local.topGlacierRows : 0;
       const extra = (this.local && typeof this.local.tundraExtraRows === 'number') ? this.local.tundraExtraRows : 0;
       return Math.max(0, glacier + extra);
+    }
+    , tmannenValueDisplay() {
+      const v = (this.$store && this.$store.state && Object.prototype.hasOwnProperty.call(this.$store.state, 'T_mannen')) ? this.$store.state.T_mannen : 0;
+      if (!Number.isFinite(v)) return '0';
+      return (Math.abs(v - Math.round(v)) < 0.0001) ? String(Math.round(v)) : v.toFixed(2);
     }
   },
   methods: {
@@ -472,6 +504,38 @@ export default {
         this.$refs.sphere.openSpherePopup();
       }
     },
+    startTMannen() {
+      if (this.$store && this.$store.state) {
+        if (this.tmannenInterval) return;
+        const intervalMs = 1000; // 1秒毎にカウント
+        this.tmannenInterval = setInterval(() => {
+          const speed = (this.$store.state.tmannenSpeed != null) ? this.$store.state.tmannenSpeed : 1.0;
+          // 整数増加を保証するため speed は accumulator で調整する。ここでは speed をそのまま渡す
+          this.$store.dispatch('updateTmannen', speed);
+        }, intervalMs);
+        this.$store.commit('setTmannenRunning', true);
+      }
+    },
+    stopTMannen() {
+      if (this.tmannenInterval) {
+        clearInterval(this.tmannenInterval);
+        this.tmannenInterval = null;
+      }
+      if (this.$store) this.$store.commit('setTmannenRunning', false);
+    },
+    increaseTMSpeed() {
+      const cur = (this.$store && this.$store.state && typeof this.$store.state.tmannenSpeed === 'number') ? this.$store.state.tmannenSpeed : 1.0;
+      this.$store.commit('setTmannenSpeed', Math.min(100, cur + 0.25));
+    },
+    decreaseTMSpeed() {
+      const cur = (this.$store && this.$store.state && typeof this.$store.state.tmannenSpeed === 'number') ? this.$store.state.tmannenSpeed : 1.0;
+      this.$store.commit('setTmannenSpeed', Math.max(0.1, cur - 0.25));
+    },
+    resetTMSpeedToDefault() {
+      if (this.$store && typeof this.$store.dispatch === 'function') {
+        this.$store.dispatch('resetTmannenSpeedToDefault');
+      }
+    },
     onGenerated(payload) {
       // 1) パラメータの出力HTMLをポップアップ表示・更新
       this.mutableCenterParams = JSON.parse(JSON.stringify(payload.centerParameters || []));
@@ -504,6 +568,9 @@ export default {
       if (!this.stats) this.stats = {};
       if (payload.lowlandDistanceToSeaStats) {
         this.stats.lowlandDistanceToSea = payload.lowlandDistanceToSeaStats;
+      }
+      if (typeof payload.avgNearestChebyshevDistance === 'number') {
+        this.stats.avgNearestChebyshevDistance = payload.avgNearestChebyshevDistance;
       }
       // 3.1) グリッド種類のカウント（合計 N）
       const gridData = Array.isArray(payload.gridData) ? payload.gridData : [];
@@ -647,6 +714,7 @@ export default {
     <div class="row"><label>高山の氷河追加グリッド数:</label><span>${escape(params.alpineGlacierExtraRows)}</span></div>
     <div class="row"><label>グリッド幅×高さ:</label><span>${escape(this.gridWidth)} × ${escape(this.gridHeight)}</span></div>
     <div class="row"><label>湖の数（平均）:</label><span>${escape(params.averageLakesPerCenter)}</span></div>
+    ${(this.stats && typeof this.stats.avgNearestChebyshevDistance === 'number') ? `<div class="row"><label>最近傍 Chebyshev 距離（平均）:</label><span>${escape(this.stats.avgNearestChebyshevDistance.toFixed(2))}</span></div>` : ''}
     <div class="section-title">グリッド種類の内訳（合計 ${escape(totalN)}）</div>
     <div class="row"><label>深海:</label><span>${typeCounts ? escape(typeCounts.deepSea) : '-'} (${typeCounts ? fmtPct(typeCounts.deepSea, totalN) : '-'})</span></div>
     <div class="row"><label>浅瀬:</label><span>${typeCounts ? escape(typeCounts.shallowSea) : '-'} (${typeCounts ? fmtPct(typeCounts.shallowSea, totalN) : '-'})</span></div>
@@ -669,7 +737,17 @@ export default {
 </html>`;
     },
     openOrUpdatePlanePopup() {
-      const w = this.planePopupRef && !this.planePopupRef.closed ? this.planePopupRef : window.open('', 'PlaneView', 'width=900,height=700');
+      const cell = Number(this.planeGridCellPx) || 3;
+      const displayW = this.gridWidth + 2;
+      const displayH = this.gridHeight + 2;
+      const canvasWidth = Math.max(1, displayW * cell);
+      const canvasHeight = Math.max(1, displayH * cell);
+      // ウィンドウサイズをcanvasに合わせて計算（padding 12px * 2 + border 1px * 2 + 行の高さ + 追加余白）
+      const EXTRA_POPUP_VERTICAL = 20; // 高さ方向の追加余白
+      const windowWidth = canvasWidth + 24 + 2 + 20;
+      const windowHeight = canvasHeight + 24 + 2 + 60 + EXTRA_POPUP_VERTICAL;
+      const shouldReuse = this.planePopupRef && !this.planePopupRef.closed;
+      const w = shouldReuse ? this.planePopupRef : window.open('', 'PlaneView', `width=${windowWidth},height=${windowHeight}`);
       this.planePopupRef = w;
       if (!w) return;
       const doc = w.document;
@@ -677,6 +755,10 @@ export default {
       doc.open();
       doc.write(html);
       doc.close();
+      // 既に開かれている窓の場合はサイズを再設定してみる
+      if (shouldReuse && typeof w.resizeTo === 'function') {
+        try { w.resizeTo(windowWidth, windowHeight); } catch (e) { /* ignore */ }
+      }
     },
     buildPlaneHtml() {
       const displayColors = Array.isArray(this.planeDisplayColors) ? this.planeDisplayColors : [];
@@ -698,8 +780,6 @@ export default {
     </style>
   </head>
   <body>
-    <h1>Plane Map</h1>
-    <div class="row">${displayW} x ${displayH} cells, ${cell}px each</div>
     <canvas id="plane-canvas"></canvas>
     <script>
       (function(){
@@ -721,6 +801,20 @@ export default {
               ctx.fillStyle = col;
               ctx.fillRect(x * cell, y * cell, cell, cell);
             }
+          }
+          // canvasのサイズに合わせてウィンドウをリサイズ
+          var canvasWidth = cvs.width;
+          var canvasHeight = cvs.height;
+          var padding = 12 * 2; // body padding
+          var border = 1 * 2; // canvas border
+          var rowHeight = 30; // row要素の高さ
+          var margin = 20; // マージン
+          // 追加余白を popup 内部でも適用する
+          var EXTRA_POPUP_VERTICAL = ${Number(this.planePopupVerticalExtra) || 0};
+          var newWidth = canvasWidth + padding + border + margin;
+          var newHeight = canvasHeight + padding + border + rowHeight + margin + EXTRA_POPUP_VERTICAL;
+          if (window.resizeTo) {
+            window.resizeTo(newWidth, newHeight);
           }
         } catch (e) {}
       })();

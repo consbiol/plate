@@ -54,7 +54,7 @@ export default {
   methods: {
     // colors utils are imported
     openSpherePopup() {
-      const w = window.open('', 'SphereView', 'width=700,height=900');
+      const w = window.open('', 'SphereView', 'width=520,height=520');
       if (!w) return;
       this._sphereWin = w;
       // 既存の回転を停止
@@ -119,7 +119,12 @@ export default {
       });
     },
     // derive display colors is imported
-    buildHtml() {
+  buildHtml() {
+      const fullscreenCss = (this.fullscreenPopup) ? `
+html, body{height:100%; margin:0; padding:0;}
+canvas{width:100%; height:100%; display:block; margin:0; border:0; background:#000}
+.controls{display:none}
+` : '';
       return `
 <!doctype html>
 <html>
@@ -128,25 +133,24 @@ export default {
     <title>Sphere View</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      body{margin:0;padding:12px;font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;background:#000;color:#fff}
+      body{margin:0;padding:0;font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;background:#000;color:#fff}
       h1{margin:0 0 8px;font-size:16px}
       .row{margin:4px 0}
-      canvas{display:block;margin:8px auto;border:1px solid #ccc;border-radius:4px;background:#000}
+      canvas{display:block;margin:0;border:0;border-radius:4px;background:#000}
       .controls{display:flex;gap:8px;justify-content:center;align-items:center;margin-top:6px}
       button{padding:6px 10px;border:1px solid #ccc;border-radius:4px;background:#f7f7f7;cursor:pointer}
       button:hover{background:#eee}
+      ${fullscreenCss}
     </style>
   </head>
   <body>
-    <h1>Sphere (front view)</h1>
-    <div class="row">Projection: Mercator → Sphere (front hemisphere)</div>
     <div class="controls">
       <button id="rotate-btn">Rotate</button>
       <button id="faster-btn">Faster</button>
       <button id="slower-btn">Slower</button>
       <span id="speed-label" style="margin-left:6px;color:#666;"></span>
     </div>
-    <canvas id="sphere-canvas" width="700" height="700"></canvas>
+<canvas id="sphere-canvas" width="520" height="520"></canvas>
   </body>
 </html>`;
     },
@@ -667,7 +671,7 @@ export default {
       gl.activeTexture(gl.TEXTURE0);
       const cx = canvas.width / 2;
       const cy = canvas.height / 2;
-      const R = Math.floor(Math.min(canvas.width, canvas.height) * 0.30);
+      const R = Math.floor(Math.min(canvas.width, canvas.height) * 0.28);
       gl.uniform1f(this._glUniforms.u_cx, cx);
       gl.uniform1f(this._glUniforms.u_cy, cy);
       gl.uniform1f(this._glUniforms.u_R, R);
@@ -783,7 +787,7 @@ export default {
       const H = canvas.height;
       const cx = Math.floor(W / 2);
       const cy = Math.floor(H / 2);
-      const R = Math.floor(Math.min(W, H) * 0.30);
+      const R = Math.floor(Math.min(W, H) * 0.28);
 
       const width = this.gridWidth;
       const height = this.gridHeight;
