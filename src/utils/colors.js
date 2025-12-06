@@ -20,17 +20,17 @@ export function getDefaultTerrainColors() {
     };
 }
 
-// --- Era-based color factories (each era has its own function to tweak later) ---
+// 爆撃時代時代
 export function getEraColors_Bombardment() {
     return {
-        deepSea: '#ED1A3D',
-        shallowSea: '#3C78B4',
-        lowland: '#228B22',
-        desert: '#96826E',
-        highland: '#91644B',
-        alpine: '#5F5046',
-        tundra: '#7ea836',
-        glacier: '#FFFFFF',
+        deepSea: '#0f3b2e',
+        shallowSea: '#2a6461',
+        lowland: '#3b3b3b',
+        desert: '#4A4A4A',
+        highland: '#3E2F1F',
+        alpine: '#2B2B2B',
+        tundra: '#474747',
+        glacier: '#e0dac5',
         border: '#000000',
         city: '#F15A22',
         cultivated: '#ffff00',
@@ -41,30 +41,30 @@ export function getEraColors_Bombardment() {
 // 生命発生前時代（プリバイオティック期）
 export function getEraColors_PreLife() {
     return {
-        deepSea: '#ffff00',
-        shallowSea: '#3C78B4',
-        lowland: '#228B22',
-        desert: '#96826E',
-        highland: '#91644B',
-        alpine: '#5F5046',
-        tundra: '#7ea836',
-        glacier: '#FFFFFF',
+        deepSea: '#0f3b2e',
+        shallowSea: '#2a6461',
+        lowland: '#3b3b3b',
+        desert: '#4A4A4A',
+        highland: '#3E2F1F',
+        alpine: '#2B2B2B',
+        tundra: '#474747',
+        glacier: '#e0dac5',
         border: '#000000',
         city: '#F15A22',
         cultivated: '#ffff00',
         polluted: '#800080'
     };
 }
-
+// 嫌気性細菌誕生時代
 export function getEraColors_AnaerobicBacteria() {
     return {
-        deepSea: '#1E508C',
-        shallowSea: '#ED1A3D',
-        lowland: '#228B22',
-        desert: '#96826E',
-        highland: '#91644B',
-        alpine: '#5F5046',
-        tundra: '#7ea836',
+        deepSea: '#214237',
+        shallowSea: '#3a4430',
+        lowland: '#3b3b3b',
+        desert: '#4A4A4A',
+        highland: '#3E2F1F',
+        alpine: '#2B2B2B',
+        tundra: '#474747',
         glacier: '#FFFFFF',
         border: '#000000',
         city: '#F15A22',
@@ -72,15 +72,16 @@ export function getEraColors_AnaerobicBacteria() {
         polluted: '#800080'
     };
 }
+// 光合成細菌誕生時代
 export function getEraColors_PhotosyntheticBacteria() {
     return {
-        deepSea: '#1E508C',
-        shallowSea: '#3C78B4',
-        lowland: '#228B22',
-        desert: '#96826E',
-        highland: '#91644B',
-        alpine: '#5F5046',
-        tundra: '#7ea836',
+        deepSea: '#1a4e84',
+        shallowSea: '#226f8c',
+        lowland: '#a13c2f',
+        desert: '#C35A3B',
+        highland: '#762f1c',
+        alpine: '#5a4a3a',
+        tundra: '#7d2e24',
         glacier: '#FFFFFF',
         border: '#000000',
         city: '#F15A22',
@@ -248,12 +249,11 @@ export function getEraTerrainColors(era) {
 
 // Sphere 用: 時代別の陸トーン（既定は大森林時代と同じ値）
 // 時代別の陸トーン色（Sphere の陸に貼るトーン）。初期値は全時代とも #96A5B9。
-// 後で個別に変更したい場合は、このマップの値を編集してください。
 const ERA_LAND_TINTS = {
-    '爆撃時代': '#96A5B9',
-    '生命発生前時代': '#96A5B9',
-    '嫌気性細菌誕生時代': '#96A5B9',
-    '光合成細菌誕生時代': '#FF0000',
+    '爆撃時代': '#2b1b0b',
+    '生命発生前時代': '#2b1b0b',
+    '嫌気性細菌誕生時代': '#261f15',
+    '光合成細菌誕生時代': '#96A5B9',
     '真核生物誕生時代': '#96A5B9',
     '多細胞生物誕生時代': '#96A5B9',
     '海洋生物多様化時代': '#96A5B9',
@@ -271,21 +271,20 @@ export function getEraLandTint(era) {
     return def;
 }
 
-// 時代別の雲トーン色（Sphere の雲レイヤに貼る色）。初期値は全時代とも #FFFFFF。
-// 後で個別に変更したい場合は、このマップの値を編集してください。
+// 時代別の雲トーン色（Sphere の雲レイヤに貼る色）。
 const ERA_CLOUD_TINTS = {
-    '爆撃時代': '#FFFFFF',
-    '生命発生前時代': '#5E7C85',
-    '嫌気性細菌誕生時代': '#FFFFFF',
-    '光合成細菌誕生時代': '#FFFFFF',
-    '真核生物誕生時代': '#ED1A3D',
-    '多細胞生物誕生時代': '#ED1A3D',
-    '海洋生物多様化時代': '#FFFFFF',
-    '苔類進出時代': '#FFFFFF',
-    'シダ植物時代': '#FFFFFF',
-    '大森林時代': '#FFFFFF',
-    '文明時代': '#FFFFFF',
-    '海棲文明時代': '#FFFFFF'
+    '爆撃時代': '#afa58f',
+    '生命発生前時代': '#afa58f',
+    '嫌気性細菌誕生時代': '#E0B878',
+    '光合成細菌誕生時代': '#e5e5e5',
+    '真核生物誕生時代': '#E7E9EA',
+    '多細胞生物誕生時代': '#E7E9EA',
+    '海洋生物多様化時代': '#E7E9EA',
+    '苔類進出時代': '#E7E9EA',
+    'シダ植物時代': '#E7E9EA',
+    '大森林時代': '#E7E9EA',
+    '文明時代': '#E7E9EA',
+    '海棲文明時代': '#E7E9EA'
 };
 export function getEraCloudTint(era) {
     const def = '#FFFFFF';

@@ -1603,6 +1603,13 @@ export default {
     seaCultivated: !!seaCultivatedMask[idx],
     seaPolluted: !!seaPollutedMask[idx]
   };
+          // 強制: terrain が glacier の場合は必ず glacierColor を適用（表示が欠ける問題対処）
+  if (gridData[idx] && gridData[idx].terrain) {
+    const t = gridData[idx].terrain;
+    if ((t.type === 'land' && t.land === 'glacier') || (t.type === 'sea' && t.sea === 'glacier')) {
+      gridData[idx].colorHex = glacierColor;
+    }
+  }
         }
       }
       // 収集したシード決定情報を centerParameters に埋め込む
