@@ -57,8 +57,8 @@
     </div>
     <div style="margin-bottom: 8px;">
       <label>雲量: </label>
-      <input type="range" min="0" max="1" step="0.1" v-model.number="local.cloudAmount" />
-      <span style="margin-left:8px">{{ (local.cloudAmount || 0).toFixed(2) }}</span>
+      <input type="range" min="0" max="1" step="0.1" v-model.number="local.f_cloud" />
+      <span style="margin-left:8px">{{ (local.f_cloud || 0).toFixed(2) }}</span>
     </div>
     <div style="margin-bottom: 8px;">
       <label>平面地図のグリッド1マスのピクセル数: </label>
@@ -224,7 +224,7 @@
       :gridHeight="gridHeight"
       :gridData="gridDataLocal"
       :polarBufferRows="75"
-      :cloudAmount="local.cloudAmount"
+      :f_cloud="local.f_cloud"
       :era="$store && $store.getters ? $store.getters.era : null"
     />
   </div>
@@ -281,7 +281,7 @@ export default {
     // 中心点のパラメータ配列（デフォルト: 空配列）: 各中心点の影響係数、減衰率、方向角度などの詳細パラメータ。
     centerParameters: { type: Array, required: false, default: () => [] },
     // 雲量（0..1）: 被覆度優先で効く
-    cloudAmount: { type: Number, required: false, default: 0.4 },
+    f_cloud: { type: Number, required: false, default: 0.4 },
     // 都市生成確率（低地、海隣接で10倍）
     cityProbability: { type: Number, required: false, default: 0.002 },
     // 耕作地生成確率（低地、海隣接で10倍）
@@ -319,7 +319,7 @@ export default {
       local: {
         centersY: this.centersY,
         seaLandRatio: this.seaLandRatio,
-        cloudAmount: this.cloudAmount,
+        f_cloud: this.f_cloud,
         minCenterDistance: this.minCenterDistance,
         baseSeaDistanceThreshold: this.baseSeaDistanceThreshold,
         baseLandDistanceThreshold: this.baseLandDistanceThreshold,

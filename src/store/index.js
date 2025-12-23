@@ -5,7 +5,7 @@ export default createStore({
         // 平均気温 (°C)
         averageTemperature: 15,
         // 雲量（0..1）
-        cloudAmount: 0.5,
+        f_cloud: 0.5,
         // 平面地図の1グリッドのピクセル数（1..10）
         planeGridCellPx: 3,
 

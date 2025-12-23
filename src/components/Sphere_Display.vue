@@ -22,7 +22,7 @@ export default {
     // 時代（色プリセット切替の将来拡張用）
     era: { type: String, required: false, default: null },
     // 雲量（0..1）: 被覆度に強く、濃さ（不透明度）に弱く効かせる
-    cloudAmount: { type: Number, required: false, default: 0.4 },
+    f_cloud: { type: Number, required: false, default: 0.4 },
     // 雲ノイズのトーラス周期（uv空間上の反復数）
     cloudPeriod: { type: Number, required: false, default: 16 },
     // 極周辺での雲生成ブースト強度（0..1）。0で無効、1で強ブースト
@@ -35,7 +35,7 @@ export default {
         if (this._useWebGL) this.drawWebGL(); else this.drawSphere(this._sphereCanvas);
       }
     },
-    cloudAmount() {
+    f_cloud() {
       if (this._sphereCanvas) {
         if (this._useWebGL) this.drawWebGL(); else this.drawSphere(this._sphereCanvas);
       }
@@ -302,7 +302,7 @@ export default {
         uniform float u_blendFrac;
         uniform float u_polarNoiseScale;
         uniform float u_polarNoiseStrength;
-        uniform float u_cloudAmount;      // 0..1
+        uniform float u_f_cloud;      // 0..1
         uniform float u_cloudPeriod;      // e.g. 16
         uniform float u_polarCloudBoost;  // 0..1
         uniform vec3 u_cloudColor;        // 0..1
@@ -418,7 +418,7 @@ export default {
           }
           // 雲レイヤ（白）: 被覆度優先、濃さは弱く
           float classW = sampleClassSmooth(vec2(uMap, vMap)); // 海=1, 陸=0.7/0.8, 乾燥=0.2/0.4 を近傍で平滑化
-          float eff = clamp(u_cloudAmount * classW, 0.0, 1.0);
+          float eff = clamp(u_f_cloud * classW, 0.0, 1.0);
           // トーラスFBMノイズ（極バッファ含む全域で評価）
           float nCloud = fbmTile(vec2(uEff, vEff), max(2.0, u_cloudPeriod));
           // 被覆度の閾値（雲量で強く変化）: 雲量↑で閾値↓ → coverage↑
@@ -578,7 +578,7 @@ export default {
         u_blendFrac: gl.getUniformLocation(prog, 'u_blendFrac'),
         u_polarNoiseScale: gl.getUniformLocation(prog, 'u_polarNoiseScale'),
         u_polarNoiseStrength: gl.getUniformLocation(prog, 'u_polarNoiseStrength'),
-        u_cloudAmount: gl.getUniformLocation(prog, 'u_cloudAmount'),
+        u_f_cloud: gl.getUniformLocation(prog, 'u_f_cloud'),
         u_cloudPeriod: gl.getUniformLocation(prog, 'u_cloudPeriod'),
         u_polarCloudBoost: gl.getUniformLocation(prog, 'u_polarCloudBoost'),
         u_cloudColor: gl.getUniformLocation(prog, 'u_cloudColor')
@@ -625,7 +625,7 @@ export default {
       gl.uniform1f(this._glUniforms.u_polarNoiseScale, this.polarNoiseScale || 0.05);
       gl.uniform1f(this._glUniforms.u_polarNoiseStrength, this.polarNoiseStrength || 0.3);
       // cloud params
-      gl.uniform1f(this._glUniforms.u_cloudAmount, Math.max(0, Math.min(1, this.cloudAmount || 0)));
+      gl.uniform1f(this._glUniforms.u_f_cloud, Math.max(0, Math.min(1, this.f_cloud || 0)));
       gl.uniform1f(this._glUniforms.u_cloudPeriod, Math.max(2, this.cloudPeriod || 16));
       if (this._glUniforms.u_polarCloudBoost) {
         gl.uniform1f(this._glUniforms.u_polarCloudBoost, Math.max(0, Math.min(1, this.polarCloudBoost || 0)));
@@ -674,8 +674,8 @@ export default {
       const offsetFrac = ((this._rotationColumns || 0) / Math.max(1, this.gridWidth));
       gl.uniform1f(this._glUniforms.u_offset, offsetFrac);
       // update cloud params per-frame (UI反映)
-      if (this._glUniforms && this._glUniforms.u_cloudAmount) {
-        gl.uniform1f(this._glUniforms.u_cloudAmount, Math.max(0, Math.min(1, this.cloudAmount || 0)));
+      if (this._glUniforms && this._glUniforms.u_f_cloud) {
+        gl.uniform1f(this._glUniforms.u_f_cloud, Math.max(0, Math.min(1, this.f_cloud || 0)));
       }
       if (this._glUniforms && this._glUniforms.u_cloudPeriod) {
         gl.uniform1f(this._glUniforms.u_cloudPeriod, Math.max(2, this.cloudPeriod || 16));
@@ -994,7 +994,7 @@ export default {
           // 経度u: 回転を反映したマップ列から推定
           const uEff = ((xMap % width) + width) % width / width;
           // クラウド有効度
-          const effC = Math.max(0, Math.min(1, (this.cloudAmount || 0) * classW));
+          const effC = Math.max(0, Math.min(1, (this.f_cloud || 0) * classW));
           let rr = r, gg = g, bb = b;
           if (effC > 0) {
             const nCloud = this._fbmTile(uEff, vEff, this.cloudPeriod || 16);
@@ -1065,7 +1065,7 @@ export default {
           // --- 雲オーバーレイ（描画後に適用） ---
           // 経度u: 回転を反映したマップ列から
           const uEff = ((((ix0 + colShift) % width) + width) % width) / width;
-          const effC = Math.max(0, Math.min(1, (this.cloudAmount || 0) * classW));
+          const effC = Math.max(0, Math.min(1, (this.f_cloud || 0) * classW));
           let rr = r, gg = g, bb = b;
           if (effC > 0) {
             const nCloud = this._fbmTile(uEff, vEff, this.cloudPeriod || 16);
