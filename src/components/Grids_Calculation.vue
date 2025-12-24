@@ -58,6 +58,8 @@ export default {
     cityGenerationProbability: { type: Number, required: false, default: 0.002 },
     // 耕作地グリッド生成の確率（低地のみ、海隣接で10倍）
     cultivatedGenerationProbability: { type: Number, required: false, default: 0.05 },
+    // 苔類進出地グリッド生成の確率（低地のみ、海隣接で100倍、苔類進出時代のみ生成）
+    bryophyteGenerationProbability: { type: Number, required: false, default: 0.01 },
     // 汚染地クラスター数（マップ全体、開始セルはシードで決定）
     pollutedAreasCount: { type: Number, required: false, default: 1 },
     // 海棲都市グリッド生成の確率（浅瀬のみ、陸隣接で10倍）
@@ -1117,9 +1119,11 @@ export default {
       // 追加: city/cultivated の生成（低地のみ、海隣接で確率10倍）
       const cityMask = new Array(N).fill(false);
       const cultivatedMask = new Array(N).fill(false);
+      const bryophyteMask = new Array(N).fill(false);
       const pollutedMask = new Array(N).fill(false);
       const rCity = this._getDerivedRng('city') || Math.random;
       const rCult = this._getDerivedRng('cultivated') || Math.random;
+      const rBryo = this._getDerivedRng('bryophyte') || Math.random;
       // 地域差ノイズ（都市の発生率に地域バイアスを付与）
       // fractalNoise2D は [-1,1] を返す。これを [cityBiasMin, cityBiasMax] に線形マップして倍率とする
       const cityBiasScale = 0.01; // 小さいほど広域パッチ
@@ -1155,6 +1159,58 @@ export default {
       };
       // 文明時代のみ city/cultivated を生成
       const isCivilizationEra = (this.era === '文明時代');
+      // 苔類進出時代のみ苔類進出地を生成
+      const isBryophyteEra = (this.era === '苔類進出時代');
+      // 苔類進出地の生成アルゴリズム（耕作地と同等。ただし海隣接で確率100倍、かつ苔類進出時代のみ）
+      if (isBryophyteEra) {
+        for (let gy = 0; gy < this.gridHeight; gy++) {
+          for (let gx = 0; gx < this.gridWidth; gx++) {
+            const idx = gy * this.gridWidth + gx;
+            if (colors[idx] !== lowlandColor) continue;
+            const baseBryo = Math.max(0, this.bryophyteGenerationProbability || 0);
+            const pcBryo = isAdjacentToSea(gx, gy) ? Math.min(1, baseBryo * 100) : baseBryo;
+            const startBryoRng = this._getDerivedRng('bryophyte-start', gx, gy) || rBryo;
+            if (pcBryo > 0 && (startBryoRng() < pcBryo) && !bryophyteMask[idx]) {
+              const clusterRng = this._getDerivedRng('bryophyte-cluster', gx, gy) || Math.random;
+              const targetSize = Math.max(1, this._poissonSample(5, 50, clusterRng));
+              const dirs = [
+                { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+                { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+                { dx: -1, dy: -1 }, { dx: 1, dy: -1 },
+                { dx: -1, dy: 1 }, { dx: 1, dy: 1 }
+              ];
+              const queue = [{ x: gx, y: gy, idx }];
+              const visited = new Set([idx]);
+              bryophyteMask[idx] = true;
+              let count = 1;
+              while (queue.length > 0 && count < targetSize) {
+                const cur = queue.shift();
+                for (const d of dirs) {
+                  // 隣接セルを確率的に拡張（密になり過ぎないよう 0.6 で採択）
+                  {
+                    const rand = (clusterRng || seededRng || Math.random);
+                    if (rand() > 0.6) continue;
+                  }
+                  const w = this.torusWrap(cur.x + d.dx, cur.y + d.dy);
+                  if (!w) continue;
+                  const nIdx = w.y * this.gridWidth + w.x;
+                  if (visited.has(nIdx)) continue;
+                  visited.add(nIdx);
+                  // 拡張条件: 低地・未city・未cultivated・未bryophyte
+                  if (colors[nIdx] !== lowlandColor) continue;
+                  if (cityMask[nIdx]) continue;
+                  if (cultivatedMask[nIdx]) continue;
+                  if (bryophyteMask[nIdx]) continue;
+                  bryophyteMask[nIdx] = true;
+                  count++;
+                  if (count >= targetSize) break;
+                  queue.push({ x: w.x, y: w.y, idx: nIdx });
+                }
+              }
+            }
+          }
+        }
+      }
       if (isCivilizationEra) {
         for (let gy = 0; gy < this.gridHeight; gy++) {
           for (let gx = 0; gx < this.gridWidth; gx++) {
@@ -1575,6 +1631,8 @@ export default {
     colorHex: col,
     // 都市/耕作地/汚染地フラグ（色は colors.js でパレットから解決）
     city: !!cityMask[idx],
+    // 苔類進出地フラグ（苔類進出時代のみ生成）
+    bryophyte: !!bryophyteMask[idx],
     cultivated: !!cultivatedMask[idx],
     polluted: !!pollutedMask[idx],
     // 海棲都市/海棲耕作地/海棲汚染地フラグ（色は colors.js でパレットから解決）

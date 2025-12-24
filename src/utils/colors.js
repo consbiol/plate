@@ -4,6 +4,7 @@ export function getDefaultTerrainColors() {
     return {
         deepSea: '#1E508C',
         shallowSea: '#3C78B4',
+        lake: '#3C78B4',
         lowland: '#228B22',
         desert: '#96826E',
         highland: '#91644B',
@@ -13,6 +14,7 @@ export function getDefaultTerrainColors() {
         border: '#000000',
         city: '#F15A22',
         cultivated: '#ffff00',
+        bryophyte: '#76A543',
         polluted: '#800080',
         seaCity: '#1A1F3A',
         seaCultivated: '#2E8B57',
@@ -21,209 +23,186 @@ export function getDefaultTerrainColors() {
 }
 
 // --- Era-based color factories (each era has its own function to tweak later) ---
+// 爆撃時代時代
 export function getEraColors_Bombardment() {
     return {
-        deepSea: '#ED1A3D',
-        shallowSea: '#3C78B4',
-        lowland: '#228B22',
-        desert: '#96826E',
-        highland: '#91644B',
-        alpine: '#5F5046',
-        tundra: '#7ea836',
-        glacier: '#FFFFFF',
-        border: '#000000',
-        city: '#F15A22',
-        cultivated: '#ffff00',
-        polluted: '#800080'
+        deepSea: '#0f3b2e',
+        shallowSea: '#2a6461',
+        // 爆撃時代: 湖をマグマ色に
+        lake: '#FF4500',
+        lowland: '#3b3b3b',
+        desert: '#4A4A4A',
+        highland: '#3E2F1F',
+        alpine: '#2B2B2B',
+        tundra: '#474747',
+        glacier: '#A59A8A',
+        border: '#000000'
     };
 }
 
 // 生命発生前時代（プリバイオティック期）
 export function getEraColors_PreLife() {
     return {
-        deepSea: '#ffff00',
-        shallowSea: '#3C78B4',
-        lowland: '#228B22',
-        desert: '#96826E',
-        highland: '#91644B',
-        alpine: '#5F5046',
-        tundra: '#7ea836',
-        glacier: '#FFFFFF',
-        border: '#000000',
-        city: '#F15A22',
-        cultivated: '#ffff00',
-        polluted: '#800080'
+        deepSea: '#0f3b2e',
+        shallowSea: '#2a6461',
+        lowland: '#3b3b3b',
+        desert: '#4A4A4A',
+        highland: '#3E2F1F',
+        alpine: '#2B2B2B',
+        tundra: '#474747',
+        glacier: '#e0dac5',
+        border: '#000000'
     };
 }
 
+// 嫌気性細菌誕生時代
 export function getEraColors_AnaerobicBacteria() {
     return {
-        deepSea: '#1E508C',
-        shallowSea: '#ED1A3D',
-        lowland: '#228B22',
-        desert: '#96826E',
-        highland: '#91644B',
-        alpine: '#5F5046',
-        tundra: '#7ea836',
-        glacier: '#FFFFFF',
-        border: '#000000',
-        city: '#F15A22',
-        cultivated: '#ffff00',
-        polluted: '#800080'
+        deepSea: '#214237',
+        shallowSea: '#3a4430',
+        lowland: '#3b3b3b',
+        desert: '#4A4A4A',
+        highland: '#3E2F1F',
+        alpine: '#2B2B2B',
+        tundra: '#474747',
+        glacier: '#E6EEF2',
+        border: '#000000'
     };
 }
+// 光合成細菌誕生時代
 export function getEraColors_PhotosyntheticBacteria() {
     return {
-        deepSea: '#1E508C',
-        shallowSea: '#3C78B4',
-        lowland: '#228B22',
-        desert: '#96826E',
-        highland: '#91644B',
-        alpine: '#5F5046',
-        tundra: '#7ea836',
-        glacier: '#FFFFFF',
-        border: '#000000',
-        city: '#F15A22',
-        cultivated: '#ffff00',
-        polluted: '#800080'
+        deepSea: '#1a4e84',
+        shallowSea: '#226f8c',
+        lowland: '#a13c2f',
+        desert: '#C35A3B',
+        highland: '#80421f',
+        alpine: '#5a4a3a',
+        tundra: '#a13c2f',
+        glacier: '#E6EEF2',
+        border: '#000000'
     };
 }
+// 真核生物誕生時代
 export function getEraColors_Eukaryotes() {
     return {
         deepSea: '#1E508C',
-        shallowSea: '#3C78B4',
-        lowland: '#228B22',
-        desert: '#96826E',
-        highland: '#91644B',
-        alpine: '#5F5046',
-        tundra: '#7ea836',
-        glacier: '#FFFFFF',
-        border: '#000000',
-        city: '#F15A22',
-        cultivated: '#ffff00',
-        polluted: '#800080'
+        shallowSea: '#3070b0',
+        lowland: '#B14A2F',
+        desert: '#C35A3B',
+        highland: '#80421f',
+        alpine: '#5a4a3a',
+        tundra: '#a13c2f',
+        glacier: '#E6EEF2',
+        border: '#000000'
     };
 }
+// 多細胞生物誕生時代
 export function getEraColors_Multicellular() {
     return {
         deepSea: '#1E508C',
-        shallowSea: '#3C78B4',
-        lowland: '#228B22',
-        desert: '#96826E',
-        highland: '#91644B',
-        alpine: '#5F5046',
-        tundra: '#7ea836',
-        glacier: '#FFFFFF',
-        border: '#000000',
-        city: '#F15A22',
-        cultivated: '#ffff00',
-        polluted: '#800080'
+        shallowSea: '#3070b0',
+        lowland: '#b1632f',
+        desert: '#C35A3B',
+        highland: '#80421f',
+        alpine: '#5a4a3a',
+        tundra: '#B14A2F',
+        glacier: '#E6EEF2',
+        border: '#000000'
     };
 }
+// 海洋生物多様化時代
 export function getEraColors_MarineDiversification() {
     return {
         deepSea: '#1E508C',
-        shallowSea: '#3C78B4',
-        lowland: '#228B22',
-        desert: '#96826E',
+        shallowSea: '#1d777d',
+        lowland: '#b1742f',
+        desert: '#B75E3B',
         highland: '#91644B',
         alpine: '#5F5046',
-        tundra: '#7ea836',
-        glacier: '#FFFFFF',
-        border: '#000000',
-        city: '#F15A22',
-        cultivated: '#ffff00',
-        polluted: '#800080'
+        tundra: '#b1742f',
+        glacier: '#E6EEF2',
+        border: '#000000'
     };
 }
+// 苔類進出時代
 export function getEraColors_BryophyteExpansion() {
     return {
         deepSea: '#1E508C',
-        shallowSea: '#3C78B4',
-        lowland: '#228B22',
-        desert: '#96826E',
+        shallowSea: '#3885ab',
+        lowland: '#c88e6a',
+        desert: '#d2a68c',
         highland: '#91644B',
         alpine: '#5F5046',
-        tundra: '#7ea836',
-        glacier: '#FFFFFF',
-        border: '#000000',
-        city: '#F15A22',
-        cultivated: '#ffff00',
-        polluted: '#800080'
+        tundra: '#c88e6a',
+        bryophyte: '#7ea836',
+        glacier: '#E6EEF2',
+        border: '#000000'
     };
 }
-// (unused) getEraColors_PteridophyteGymnospermExpansion を削除しました
-// 新名称対応: PteridophyteExpansion（表示名: シダ植物時代）
+// シダ植物時代(石炭紀)
 export function getEraColors_PteridophyteExpansion() {
     return {
         deepSea: '#1E508C',
-        shallowSea: '#3C78B4',
+        shallowSea: '#3070b0',
         lowland: '#228B22',
-        desert: '#96826E',
+        desert: '#D2B48C',
         highland: '#91644B',
         alpine: '#5F5046',
         tundra: '#7ea836',
-        glacier: '#FFFFFF',
-        border: '#000000',
-        city: '#F15A22',
-        cultivated: '#ffff00',
-        polluted: '#800080'
+        glacier: '#E6EEF2',
+        border: '#000000'
     };
 }
+// 大森林時代
 export function getEraColors_GreatForest() {
     return {
         deepSea: '#1E508C',
-        shallowSea: '#3C78B4',
+        shallowSea: '#3070b0',
         lowland: '#228B22',
-        desert: '#96826E',
+        desert: '#D2B48C',
         highland: '#91644B',
         alpine: '#5F5046',
         tundra: '#7ea836',
-        glacier: '#FFFFFF',
-        border: '#000000',
-        city: '#F15A22',
-        cultivated: '#ffff00',
-        polluted: '#800080'
+        glacier: '#E6EEF2',
+        border: '#000000'
     };
 }
+// 文明時代
 export function getEraColors_Civilization() {
     return {
         deepSea: '#1E508C',
-        shallowSea: '#3C78B4',
+        shallowSea: '#3070b0',
         lowland: '#228B22',
-        desert: '#96826E',
+        desert: '#D2B48C',
         highland: '#91644B',
         alpine: '#5F5046',
         tundra: '#7ea836',
-        glacier: '#FFFFFF',
+        glacier: '#E6EEF2',
         border: '#000000',
-        city: '#F15A22',
-        cultivated: '#ffff00',
-        polluted: '#800080',
-        seaCity: '#1A1F3A',
-        seaCultivated: '#2E8B57',
-        seaPolluted: '#800080'
+        city: '#9a9a9a',
+        cultivated: '#6B8E23',
+        polluted: '#4e4a57'
     };
 }
+// 海棲文明時代
 export function getEraColors_SeaCivilization() {
     return {
         deepSea: '#1E508C',
-        shallowSea: '#3C78B4',
+        shallowSea: '#3070b0',
         lowland: '#228B22',
         desert: '#96826E',
         highland: '#91644B',
         alpine: '#5F5046',
         tundra: '#7ea836',
-        glacier: '#FFFFFF',
+        glacier: '#E6EEF2',
         border: '#000000',
-        city: '#F15A22',
-        cultivated: '#ffff00',
-        polluted: '#800080',
-        seaCity: '#1A1F3A',
-        seaCultivated: '#F4E511',
-        seaPolluted: '#800080'
+        seaCity: '#5C6B73',
+        seaCultivated: '#51a69a',
+        seaPolluted: '#786491'
     };
 }
+
 
 const ERA_COLOR_FACTORIES = {
     '爆撃時代': getEraColors_Bombardment,
@@ -311,7 +290,7 @@ function cellToColor(cell, tc, preferPalette) {
             const l = cell.terrain.land;
             if (l === 'tundra') base = tc.tundra;
             else if (l === 'glacier') base = tc.glacier;
-            else if (l === 'lake') base = tc.shallowSea;
+            else if (l === 'lake') base = (tc && tc.lake) ? tc.lake : tc.shallowSea;
             else if (l === 'highland') base = tc.highland;
             else if (l === 'alpine') base = tc.alpine;
             else if (l === 'desert') base = tc.desert;
@@ -340,6 +319,9 @@ function cellToColor(cell, tc, preferPalette) {
     }
     if (cell && cell.city) {
         return (tc && tc.city) ? tc.city : '#808080';
+    }
+    if (cell && cell.bryophyte) {
+        return (tc && tc.bryophyte) ? tc.bryophyte : '#76A543';
     }
     if (cell && cell.cultivated) {
         return (tc && tc.cultivated) ? tc.cultivated : '#556655';

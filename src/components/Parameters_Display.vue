@@ -108,6 +108,10 @@
       <input type="number" min="0" max="1" step="0.01" v-model.number="local.cultivatedProbability" />
     </div>
     <div style="margin-bottom: 8px;">
+      <label>苔類進出地生成確率 (低地, 海隣接で×100): </label>
+      <input type="number" min="0" max="1" step="0.01" v-model.number="local.bryophyteProbability" />
+    </div>
+    <div style="margin-bottom: 8px;">
       <label>汚染地クラスター数（マップ全体）: </label>
       <input type="number" min="0" max="1000" step="1" v-model.number="local.pollutedAreasCount" />
     </div>
@@ -208,6 +212,7 @@
       :era="local.era || ($store && $store.getters ? $store.getters.era : null)"
       :cityGenerationProbability="local.cityProbability"
       :cultivatedGenerationProbability="local.cultivatedProbability"
+      :bryophyteGenerationProbability="local.bryophyteProbability"
       :pollutedAreasCount="local.pollutedAreasCount"
       :seaCityGenerationProbability="local.seaCityProbability"
       :seaCultivatedGenerationProbability="local.seaCultivatedProbability"
@@ -286,6 +291,8 @@ export default {
     cityProbability: { type: Number, required: false, default: 0.002 },
     // 耕作地生成確率（低地、海隣接で10倍）
     cultivatedProbability: { type: Number, required: false, default: 0.05 },
+    // 苔類進出地生成確率（低地、海隣接で100倍）
+    bryophyteProbability: { type: Number, required: false, default: 0.005 },
     // 汚染地クラスター数（マップ全体、シードで開始セルを決定）
     pollutedAreasCount: { type: Number, required: false, default: 1 },
     // 海棲都市生成確率（浅瀬、陸隣接で10倍）
@@ -344,6 +351,7 @@ export default {
         deterministicSeed: '',
         cityProbability: this.cityProbability,
         cultivatedProbability: this.cultivatedProbability,
+        bryophyteProbability: this.bryophyteProbability,
         pollutedAreasCount: this.pollutedAreasCount,
         seaCityProbability: this.seaCityProbability,
         seaCultivatedProbability: this.seaCultivatedProbability,
@@ -518,6 +526,7 @@ export default {
         alpine: 0,
         lake: 0,
         tundra: 0,
+        bryophyte: 0,
         city: 0,
         cultivated: 0,
         polluted: 0,
@@ -540,6 +549,8 @@ export default {
           cat = 'polluted';
         } else if (cell && cell.city) {
           cat = 'city';
+        } else if (cell && cell.bryophyte) {
+          cat = 'bryophyte';
         } else if (cell && cell.cultivated) {
           cat = 'cultivated';
         } else if (cell && cell.terrain && cell.terrain.type === 'sea') {
@@ -659,6 +670,7 @@ export default {
     <div class="row"><label>湖:</label><span>${typeCounts ? escape(typeCounts.lake) : '-'} (${typeCounts ? fmtPct(typeCounts.lake, totalN) : '-'})</span></div>
     <div class="row"><label>都市:</label><span>${typeCounts ? escape(typeCounts.city) : '-'} (${typeCounts ? fmtPct(typeCounts.city, totalN) : '-'})</span></div>
     <div class="row"><label>農地:</label><span>${typeCounts ? escape(typeCounts.cultivated) : '-'} (${typeCounts ? fmtPct(typeCounts.cultivated, totalN) : '-'})</span></div>
+    <div class="row"><label>苔類進出地:</label><span>${typeCounts ? escape(typeCounts.bryophyte) : '-'} (${typeCounts ? fmtPct(typeCounts.bryophyte, totalN) : '-'})</span></div>
     <div class="row"><label>汚染地:</label><span>${typeCounts ? escape(typeCounts.polluted) : '-'} (${typeCounts ? fmtPct(typeCounts.polluted, totalN) : '-'})</span></div>
     <div class="row"><label>海棲都市:</label><span>${typeCounts ? escape(typeCounts.seaCity) : '-'} (${typeCounts ? fmtPct(typeCounts.seaCity, totalN) : '-'})</span></div>
     <div class="row"><label>海棲農地:</label><span>${typeCounts ? escape(typeCounts.seaCultivated) : '-'} (${typeCounts ? fmtPct(typeCounts.seaCultivated, totalN) : '-'})</span></div>
