@@ -6,6 +6,9 @@
     <button @click="onClickReviseHighFrequency" style="margin-bottom: 12px; margin-left: 8px;">
       Revise 氷河・乾燥地
     </button>
+    <button @click="onClickDrift" style="margin-bottom: 12px; margin-left: 8px;">
+      Drift 大陸中心点 + ノイズ再抽選
+    </button>
     
     <div style="margin-bottom: 8px;">
       <label>陸の中心点の数 y: </label>
@@ -211,6 +214,7 @@
       :centerParameters="mutableCenterParams"
       :generateSignal="generateSignal"
       :reviseSignal="reviseSignal"
+      :driftSignal="driftSignal"
         :deterministicSeed="local.deterministicSeed"
       :era="local.era || storeEra"
       :cityGenerationProbability="local.cityProbability"
@@ -224,6 +228,7 @@
       :centerBias="local.centerBias"
       @generated="onGenerated"
       @revised="onRevised"
+      @drifted="onGenerated"
     />
 
     <!-- 非表示の球表示コンポーネント -->
@@ -335,6 +340,7 @@ export default {
       mutableCenterParams: JSON.parse(JSON.stringify(this.centerParameters || [])),
       generateSignal: 0,
       reviseSignal: 0,
+      driftSignal: 0,
       // plane iframe のビルドバージョン（構造変化時はインクリメント）
       planeBuildVersion: 0,
       // sphere の非リロード更新回数管理
@@ -425,6 +431,11 @@ export default {
     onClickReviseHighFrequency() {
       // Generate後のキャッシュを前提とした高頻度更新
       this.reviseSignal += 1;
+    },
+    onClickDrift() {
+      // 中心点をドリフトさせてフル再生成（ノイズは全てランダム）
+      this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
+      this.driftSignal += 1;
     },
     
     onGenerated(payload) {
