@@ -3,9 +3,7 @@
     <button @click="onClickGenerate" style="margin-bottom: 12px; margin-left: 8px;">
       Generate (Popup + Render)
     </button>
-    <button @click="onClickGenerateSphere" style="margin-bottom: 12px; margin-left: 8px;">
-      Generate sphere
-    </button>
+    
     <div style="margin-bottom: 8px;">
       <label>陸の中心点の数 y: </label>
       <input type="number" min="1" max="10" v-model.number="local.centersY" />
@@ -97,7 +95,7 @@
     </div>
     <div style="margin-bottom: 8px;">
       <label>高地の数（平均）: </label>
-      <input type="number" min="0" max="10" step="0.5" v-model.number="local.averageHighlandsPerCenter" />
+      <span>{{ computedAverageHighlandsPerCenter.toFixed(2) }}</span>
     </div>
     <div style="margin-bottom: 8px;">
       <label>都市生成確率 (低地, 海隣接で×10): </label>
@@ -205,7 +203,7 @@
       :highlandGlacierExtraRows="local.highlandGlacierExtraRows"
       :alpineGlacierExtraRows="local.alpineGlacierExtraRows"
       :averageLakesPerCenter="local.averageLakesPerCenter"
-      :averageHighlandsPerCenter="local.averageHighlandsPerCenter"
+      :averageHighlandsPerCenter="computedAverageHighlandsPerCenter"
       :centerParameters="mutableCenterParams"
       :generateSignal="generateSignal"
         :deterministicSeed="local.deterministicSeed"
@@ -246,27 +244,27 @@ export default {
   name: 'Parameters_Display',
   components: { Grids_Calculation, Sphere_Display },
   props: {
-    // 陸の中心点の数（デフォルト: 5）: 地形生成の起点となる中心点の個数。多いほど複雑な地形になります。
-    centersY: { type: Number, required: false, default: 5 },
-    // 陸の割合（デフォルト: 0.2）: 全グリッド中、陸地が占める割合。0.2は20%が陸地、80%が海を意味します。
-    seaLandRatio: { type: Number, required: false, default: 0.2 },
-    // 中心間の排他距離（デフォルト: 20グリッド）: 各中心点間の最小距離。近すぎると重複した地形になります。
+    // 陸の中心点の数: 地形生成の起点となる中心点の個数。多いほど複雑な地形になります。
+    centersY: { type: Number, required: false, default: 7 },
+    // 陸の割合: 全グリッド中、陸地が占める割合の指標
+    seaLandRatio: { type: Number, required: false, default: 0.3 },
+    // 中心間の排他距離: 各中心点間の最小距離。近すぎると重複した地形になります。
     minCenterDistance: { type: Number, required: false, default: 20 },
-    // 浅瀬・深海間の距離閾値（デフォルト: 5グリッド）: 海グリッドが浅瀬か深海かを判定する距離の基準値。大きいほど浅瀬が広がります。
+    // 浅瀬・深海間の距離閾値: 海グリッドが浅瀬か深海かを判定する距離の基準値。大きいほど浅瀬が広がります。
     baseSeaDistanceThreshold: { type: Number, required: false, default: 5 },
-    // 低地・乾燥地間の距離閾値（デフォルト: 10グリッド）: 陸グリッドが低地か乾燥地かを判定する距離の基準値。大きいほど低地が広がります。
+    // 低地・乾燥地間の距離閾値: 陸グリッドが低地か乾燥地かを判定する距離の基準値。大きいほど低地が広がります。
     baseLandDistanceThreshold: { type: Number, required: false, default: 10 },
     // 低地・乾燥地間の距離閾値（帯ごと、上端/下端から5グリッド単位、帯1..帯10）
-    landDistanceThreshold1: { type: Number, required: false, default: 35 },
-    landDistanceThreshold2: { type: Number, required: false, default: 35 },
-    landDistanceThreshold3: { type: Number, required: false, default: 35 },
-    landDistanceThreshold4: { type: Number, required: false, default: 35 },
-    landDistanceThreshold5: { type: Number, required: false, default: 25 },
-    landDistanceThreshold6: { type: Number, required: false, default: 10 },
-    landDistanceThreshold7: { type: Number, required: false, default: 5 },
-    landDistanceThreshold8: { type: Number, required: false, default: 10 },
-    landDistanceThreshold9: { type: Number, required: false, default: 25 },
-    landDistanceThreshold10: { type: Number, required: false, default: 35 },
+    landDistanceThreshold1: { type: Number, required: false, default: 10 },
+    landDistanceThreshold2: { type: Number, required: false, default: 15 },
+    landDistanceThreshold3: { type: Number, required: false, default: 15 },
+    landDistanceThreshold4: { type: Number, required: false, default: 10 },
+    landDistanceThreshold5: { type: Number, required: false, default: 8 },
+    landDistanceThreshold6: { type: Number, required: false, default: 4 },
+    landDistanceThreshold7: { type: Number, required: false, default: 1 },
+    landDistanceThreshold8: { type: Number, required: false, default: 4 },
+    landDistanceThreshold9: { type: Number, required: false, default: 8 },
+    landDistanceThreshold10: { type: Number, required: false, default: 15 },
     // 帯の縦揺らぎ（行数）: 0で無効
     landBandVerticalWobbleRows: { type: Number, required: false, default: 2 },
     // 上端・下端ツンドラグリッド追加数（デフォルト: 7）: 上端・下端氷河グリッド数からの追加グリッド数
@@ -286,7 +284,7 @@ export default {
     // 中心点のパラメータ配列（デフォルト: 空配列）: 各中心点の影響係数、減衰率、方向角度などの詳細パラメータ。
     centerParameters: { type: Array, required: false, default: () => [] },
     // 雲量（0..1）: 被覆度優先で効く
-    f_cloud: { type: Number, required: false, default: 0.4 },
+    f_cloud: { type: Number, required: false, default: 0.67 },
     // 都市生成確率（低地、海隣接で10倍）
     cityProbability: { type: Number, required: false, default: 0.002 },
     // 耕作地生成確率（低地、海隣接で10倍）
@@ -347,7 +345,6 @@ export default {
         highlandGlacierExtraRows: this.highlandGlacierExtraRows,
         alpineGlacierExtraRows: this.alpineGlacierExtraRows,
         averageLakesPerCenter: this.averageLakesPerCenter,
-        averageHighlandsPerCenter: this.averageHighlandsPerCenter,
         deterministicSeed: '',
         cityProbability: this.cityProbability,
         cultivatedProbability: this.cultivatedProbability,
@@ -419,6 +416,10 @@ export default {
         }
       }
     },
+    computedAverageHighlandsPerCenter() {
+      const x = (this.local && typeof this.local.seaLandRatio === 'number') ? Number(this.local.seaLandRatio) : 0.3;
+      return 2 + 10 * x;
+    },
     topTundraRowsComputed() {
       const glacier = (this.local && typeof this.local.topGlacierRows === 'number') ? this.local.topGlacierRows : 0;
       const extra = (this.local && typeof this.local.tundraExtraRows === 'number') ? this.local.tundraExtraRows : 0;
@@ -475,16 +476,17 @@ export default {
     onClickGenerate() {
       this.generateSignal += 1;
     },
-    onClickGenerateSphere() {
-      if (this.$refs.sphere) {
-        this.$refs.sphere.openSpherePopup();
-      }
-    },
+    
     onGenerated(payload) {
       // 1) パラメータの出力HTMLをポップアップ表示・更新
       this.mutableCenterParams = JSON.parse(JSON.stringify(payload.centerParameters || []));
       if (payload && typeof payload.deterministicSeed !== 'undefined') {
         this.local.deterministicSeed = payload.deterministicSeed || '';
+      }
+      // 1.1) 氷河上書き前の陸/海比をローカルに保持（湖は海扱い）
+      if (payload && payload.preGlacierStats) {
+        if (!this.stats) this.stats = {};
+        this.stats.preGlacier = payload.preGlacierStats;
       }
       // 1.2) 平面表示色（+2枠）を計算してポップアップ用に保持
       try {
@@ -591,6 +593,7 @@ export default {
     buildOutputHtml() {
       const params = this.local;
       const centers = this.mutableCenterParams || [];
+      const pre = (this.stats && this.stats.preGlacier) ? this.stats.preGlacier : null;
       const escape = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const fmtPct = (num, den) => {
         if (!den || den <= 0) return '0.00%';
@@ -657,6 +660,10 @@ export default {
     <div class="row"><label>高地の氷河追加グリッド数:</label><span>${escape(params.highlandGlacierExtraRows)}</span></div>
     <div class="row"><label>高山の氷河追加グリッド数:</label><span>${escape(params.alpineGlacierExtraRows)}</span></div>
     <div class="row"><label>グリッド幅×高さ:</label><span>${escape(this.gridWidth)} × ${escape(this.gridHeight)}</span></div>
+    ${
+      pre ? `<div class="row"><label>氷河上書き前 - 陸:</label><span>${escape(pre.landCount)} (${escape((pre.landRatio*100).toFixed(2))}% )</span></div>
+             <div class="row"><label>氷河上書き前 - 海:</label><span>${escape(pre.seaCount)} (${escape((100 - (pre.landRatio*100)).toFixed(2))}% )</span></div>` : ''
+    }
     <div class="row"><label>湖の数（平均）:</label><span>${escape(params.averageLakesPerCenter)}</span></div>
     <div class="section-title">グリッド種類の内訳（合計 ${escape(totalN)}）</div>
     <div class="row"><label>深海:</label><span>${typeCounts ? escape(typeCounts.deepSea) : '-'} (${typeCounts ? fmtPct(typeCounts.deepSea, totalN) : '-'})</span></div>
@@ -681,14 +688,73 @@ export default {
 </html>`;
     },
     openOrUpdatePlanePopup() {
-      const w = this.planePopupRef && !this.planePopupRef.closed ? this.planePopupRef : window.open('', 'PlaneView', 'width=900,height=700');
+      // build plane and sphere HTML and embed them into two iframes within a single popup
+      const w = this.planePopupRef && !this.planePopupRef.closed ? this.planePopupRef : window.open('', 'PlaneSphereView', 'width=1400,height=900,scrollbars=yes');
       this.planePopupRef = w;
       if (!w) return;
       const doc = w.document;
-      const html = this.buildPlaneHtml();
+      const planeHtml = this.buildPlaneHtml();
+      const sphereHtml = (this.$refs && this.$refs.sphere && typeof this.$refs.sphere.buildHtml === 'function')
+        ? this.$refs.sphere.buildHtml()
+        : '<!doctype html><html><body><div>Sphere unavailable</div></body></html>';
+      const combined = `
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Plane & Sphere View</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html,body{height:100%;margin:0}
+      .wrap{display:flex;gap:8px;height:100vh;padding:8px;box-sizing:border-box;background:#000;color:#fff}
+      iframe{flex:1;border:1px solid #444;border-radius:6px;background:#000}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <iframe id="plane-iframe" title="Plane Map"></iframe>
+      <iframe id="sphere-iframe" title="Sphere View"></iframe>
+    </div>
+  </body>
+</html>`;
       doc.open();
-      doc.write(html);
+      doc.write(combined);
       doc.close();
+
+      // set iframe contents from parent so we can wire sphere canvas to component methods
+      try {
+        const pif = doc.getElementById('plane-iframe');
+        const sif = doc.getElementById('sphere-iframe');
+        if (pif) pif.srcdoc = planeHtml;
+        if (sif) {
+          sif.srcdoc = sphereHtml;
+          sif.onload = () => {
+            try {
+              const sw = sif.contentWindow;
+              const sdoc = sw.document;
+              const canvas = sdoc.getElementById('sphere-canvas');
+              if (!canvas) return;
+              if (this.$refs && this.$refs.sphere) {
+                const sph = this.$refs.sphere;
+                sph._sphereWin = sw;
+                sph._sphereCanvas = canvas;
+                // 初期回転速度を 10 grid/s に設定（1 grid/s = 1000 ms, 10 grid/s = 100 ms）
+                sph._rotationMsPerGrid = 100;
+                try { sph._useWebGL = sph.initWebGL(canvas); } catch (e) { sph._useWebGL = false; }
+                if (sph._useWebGL) sph.drawWebGL(); else sph.drawSphere(canvas);
+                const rotateBtn = sdoc.getElementById('rotate-btn');
+                if (rotateBtn) rotateBtn.addEventListener('click', () => { sph.toggleRotate(rotateBtn); });
+                const fasterBtn = sdoc.getElementById('faster-btn');
+                if (fasterBtn) fasterBtn.addEventListener('click', () => { sph.adjustSpeed(true); });
+                const slowerBtn = sdoc.getElementById('slower-btn');
+                if (slowerBtn) slowerBtn.addEventListener('click', () => { sph.adjustSpeed(false); });
+                sph.updateSpeedLabel();
+                sw.addEventListener('beforeunload', () => { sph.stopRotationLoop(); sph._isRotating = false; });
+              }
+            } catch (e) { void e; }
+          };
+        }
+      } catch (e) { void e; }
     },
     buildPlaneHtml() {
       const displayColors = Array.isArray(this.planeDisplayColors) ? this.planeDisplayColors : [];

@@ -22,7 +22,7 @@ export default {
     // 時代（色プリセット切替の将来拡張用）
     era: { type: String, required: false, default: null },
     // 雲量（0..1）: 被覆度に強く、濃さ（不透明度）に弱く効かせる
-    f_cloud: { type: Number, required: false, default: 0.4 },
+    f_cloud: { type: Number, required: false, default: 0.67 },
     // 雲ノイズのトーラス周期（uv空間上の反復数）
     cloudPeriod: { type: Number, required: false, default: 16 },
     // 極周辺での雲生成ブースト強度（0..1）。0で無効、1で強ブースト
@@ -511,7 +511,7 @@ export default {
           const idx = displayY * displayStride + displayX;
           const s = displayColors[idx];
           let rgb = this.parseColorToRgb(s);
-          // 陸（氷河除く）に青灰色トーンを適用（事後的フィルタ）
+          // 陸（氷河除く）にトーン（color.js）を適用（事後的フィルタ）
           if (this.gridData && this.gridData.length === width * height) {
             const cell = this.gridData[y * width + x];
             if (cell && cell.terrain && cell.terrain.type === 'land' && cell.terrain.land !== 'glacier') {

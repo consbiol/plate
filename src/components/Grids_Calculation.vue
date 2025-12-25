@@ -35,16 +35,16 @@ export default {
     // per-latitude-band vertical wobble (rows): integer number of rows to shift (+/-)
     landBandVerticalWobbleRows: { type: Number, required: false, default: 2 },
     // per-latitude-band land distance thresholds (bands 1..10, pole->equator)
-    landDistanceThreshold1: { type: Number, required: false, default: 35 },
-    landDistanceThreshold2: { type: Number, required: false, default: 35 },
-    landDistanceThreshold3: { type: Number, required: false, default: 35 },
-    landDistanceThreshold4: { type: Number, required: false, default: 35 },
-    landDistanceThreshold5: { type: Number, required: false, default: 25 },
-    landDistanceThreshold6: { type: Number, required: false, default: 10 },
-    landDistanceThreshold7: { type: Number, required: false, default: 5 },
-    landDistanceThreshold8: { type: Number, required: false, default: 10 },
-    landDistanceThreshold9: { type: Number, required: false, default: 25 },
-    landDistanceThreshold10: { type: Number, required: false, default: 35 },
+    landDistanceThreshold1: { type: Number, required: false, default: 10 },
+    landDistanceThreshold2: { type: Number, required: false, default: 15 },
+    landDistanceThreshold3: { type: Number, required: false, default: 15 },
+    landDistanceThreshold4: { type: Number, required: false, default: 10 },
+    landDistanceThreshold5: { type: Number, required: false, default: 8 },
+    landDistanceThreshold6: { type: Number, required: false, default: 4 },
+    landDistanceThreshold7: { type: Number, required: false, default: 1 },
+    landDistanceThreshold8: { type: Number, required: false, default: 4 },
+    landDistanceThreshold9: { type: Number, required: false, default: 8 },
+    landDistanceThreshold10: { type: Number, required: false, default: 15 },
     topTundraRows: { type: Number, required: true },
     topGlacierRows: { type: Number, required: true },
     landGlacierExtraRows: { type: Number, required: true },
@@ -59,7 +59,7 @@ export default {
     // 耕作地グリッド生成の確率（低地のみ、海隣接で10倍）
     cultivatedGenerationProbability: { type: Number, required: false, default: 0.05 },
     // 苔類進出地グリッド生成の確率（低地のみ、海隣接で100倍、苔類進出時代のみ生成）
-    bryophyteGenerationProbability: { type: Number, required: false, default: 0.01 },
+    bryophyteGenerationProbability: { type: Number, required: false, default: 0.005 },
     // 汚染地クラスター数（マップ全体、開始セルはシードで決定）
     pollutedAreasCount: { type: Number, required: false, default: 1 },
     // 海棲都市グリッド生成の確率（浅瀬のみ、陸隣接で10倍）
@@ -78,7 +78,11 @@ export default {
     era: { type: String, required: false, default: null }
   },
   data() {
-    return {};
+    return {
+      // prop を直接変更しないための内部ステート
+      internalTopGlacierRows: this.topGlacierRows,
+      lastReturnedGlacierRows: null
+    };
   },
   watch: {
     generateSignal() {
@@ -266,37 +270,73 @@ export default {
         default: return this.landDistanceThreshold10;
       }
     },
-    // 平均気温から上端・下端氷河グリッド数を算出（10℃低下ごとに+10）
-    _computeTopGlacierRowsFromAverageTemperature() {
-      const t = (typeof this.averageTemperature === 'number') ? this.averageTemperature : 15;
-      const anchors = [
-        { t: -25, val: 45 },
-        { t: -15, val: 35 },
-        { t: -5,  val: 25 },
-        { t: 5,   val: 15 },
-        { t: 10,  val: 10 },
-        { t: 15,  val: 5  },
-        { t: 25,  val: -5 }
-      ];
-      let v;
+    // ヘルパー: アンカーから線形補間して v_calc を得る
+    _interpAnchors(t, anchors) {
       if (t <= anchors[0].t) {
-        // 直線外挿（傾き -1 行/℃）
-        v = anchors[0].val + (t - anchors[0].t) * (-1);
-      } else if (t >= anchors[anchors.length - 1].t) {
-        const last = anchors[anchors.length - 1];
-        v = last.val + (t - last.t) * (-1);
-      } else {
-        for (let i = 0; i < anchors.length - 1; i++) {
-          const a = anchors[i];
-          const b = anchors[i + 1];
-          if (t >= a.t && t <= b.t) {
-            const ratio = (t - a.t) / (b.t - a.t);
-            v = a.val + ratio * (b.val - a.val);
-            break;
-          }
+        return anchors[0].val + (t - anchors[0].t) * (-1);
+      }
+      const last = anchors[anchors.length - 1];
+      if (t >= last.t) {
+        return last.val + (t - last.t) * (-1);
+      }
+      for (let i = 0; i < anchors.length - 1; i++) {
+        const a = anchors[i];
+        const b = anchors[i + 1];
+        if (t >= a.t && t <= b.t) {
+          const ratio = (t - a.t) / (b.t - a.t);
+          return a.val + ratio * (b.val - a.val);
         }
       }
-      return Math.round(v);
+      return 0;
+    },
+    // ヘルパー: 海陸比から glacierSlope を計算
+    _computeGlacierSlope(ratio_ocean, ratio_ocean_ref = 0.7) {
+      return Math.pow(Math.max(0.15, ratio_ocean / ratio_ocean_ref), 0.7);
+    },
+    // ヘルパー: sea率に基づく追加ブーストを計算 seaBoostFactorは調整可能な倍率で大きいほど海率の氷河形成への影響を強くする
+    _computeSeaBoost(v_calc, ratio_ocean, ratio_ocean_ref = 0.7, seaBoostFactor = 1.6, V_REF = 2) {
+      const seaExcess = Math.max(0, ratio_ocean - ratio_ocean_ref);
+      const seaExcessScaled = seaExcess > 0 ? Math.pow(seaExcess, 0.5) : 0;
+      const positiveDelta = Math.max(0, v_calc - V_REF);
+      return seaExcessScaled * seaBoostFactor * positiveDelta;
+    },
+    // 平均気温から上端・下端氷河グリッド数を算出（10℃低下ごとに+10）
+    // glacier_alpha は Turn_yr から事前に決定
+    // 例：this.glacier_alpha = 0.02;
+    _computeTopGlacierRowsFromAverageTemperature(ratioOceanOverride) {
+      const t = (typeof this.averageTemperature === 'number') ? this.averageTemperature : 15;
+
+      const anchors = [
+        { t: -25, val: 42 },
+        { t: -15, val: 32 },
+        { t: -5,  val: 22 },
+        { t: 5,   val: 12 },
+        { t: 10,  val: 7  },
+        { t: 15,  val: 2  },
+        { t: 25,  val: -8 }
+      ];
+
+      const v_calc = this._interpAnchors(t, anchors);
+
+      const ratio_ocean = (typeof ratioOceanOverride === 'number')
+        ? Math.min(1, Math.max(0, ratioOceanOverride))
+        : Math.min(1, Math.max(0, this.seaLandRatio ?? 0.7));
+      const ratio_ocean_ref = 0.7;
+
+      const glacierSlope = this._computeGlacierSlope(ratio_ocean, ratio_ocean_ref);
+      const V_REF = 2;
+      const v_eff_slope = V_REF + (v_calc - V_REF) * glacierSlope;
+
+      const v_boost = this._computeSeaBoost(v_calc, ratio_ocean, ratio_ocean_ref, 1.6, V_REF);
+      const v_eff = v_eff_slope + v_boost;
+
+      const glacier_alpha = this.glacier_alpha ?? 1;
+      if (this.internalTopGlacierRows == null) this.internalTopGlacierRows = v_eff;
+      this.internalTopGlacierRows = glacier_alpha * v_eff + (1 - glacier_alpha) * this.internalTopGlacierRows;
+      if (this.lastReturnedGlacierRows == null) this.lastReturnedGlacierRows = Math.round(this.internalTopGlacierRows);
+      const rounded = Math.round(this.internalTopGlacierRows);
+      if (Math.abs(rounded - this.lastReturnedGlacierRows) >= 1) this.lastReturnedGlacierRows = rounded;
+      return this.lastReturnedGlacierRows;
     },
     noise2D(x, y) {
       const s = Math.sin((x * 12.9898) + (y * 78.233)) * 43758.5453;
@@ -536,7 +576,11 @@ export default {
       for (let ci = 0; ci < centers.length; ci++) {
         // 高地（中心単位）のサブRNG
         const centerRng = this._getDerivedRng('highland-center', ci);
-        const lambda = this.averageHighlandsPerCenter;
+        // 高地クラスタの平均数を陸の割合に依存させる:
+        // ルール: 陸の割合 x が 0.1 増えるごとにクラスタ数が +1、
+        // 例: x=0.1 -> 3, x=0.3 -> 5, x=0.7 -> 9, x=0.9 ->11
+        const landRatioForHighlands = (typeof this.seaLandRatio === 'number') ? Number(this.seaLandRatio) : 0.3;
+        const lambda = 2 + 10 * landRatioForHighlands; // 上限は撤廃（非整数でも Poisson の平均として扱う）
         const numHighlands = this._poissonSample(lambda, 20, centerRng || seededRng); // 個数はシードで決定
         if (seededLog && seededLog[ci]) {
           seededLog[ci].highlandsCount = numHighlands;
@@ -835,7 +879,27 @@ export default {
         const res = this.computeScoresForCenters(centers, localCenterParameters);
         scores = res.scores;
         const sorted = scores.slice().sort((a, b) => a - b);
-        const k = Math.floor((1 - this.seaLandRatio) * N);
+        // UI の seaLandRatio を内部の生成用比率へスムーズにマッピング（アンカー: 0.3->0.07, 0.9->0.7）
+        const mapSeaLandRatio = (ui) => {
+          const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+          ui = clamp(Number(ui) || 0, 0, 1);
+          const x0 = 0.3, y0 = 0.07;
+          const x1 = 0.9, y1 = 0.7;
+          if (ui <= x0) {
+            // 0..x0 を 0..y0 に線形マップ
+            return (ui / x0) * y0;
+          } else if (ui >= x1) {
+            // x1..1 を y1..1 に線形マップ
+            return y1 + ((ui - x1) / (1 - x1)) * (1 - y1);
+          } else {
+            // 中央区間は smoothstep(3t^2-2t^3) で滑らかに補間
+            const t = (ui - x0) / (x1 - x0);
+            const s = t * t * (3 - 2 * t);
+            return y0 + s * (y1 - y0);
+          }
+        };
+        const effectiveSeaLandRatio = Math.min(0.999, Math.max(0.0, mapSeaLandRatio(this.seaLandRatio)));
+        const k = Math.floor((1 - effectiveSeaLandRatio) * N);
         threshold = sorted[Math.max(0, Math.min(sorted.length - 1, k))];
         let anyCenterLand = false;
         for (let i = 0; i < centers.length; i++) {
@@ -933,10 +997,9 @@ export default {
           if (hasLandNeighbor) break;
         }
         if (!hasLandNeighbor) {
-          // 90% の確率で海に戻す（文明時代・海棲文明時代はシードで決定）
-          const strict = (this.era === '文明時代' || this.era === '海棲文明時代') && !!seededRng;
-          const r = strict ? (this._getDerivedRng('coast-island', gx, gy) || seededRng) : Math.random;
-          if (r() < 0.9) landMask[idx] = false;
+          // 一律で70%の確率で海に戻す（シードがあれば再現可能にする）
+          const pickRng = (this._getDerivedRng && this._getDerivedRng('coast-island', gx, gy)) || seededRng || Math.random;
+          if (pickRng() < 0.7) landMask[idx] = false;
         }
       }
     }
@@ -1058,9 +1121,26 @@ export default {
       // --- ツンドラの適用（上端・下端） ---
       this._applyTundra(colors, landNoiseAmplitude, lowlandColor, tundraColor);
       // --- 氷河の適用（上端） ---
+      // ここで「氷河で上書きされる前」の陸/海比を計測（湖は海扱い）
+      const preGlacierLandCount = (() => {
+        let cnt = 0;
+        for (let i = 0; i < N; i++) {
+          if (landMask[i] && !(typeof lakeMask !== 'undefined' && lakeMask[i])) cnt++;
+        }
+        return cnt;
+      })();
+      const preGlacierSeaCount = Math.max(0, N - preGlacierLandCount);
+      const preGlacierStats = {
+        landCount: preGlacierLandCount,
+        seaCount: preGlacierSeaCount,
+        total: N,
+        landRatio: preGlacierLandCount / (N || 1)
+      };
       // 上端を氷河で上書き（ノイズ付き）
       // 海/湖: +0、低地・乾燥地・ツンドラ: +landGlacierExtraRows、高地: +highlandGlacierExtraRows
-      const computedTopGlacierRows = this._computeTopGlacierRowsFromAverageTemperature();
+      const computedTopGlacierRows = this._computeTopGlacierRowsFromAverageTemperature(
+        preGlacierStats.seaCount / (preGlacierStats.total || 1)
+      );
       for (let gy = 0; gy < this.gridHeight; gy++) {
         for (let gx = 0; gx < this.gridWidth; gx++) {
           const idx = gy * this.gridWidth + gx;
@@ -1669,7 +1749,8 @@ export default {
       this.$emit('generated', {
         centerParameters: localCenterParameters,
         gridData,
-        deterministicSeed: this.deterministicSeed
+        deterministicSeed: this.deterministicSeed,
+        preGlacierStats // 氷河上書き前の比率情報を追加
       });
     }
   }
