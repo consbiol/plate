@@ -53,6 +53,40 @@ export default {
     }
   },
   methods: {
+    // ---------------------------
+    // Sun shadow (night side) overlay helpers
+    // ---------------------------
+    _getNightConfig(width) {
+      const w = Math.max(1, Math.floor(width || 1));
+      const len = Math.floor(w / 2); // hemisphere = half columns
+      const start = 0; // fixed in "sun longitude" space (no rotation offset)
+      const grad = 10; // 10 columns at each edge are gradient region
+      return { w, start, len, grad };
+    },
+    _nightAlphaForCol(col, width) {
+      // alpha in [0,1]: 0 = no shadow, 1 = fully black
+      const cfg = this._getNightConfig(width);
+      const w = cfg.w;
+      const len = cfg.len;
+      const grad = Math.max(0, Math.floor(cfg.grad || 0));
+      if (len <= 0) return 0;
+      const x = ((Math.floor(col) % w) + w) % w;
+      const s = ((cfg.start % w) + w) % w;
+      const distFromStart = ((x - s) % w + w) % w; // 0..w-1
+      if (distFromStart >= len) return 0; // outside night
+      if (grad <= 1) return 1;
+      const dEdge = Math.min(distFromStart, (len - 1) - distFromStart); // 0 at edge, grows inward
+      if (dEdge >= grad - 1) return 1;
+      return Math.max(0, Math.min(1, dEdge / (grad - 1)));
+    },
+    _isCityCell(cell) {
+      // 「cityグリッド」または海棲都市をライト対象とする
+      return !!(cell && (cell.city || cell.seaCity));
+    },
+    _getCityLightRgb() {
+      // 宇宙から見た都市の光（明るい黄色）
+      return [255, 240, 140];
+    },
     // 描画の再実行（WebGL/CPUのどちらでも同じトリガに統一）
     requestRedraw() {
       if (!this._sphereCanvas) return;
@@ -85,6 +119,7 @@ export default {
       <button id="rotate-btn">Rotate</button>
       <button id="faster-btn">Faster</button>
       <button id="slower-btn">Slower</button>
+      <button id="sunshadow-btn">太陽の影: OFF</button>
       <span id="speed-label" style="margin-left:6px;color:#666;"></span>
     </div>
     <canvas id="sphere-canvas" width="700" height="700"></canvas>
@@ -114,6 +149,13 @@ export default {
       if (slowerBtn) {
         slowerBtn.addEventListener('click', () => {
           this.adjustSpeed(false);
+        });
+      }
+      const sunShadowBtn = doc.getElementById('sunshadow-btn');
+      if (sunShadowBtn) {
+        sunShadowBtn.textContent = `太陽の影: ${this._sunShadowEnabled ? 'ON' : 'OFF'}`;
+        sunShadowBtn.addEventListener('click', () => {
+          this.toggleSunShadow(sunShadowBtn);
         });
       }
       this.updateSpeedLabel();
@@ -150,6 +192,7 @@ export default {
       this._maxMsPerGrid = 5000;
       this._lastTimestamp = null;
       this._accumMs = 0;
+      this._sunShadowEnabled = false;
     },
     // ポップアップ関連の後始末（イベント解除＋参照切り離し）
     cleanupSpherePopup() {
@@ -325,6 +368,13 @@ export default {
         uniform sampler2D u_texture;
         uniform sampler2D u_classTex;
         uniform float u_offset; // fraction [0,1)
+        uniform float u_texWidth; // texture width in texels
+        uniform float u_texHeight; // texture height in texels
+        uniform float u_shadowEnabled; // 0..1
+        uniform float u_shadowStartCol; // start column in [0..u_texWidth)
+        uniform float u_shadowLenCols;  // length in columns (half globe)
+        uniform float u_shadowGradCols; // gradient width in columns (e.g. 3)
+        uniform vec3 u_cityLightColor;  // 0..1
         uniform float u_classSmoothRadius; // in texels (e.g., 0.75)
         uniform float u_topFrac;
         uniform float u_heightFrac;
@@ -341,6 +391,32 @@ export default {
         uniform float u_polarCloudBoost;  // 0..1
         uniform vec3 u_cloudColor;        // 0..1
         const float PI = 3.141592653589793;
+        float modPos(float a, float m) {
+          return a - m * floor(a / m);
+        }
+        float nightAlphaForCol(float col, float w, float startCol, float lenCols, float gradCols) {
+          if (w <= 0.0 || lenCols <= 0.0) return 0.0;
+          float x = modPos(col, w);
+          float s = modPos(startCol, w);
+          float distFromStart = modPos(x - s, w);
+          if (distFromStart >= lenCols) return 0.0;
+          if (gradCols <= 1.0) return 1.0;
+          float dEdge = min(distFromStart, (lenCols - 1.0) - distFromStart);
+          if (dEdge >= (gradCols - 1.0)) return 1.0;
+          return clamp(dEdge / (gradCols - 1.0), 0.0, 1.0);
+        }
+        float sampleCityMaskSmooth(vec2 uv) {
+          // 2x2 box sample in texel space for smoother city lights (less blocky)
+          if (u_texWidth <= 0.0 || u_texHeight <= 0.0) return texture2D(u_classTex, uv).g;
+          vec2 texel = vec2(1.0 / u_texWidth, 1.0 / u_texHeight);
+          // sample offsets: (0,0), (1,0), (0,1), (1,1)
+          vec2 p0 = vec2(fract(uv.x), clamp(uv.y, 0.0, 1.0));
+          vec2 p1 = vec2(fract(uv.x + texel.x), clamp(uv.y, 0.0, 1.0));
+          vec2 p2 = vec2(fract(uv.x), clamp(uv.y + texel.y, 0.0, 1.0));
+          vec2 p3 = vec2(fract(uv.x + texel.x), clamp(uv.y + texel.y, 0.0, 1.0));
+          float sum = texture2D(u_classTex, p0).g + texture2D(u_classTex, p1).g + texture2D(u_classTex, p2).g + texture2D(u_classTex, p3).g;
+          return sum / 4.0;
+        }
         // hash + FBM (fractal) noise (legacy, polar blend用)
         float hash(vec2 p) {
           return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -427,6 +503,8 @@ export default {
           // 雲ノイズは極バッファを含む全域(mercY:0..1)で評価
           float uEff = fract((lambda + PI) / (2.0 * PI) + u_offset);
           float vEff = mercY;
+          // "Sun" longitude: include rotation offset so the shadow rotates with the sphere
+          float uSun = fract((lambda + PI) / (2.0 * PI) + u_offset);
           if (mercY < u_topFrac || mercY > u_topFrac + u_heightFrac) {
             vec3 pcol = (mercY < u_topFrac) ? u_polarColorTop : u_polarColorBottom;
             float u_coord = fract((lambda + PI) / (2.0 * PI) + u_offset);
@@ -471,6 +549,22 @@ export default {
           float detail = fbmTile(vec2(uEff, vEff) + vec2(0.123, 0.456), max(2.0, u_cloudPeriod * 4.0));
           float density = mix(0.3, 1.0, 0.5 * detail + 0.5 * depth);
           vec3 outCol = mix(baseCol, u_cloudColor, coverage * alpha * density);
+          // --- Sun shadow overlay (night side) ---
+          if (u_shadowEnabled > 0.5) {
+            float colSun = uSun * u_texWidth;
+            float aNight = nightAlphaForCol(colSun, u_texWidth, u_shadowStartCol, u_shadowLenCols, u_shadowGradCols);
+            if (aNight > 0.0) {
+              // In gradient region (partial night) do not show city lights; only darken.
+              if (aNight < 0.999) {
+                outCol = outCol * (1.0 - aNight);
+              } else {
+                float cityMask = sampleCityMaskSmooth(vec2(uMap, vMap)); // smooth mask 0..1
+                // fully dark background blended with smoothed city lights
+                vec3 darkBg = vec3(0.0);
+                outCol = mix(darkBg, u_cityLightColor, cityMask);
+              }
+            }
+          }
           gl_FragColor = vec4(outCol, 1.0);
         }
       `;
@@ -574,6 +668,7 @@ export default {
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
           let wgt = 1.0; // default 海
+          let isCity = 0;
           if (this.gridData && this.gridData.length === width * height) {
             const cell = this.gridData[y * width + x];
             if (cell && cell.terrain) {
@@ -589,10 +684,14 @@ export default {
             } else {
               wgt = 1.0;
             }
+            if (this._isCityCell(cell)) isCity = 255;
           }
           const v = Math.max(0, Math.min(255, Math.round(wgt * 255)));
           const p = (y * width + x) * 4;
-          classPixels[p] = v; classPixels[p + 1] = v; classPixels[p + 2] = v; classPixels[p + 3] = 255;
+          classPixels[p] = v;          // R: class weight (cloud weighting)
+          classPixels[p + 1] = isCity; // G: city mask (night lights)
+          classPixels[p + 2] = 0;      // B: unused
+          classPixels[p + 3] = 255;
         }
       }
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, classPixels);
@@ -601,6 +700,13 @@ export default {
         u_texture: gl.getUniformLocation(prog, 'u_texture'),
         u_classTex: gl.getUniformLocation(prog, 'u_classTex'),
         u_offset: gl.getUniformLocation(prog, 'u_offset'),
+        u_texWidth: gl.getUniformLocation(prog, 'u_texWidth'),
+        u_texHeight: gl.getUniformLocation(prog, 'u_texHeight'),
+        u_shadowEnabled: gl.getUniformLocation(prog, 'u_shadowEnabled'),
+        u_shadowStartCol: gl.getUniformLocation(prog, 'u_shadowStartCol'),
+        u_shadowLenCols: gl.getUniformLocation(prog, 'u_shadowLenCols'),
+        u_shadowGradCols: gl.getUniformLocation(prog, 'u_shadowGradCols'),
+        u_cityLightColor: gl.getUniformLocation(prog, 'u_cityLightColor'),
         u_classSmoothRadius: gl.getUniformLocation(prog, 'u_classSmoothRadius'),
         u_topFrac: gl.getUniformLocation(prog, 'u_topFrac'),
         u_heightFrac: gl.getUniformLocation(prog, 'u_heightFrac'),
@@ -621,6 +727,16 @@ export default {
       gl.uniform1i(this._glUniforms.u_texture, 0);
       gl.uniform1i(this._glUniforms.u_classTex, 1);
       gl.uniform1f(this._glUniforms.u_classSmoothRadius, 0.75);
+      if (this._glUniforms.u_texWidth) gl.uniform1f(this._glUniforms.u_texWidth, Math.max(1, width));
+      if (this._glUniforms.u_texHeight) gl.uniform1f(this._glUniforms.u_texHeight, Math.max(1, height));
+      if (this._glUniforms.u_shadowStartCol) gl.uniform1f(this._glUniforms.u_shadowStartCol, 0.0);
+      if (this._glUniforms.u_shadowLenCols) gl.uniform1f(this._glUniforms.u_shadowLenCols, Math.floor(Math.max(1, width) / 2));
+      if (this._glUniforms.u_shadowGradCols) gl.uniform1f(this._glUniforms.u_shadowGradCols, 10.0);
+      if (this._glUniforms.u_shadowEnabled) gl.uniform1f(this._glUniforms.u_shadowEnabled, this._sunShadowEnabled ? 1.0 : 0.0);
+      if (this._glUniforms.u_cityLightColor) {
+        const cl = this._getCityLightRgb().map(c => (c || 0) / 255);
+        gl.uniform3fv(this._glUniforms.u_cityLightColor, new Float32Array(cl));
+      }
       const effHeight = height + topBuf + bottomBuf;
       gl.uniform1f(this._glUniforms.u_topFrac, topBuf / effHeight);
       gl.uniform1f(this._glUniforms.u_heightFrac, height / effHeight);
@@ -707,6 +823,13 @@ export default {
       gl.uniform1f(this._glUniforms.u_R, R);
       const offsetFrac = ((this._rotationColumns || 0) / Math.max(1, this.gridWidth));
       gl.uniform1f(this._glUniforms.u_offset, offsetFrac);
+      // update sun shadow params per-frame (button反映)
+      if (this._glUniforms && this._glUniforms.u_shadowEnabled) {
+        gl.uniform1f(this._glUniforms.u_shadowEnabled, this._sunShadowEnabled ? 1.0 : 0.0);
+      }
+      if (this._glUniforms && this._glUniforms.u_texWidth) {
+        gl.uniform1f(this._glUniforms.u_texWidth, Math.max(1, this.gridWidth || 1));
+      }
       // update cloud params per-frame (UI反映)
       if (this._glUniforms && this._glUniforms.u_f_cloud) {
         gl.uniform1f(this._glUniforms.u_f_cloud, Math.max(0, Math.min(1, this.f_cloud || 0)));
@@ -740,6 +863,11 @@ export default {
         this._isRotating = true;
         if (btn) btn.textContent = 'Stop';
       }
+    },
+    toggleSunShadow(btn) {
+      this._sunShadowEnabled = !this._sunShadowEnabled;
+      if (btn) btn.textContent = `太陽の影: ${this._sunShadowEnabled ? 'ON' : 'OFF'}`;
+      this.requestRedraw();
     },
     startRotationLoop() {
       // ensure canvas reference
@@ -826,6 +954,7 @@ export default {
       const topBuf = Math.floor(totalBuf / 2);
       const bottomBuf = totalBuf - topBuf;
       const colShift = (this._rotationColumns || 0);
+      const cityRgb = this._getCityLightRgb();
 
       // プリコンピュートのキャッシュ条件: canvasサイズ / mapサイズ / bufs
       // drawSphere start
@@ -1054,6 +1183,36 @@ export default {
             gg = Math.round(gg * (1 - k) + cloudTint[1] * k);
             bb = Math.round(bb * (1 - k) + cloudTint[2] * k);
           }
+          // --- 太陽の影（夜側） ---
+          const colForSun = ((ix0 + colShift) % width + width) % width;
+          const aNight = this._sunShadowEnabled ? this._nightAlphaForCol(colForSun, width) : 0;
+          if (aNight > 0) {
+            // smooth city intensity by 2x2 neighbor average
+            let cityCount = 0;
+            if (this.gridData && this.gridData.length === width * height) {
+              const sx0 = xMap;
+              const sx1 = (xMap + 1) % width;
+              const sy0 = yMap;
+              const sy1 = yMap + 1;
+              // sample (sx0,sy0), (sx1,sy0), (sx0,sy1), (sx1,sy1)
+              const coords = [[sx0, sy0], [sx1, sy0], [sx0, sy1], [sx1, sy1]];
+              for (let si = 0; si < coords.length; si++) {
+                const sx = ((coords[si][0] % width) + width) % width;
+                const sy = coords[si][1];
+                if (sy >= 0 && sy < height) {
+                  const c = this.gridData[sy * width + sx];
+                  if (this._isCityCell(c)) cityCount++;
+                }
+              }
+            }
+            const cityIntensity = Math.max(0, Math.min(1, cityCount / 4));
+            const darkR = Math.round(rr * (1 - aNight));
+            const darkG = Math.round(gg * (1 - aNight));
+            const darkB = Math.round(bb * (1 - aNight));
+            rr = Math.round(darkR * (1 - cityIntensity) + cityRgb[0] * cityIntensity);
+            gg = Math.round(darkG * (1 - cityIntensity) + cityRgb[1] * cityIntensity);
+            bb = Math.round(darkB * (1 - cityIntensity) + cityRgb[2] * cityIntensity);
+          }
           data[offset] = rr;
           data[offset + 1] = gg;
           data[offset + 2] = bb;
@@ -1123,6 +1282,37 @@ export default {
             rr = Math.round(rr * (1 - k) + cloudTint[0] * k);
             gg = Math.round(gg * (1 - k) + cloudTint[1] * k);
             bb = Math.round(bb * (1 - k) + cloudTint[2] * k);
+          }
+          // --- 太陽の影（夜側） ---
+          const colForSun = ((ix0 + colShift) % width + width) % width;
+          const aNight = this._sunShadowEnabled ? this._nightAlphaForCol(colForSun, width) : 0;
+          if (aNight > 0) {
+            // smooth city intensity by 2x2 neighbor average
+            let cityCount = 0;
+            let xCenter = ((ix0 + colShift) % width + width) % width;
+            let yCenter = iy;
+            if (this.gridData && this.gridData.length === width * height) {
+              const sx0 = xCenter;
+              const sx1 = (xCenter + 1) % width;
+              const sy0 = yCenter;
+              const sy1 = yCenter + 1;
+              const coords = [[sx0, sy0], [sx1, sy0], [sx0, sy1], [sx1, sy1]];
+              for (let si = 0; si < coords.length; si++) {
+                const sx = ((coords[si][0] % width) + width) % width;
+                const sy = coords[si][1];
+                if (sy >= 0 && sy < height) {
+                  const c = this.gridData[sy * width + sx];
+                  if (this._isCityCell(c)) cityCount++;
+                }
+              }
+            }
+            const cityIntensity = Math.max(0, Math.min(1, cityCount / 4));
+            const darkR = Math.round(rr * (1 - aNight));
+            const darkG = Math.round(gg * (1 - aNight));
+            const darkB = Math.round(bb * (1 - aNight));
+            rr = Math.round(darkR * (1 - cityIntensity) + cityRgb[0] * cityIntensity);
+            gg = Math.round(darkG * (1 - cityIntensity) + cityRgb[1] * cityIntensity);
+            bb = Math.round(darkB * (1 - cityIntensity) + cityRgb[2] * cityIntensity);
           }
           data[offset] = rr;
           data[offset + 1] = gg;
