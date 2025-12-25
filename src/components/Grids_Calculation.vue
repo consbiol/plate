@@ -29,6 +29,7 @@ import { computePreGlacierStats, buildGeneratedPayload } from '../utils/terrain/
 import { computeTopGlacierRowsFromAverageTemperature } from '../utils/terrain/glacierRows.js';
 import { noise2D as noise2DUtil, fractalNoise2D as fractalNoise2DUtil } from '../utils/noise.js';
 import { poissonSample } from '../utils/stats/poisson.js';
+import { PARAM_DEFAULTS } from '../utils/paramsDefaults.js';
 // このコンポーネントは「計算専用」です（UIや描画は行いません）。
 // 概要:
 // 1) 陸中心のサンプリングと各中心の影響（スコア）計算
@@ -172,18 +173,24 @@ export default {
     // 指定行/列の land distance threshold を返す
     _getLandDistanceThresholdForRow(y, x) {
       const b = this._getLatBandIndex(y, x);
+      // `baseLandDistanceThreshold` を「全帯に効く基準オフセット」として扱う。
+      // これにより、UIの「基準値」を変更して Revise しても乾燥地が反映される。
+      const baseDefault = Number(PARAM_DEFAULTS && PARAM_DEFAULTS.baseLandDistanceThreshold);
+      const baseNowRaw = Number(this.baseLandDistanceThreshold);
+      const baseNow = Number.isFinite(baseNowRaw) ? baseNowRaw : baseDefault;
+      const baseDelta = (Number.isFinite(baseDefault) ? (baseNow - baseDefault) : 0);
       switch (b) {
-        case 1: return this.landDistanceThreshold1;
-        case 2: return this.landDistanceThreshold2;
-        case 3: return this.landDistanceThreshold3;
-        case 4: return this.landDistanceThreshold4;
-        case 5: return this.landDistanceThreshold5;
-        case 6: return this.landDistanceThreshold6;
-        case 7: return this.landDistanceThreshold7;
-        case 8: return this.landDistanceThreshold8;
-        case 9: return this.landDistanceThreshold9;
-        case 10: return this.landDistanceThreshold10;
-        default: return this.landDistanceThreshold10;
+        case 1: return Math.max(0, Number(this.landDistanceThreshold1) + baseDelta);
+        case 2: return Math.max(0, Number(this.landDistanceThreshold2) + baseDelta);
+        case 3: return Math.max(0, Number(this.landDistanceThreshold3) + baseDelta);
+        case 4: return Math.max(0, Number(this.landDistanceThreshold4) + baseDelta);
+        case 5: return Math.max(0, Number(this.landDistanceThreshold5) + baseDelta);
+        case 6: return Math.max(0, Number(this.landDistanceThreshold6) + baseDelta);
+        case 7: return Math.max(0, Number(this.landDistanceThreshold7) + baseDelta);
+        case 8: return Math.max(0, Number(this.landDistanceThreshold8) + baseDelta);
+        case 9: return Math.max(0, Number(this.landDistanceThreshold9) + baseDelta);
+        case 10: return Math.max(0, Number(this.landDistanceThreshold10) + baseDelta);
+        default: return Math.max(0, Number(this.landDistanceThreshold10) + baseDelta);
       }
     },
     // ノイズ実装は `src/utils/noise.js` に集約（機能不変）。
@@ -272,9 +279,9 @@ export default {
         }
       }
       // 大陸中心座標の決定:
-      // - 文明時代・海棲文明時代: シードに基づいて決定
-      // - それ以外: 完全ランダム（シード非依存）
-      const seedStrictCenters = (this.era === '文明時代' || this.era === '海棲文明時代') && !!seededRng;
+      // - `deterministicSeed` が渡されている場合はシードに基づいて決定（generate 時の再現性確保）
+      // - 未指定の場合は完全ランダム（従来の挙動）
+      const seedStrictCenters = !!seededRng;
       let centers = sampleLandCenters(this, seedStrictCenters ? seededRng : null);
       // ノイズから中心パラメータを生成（propsは直接変更しない）
       let localCenterParameters = centers.map((c) => {
