@@ -79,6 +79,8 @@ export default {
     averageHighlandsPerCenter: { type: Number, required: true },
     centerParameters: { type: Array, required: true },
     generateSignal: { type: Number, required: true },
+    // 高頻度生成タスク（氷河・乾燥地の再計算）用シグナル
+    reviseSignal: { type: Number, required: false, default: 0 },
     // 都市グリッド生成の確率（低地のみ、海隣接で10倍）
     cityGenerationProbability: { type: Number, required: false, default: 0.002 },
     // 耕作地グリッド生成の確率（低地のみ、海隣接で10倍）
@@ -106,12 +108,21 @@ export default {
     return {
       // prop を直接変更しないための内部ステート
       internalTopGlacierRows: this.topGlacierRows,
-      lastReturnedGlacierRows: null
+      lastReturnedGlacierRows: null,
+      // Generate時に「高頻度更新に必要なものだけ」キャッシュする
+      hfCache: null,
+      // 帯の縦揺らぎは Generate 時に固定（Revise では固定値を使う）
+      wobbleRowsFixed: null,
+      // 低頻度タスク側の baseLandDistanceThreshold を固定（Revise では固定値を使う）
+      baseLandDistanceThresholdFixed: null
     };
   },
   watch: {
     generateSignal() {
       this.runGenerate();
+    },
+    reviseSignal() {
+      this.runReviseHighFrequency();
     }
   },
   methods: {
@@ -140,7 +151,9 @@ export default {
     },
     // 緯度帯インデックスを取得（1..10）。両極から5行ごとに帯を区切る。
     _getLatBandIndex(y, x) {
-      const wobbleRows = Math.max(0, Math.floor(this.landBandVerticalWobbleRows || 0));
+      const wobbleRows = (this.wobbleRowsFixed != null)
+        ? Math.max(0, Math.floor(this.wobbleRowsFixed || 0))
+        : Math.max(0, Math.floor(this.landBandVerticalWobbleRows || 0));
       let yShifted = y;
       if (wobbleRows > 0) {
         // 実行ごと完全ランダム（シード非依存）。runGenerateで列ごと事前計算があればそれを使用。
@@ -223,8 +236,9 @@ export default {
         highlandClusters: [],
         lakeStarts: []
       }));
-      // 帯の縦揺らぎ（列ごと）の事前生成（完全ランダム、シード非依存）
+      // 帯の縦揺らぎ（列ごと）の事前生成（Generate時に固定。Reviseでは固定値を使う）
       const wobbleRows = Math.max(0, Math.floor(this.landBandVerticalWobbleRows || 0));
+      this.wobbleRowsFixed = wobbleRows;
       if (wobbleRows > 0) {
         this._wobbleShiftByX = new Array(this.gridWidth);
         const seedStrictGeom = (this.era === '文明時代' || this.era === '海棲文明時代') && !!seededRng;
@@ -235,12 +249,26 @@ export default {
       } else {
         this._wobbleShiftByX = null;
       }
+      // 低頻度パラメータを固定（Reviseではこの固定値を使う）
+      this.baseLandDistanceThresholdFixed = this.baseLandDistanceThreshold;
       const glacierNoiseTable = new Array(N);
       {
         const seedStrictGl = (this.era === '文明時代' || this.era === '海棲文明時代') && !!seededRng;
         const gRng = seedStrictGl ? (this._getDerivedRng('glacier-noise') || seededRng) : Math.random;
         for (let i = 0; i < N; i++) {
           glacierNoiseTable[i] = (gRng() * 2 - 1);
+        }
+      }
+      // ツンドラ揺らぎノイズも「Generate時に固定」して、Reviseでのチラつきを避ける
+      const tundraNoiseTopTable = new Array(N);
+      const tundraNoiseBottomTable = new Array(N);
+      {
+        const seedStrict = (this.era === '文明時代' || this.era === '海棲文明時代') && !!seededRng;
+        const rTop = seedStrict ? (this._getDerivedRng('tundra-noise-top') || seededRng) : Math.random;
+        const rBot = seedStrict ? (this._getDerivedRng('tundra-noise-bottom') || seededRng) : Math.random;
+        for (let i = 0; i < N; i++) {
+          tundraNoiseTopTable[i] = (rTop() * 2 - 1);
+          tundraNoiseBottomTable[i] = (rBot() * 2 - 1);
         }
       }
       // 大陸中心座標の決定:
@@ -385,8 +413,17 @@ export default {
       this._generateHighlands(centers, centerLandCellsPre, preJitterLandMask, lakeMask, colors, highlandColor, seededRng, seededLog);
       // 高山生成と適用
       this._generateAlpines(colors, highlandColor, lowlandColor, desertColor, alpineColor, directions);
+      // Revise用に「ツンドラ/氷河適用前」の色を保存（湖/高地/高山の結果は保持）
+      const preTundraColors = colors.slice();
       // --- ツンドラの適用（上端・下端） ---
-      applyTundra(this, { colors, landNoiseAmplitude, lowlandColor, tundraColor });
+      applyTundra(this, {
+        colors,
+        landNoiseAmplitude,
+        lowlandColor,
+        tundraColor,
+        tundraNoiseTableTop: tundraNoiseTopTable,
+        tundraNoiseTableBottom: tundraNoiseBottomTable
+      });
       // --- 氷河の適用（上端） ---
       const preGlacierStats = computePreGlacierStats({ N, landMask, lakeMask });
       // 上端/下端を氷河で上書き（ノイズ付き）
@@ -447,6 +484,38 @@ export default {
         seededLog
       });
       markCentersOnGridData(this, { gridData, centers });
+      // 高頻度更新に必要なデータをキャッシュ
+      this.hfCache = {
+        N,
+        centers,
+        landMask,
+        lakeMask,
+        noiseGrid,
+        distanceToSea,
+        distanceToLand,
+        // 低頻度の結果（湖/高地/高山は保持、ツンドラ/氷河/乾燥地はReviseで再適用）
+        preTundraColors,
+        // 固定ノイズ
+        glacierNoiseTable,
+        tundraNoiseTopTable,
+        tundraNoiseBottomTable,
+        // 色定義
+        shallowSeaColor,
+        deepSeaColor,
+        lowlandColor,
+        desertColor,
+        highlandColor,
+        alpineColor,
+        tundraColor,
+        glacierColor,
+        // 定数（Reviseで同一にする）
+        seaNoiseAmplitude,
+        landNoiseAmplitude,
+        // 氷河行数計算に使う海率（氷河上書き前）
+        preGlacierStats,
+        // featuresを「不整合なら消す」ためのベース
+        gridDataBase: gridData
+      };
       // 結果をemit（平面グリッド用に displayColors も明示的に渡す）
       this.$emit('generated', buildGeneratedPayload({
         centerParameters: localCenterParameters,
@@ -455,6 +524,174 @@ export default {
         preGlacierStats,
         computedTopGlacierRows
       }));
+    },
+    // 高頻度生成タスク:
+    // - 乾燥地（帯別距離閾値）を再計算して反映
+    // - ツンドラを再計算して反映
+    // - 氷河行数を再計算して反映
+    // - 文明要素は不整合なら削除
+    // - 低頻度側の地形（海陸/湖/高地/高山/中心点）は保持
+    runReviseHighFrequency() {
+      const c = this.hfCache;
+      if (!c || !c.N || !Array.isArray(c.preTundraColors)) return;
+
+      const N = c.N;
+      const colors = c.preTundraColors.slice();
+
+      // --- 乾燥地（帯別閾値）を再分類（低地/乾燥地のみ対象。湖/高地/高山は保持） ---
+      for (let gy = 0; gy < this.gridHeight; gy++) {
+        for (let gx = 0; gx < this.gridWidth; gx++) {
+          const idx = gy * this.gridWidth + gx;
+          if (!c.landMask[idx]) continue;
+          if (c.lakeMask && c.lakeMask[idx]) continue; // 湖は保持
+          const col = colors[idx];
+          if (col === c.highlandColor || col === c.alpineColor) continue; // 高地/高山は保持
+          // 低地/乾燥地を再判定
+          const n = c.noiseGrid[idx];
+          const bandThreshold = this._getLandDistanceThresholdForRow(gy, gx);
+          const landThreshold = bandThreshold + n * c.landNoiseAmplitude;
+          colors[idx] = c.distanceToSea[idx] > landThreshold ? c.desertColor : c.lowlandColor;
+        }
+      }
+
+      // --- 湖の周囲を低地に戻す（低頻度結果を維持） ---
+      const baseLandThr = (this.baseLandDistanceThresholdFixed != null)
+        ? this.baseLandDistanceThresholdFixed
+        : this.baseLandDistanceThreshold;
+      const lakeLowlandRadius = Math.max(1, Math.floor(Number(baseLandThr || 0) / 5));
+      if (c.lakeMask && lakeLowlandRadius > 0) {
+        for (let gy = 0; gy < this.gridHeight; gy++) {
+          for (let gx = 0; gx < this.gridWidth; gx++) {
+            const idx = gy * this.gridWidth + gx;
+            if (!c.lakeMask[idx]) continue;
+            for (let dy = -lakeLowlandRadius; dy <= lakeLowlandRadius; dy++) {
+              for (let dx = -lakeLowlandRadius; dx <= lakeLowlandRadius; dx++) {
+                const wrapped = this.torusWrap(gx + dx, gy + dy);
+                if (!wrapped) continue;
+                const d = Math.hypot(dx, dy);
+                if (d > lakeLowlandRadius) continue;
+                const nIdx = wrapped.y * this.gridWidth + wrapped.x;
+                if (colors[nIdx] === c.desertColor) colors[nIdx] = c.lowlandColor;
+              }
+            }
+          }
+        }
+      }
+
+      // --- ツンドラ再適用（固定ノイズ） ---
+      applyTundra(this, {
+        colors,
+        landNoiseAmplitude: c.landNoiseAmplitude,
+        lowlandColor: c.lowlandColor,
+        tundraColor: c.tundraColor,
+        tundraNoiseTableTop: c.tundraNoiseTopTable,
+        tundraNoiseTableBottom: c.tundraNoiseBottomTable
+      });
+
+      // --- 氷河行数の再計算 + 氷河再適用 ---
+      const ratioOcean = (c.preGlacierStats && c.preGlacierStats.total)
+        ? (c.preGlacierStats.seaCount / (c.preGlacierStats.total || 1))
+        : 0.7;
+      const computedTopGlacierRows = computeTopGlacierRowsFromAverageTemperature(this, ratioOcean);
+      applyGlaciers(this, {
+        colors,
+        glacierNoiseTable: c.glacierNoiseTable,
+        landNoiseAmplitude: c.landNoiseAmplitude,
+        computedTopGlacierRows,
+        shallowSeaColor: c.shallowSeaColor,
+        deepSeaColor: c.deepSeaColor,
+        lowlandColor: c.lowlandColor,
+        tundraColor: c.tundraColor,
+        desertColor: c.desertColor,
+        highlandColor: c.highlandColor,
+        alpineColor: c.alpineColor,
+        glacierColor: c.glacierColor
+      });
+
+      // --- gridData を再構築（Plane更新用）。文明要素は不整合なら削除 ---
+      const base = Array.isArray(c.gridDataBase) ? c.gridDataBase : [];
+      const cityMask = new Array(N).fill(false);
+      const cultivatedMask = new Array(N).fill(false);
+      const bryophyteMask = new Array(N).fill(false);
+      const pollutedMask = new Array(N).fill(false);
+      const seaCityMask = new Array(N).fill(false);
+      const seaCultivatedMask = new Array(N).fill(false);
+      const seaPollutedMask = new Array(N).fill(false);
+      for (let i = 0; i < N; i++) {
+        const cell = base[i];
+        if (!cell) continue;
+        cityMask[i] = !!cell.city;
+        cultivatedMask[i] = !!cell.cultivated;
+        bryophyteMask[i] = !!cell.bryophyte;
+        pollutedMask[i] = !!cell.polluted;
+        seaCityMask[i] = !!cell.seaCity;
+        seaCultivatedMask[i] = !!cell.seaCultivated;
+        seaPollutedMask[i] = !!cell.seaPolluted;
+      }
+      const gridData = buildGridData(this, {
+        N,
+        colors,
+        landMask: c.landMask,
+        lakeMask: c.lakeMask,
+        shallowSeaColor: c.shallowSeaColor,
+        lowlandColor: c.lowlandColor,
+        highlandColor: c.highlandColor,
+        alpineColor: c.alpineColor,
+        tundraColor: c.tundraColor,
+        glacierColor: c.glacierColor,
+        desertColor: c.desertColor,
+        cityMask,
+        cultivatedMask,
+        bryophyteMask,
+        pollutedMask,
+        seaCityMask,
+        seaCultivatedMask,
+        seaPollutedMask
+      });
+      // 中心点マーキングは維持
+      markCentersOnGridData(this, { gridData, centers: c.centers });
+
+      // 不整合なら削除（地形に合わないフラグを落とす）
+      for (let i = 0; i < N; i++) {
+        const cell = gridData[i];
+        if (!cell || !cell.terrain) continue;
+        if (cell.terrain.type === 'land') {
+          const land = cell.terrain.land;
+          const isLowland = (land === 'lowland');
+          if (!isLowland) {
+            cell.city = false;
+            cell.cultivated = false;
+            cell.bryophyte = false;
+            cell.polluted = false;
+          }
+          // 海棲系は陸なら全消し
+          cell.seaCity = false;
+          cell.seaCultivated = false;
+          cell.seaPolluted = false;
+        } else {
+          // sea
+          const sea = cell.terrain.sea;
+          const isShallow = (sea === 'shallow');
+          if (!isShallow) {
+            cell.seaCity = false;
+            cell.seaCultivated = false;
+            cell.seaPolluted = false;
+          }
+          // 陸系は海なら全消し
+          cell.city = false;
+          cell.cultivated = false;
+          cell.bryophyte = false;
+          cell.polluted = false;
+        }
+      }
+
+      // キャッシュのベース（文明要素）も更新して、連続Reviseで破綻しないようにする
+      this.hfCache.gridDataBase = gridData;
+
+      this.$emit('revised', {
+        gridData,
+        computedTopGlacierRows
+      });
     }
   }
 }

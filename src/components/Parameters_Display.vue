@@ -3,6 +3,9 @@
     <button @click="onClickGenerate" style="margin-bottom: 12px; margin-left: 8px;">
       Generate (Popup + Render)
     </button>
+    <button @click="onClickReviseHighFrequency" style="margin-bottom: 12px; margin-left: 8px;">
+      Revise 氷河・乾燥地
+    </button>
     
     <div style="margin-bottom: 8px;">
       <label>陸の中心点の数 y: </label>
@@ -176,6 +179,7 @@
 
     <!-- 非表示の計算コンポーネント（テンプレート内に配置することで使用済みとして認識される） -->
     <Grids_Calculation
+      ref="calc"
       :gridWidth="gridWidth"
       :gridHeight="gridHeight"
       :seaLandRatio="local.seaLandRatio"
@@ -206,6 +210,7 @@
       :averageHighlandsPerCenter="computedAverageHighlandsPerCenter"
       :centerParameters="mutableCenterParams"
       :generateSignal="generateSignal"
+      :reviseSignal="reviseSignal"
         :deterministicSeed="local.deterministicSeed"
       :era="local.era || storeEra"
       :cityGenerationProbability="local.cityProbability"
@@ -218,6 +223,7 @@
       :showCentersRed="local.showCentersRed"
       :centerBias="local.centerBias"
       @generated="onGenerated"
+      @revised="onRevised"
     />
 
     <!-- 非表示の球表示コンポーネント -->
@@ -328,6 +334,12 @@ export default {
       // 中心点のパラメータはdeepコピーして編集可能にする
       mutableCenterParams: JSON.parse(JSON.stringify(this.centerParameters || [])),
       generateSignal: 0,
+      reviseSignal: 0,
+      // plane iframe のビルドバージョン（構造変化時はインクリメント）
+      planeBuildVersion: 0,
+      // sphere の非リロード更新回数管理
+      sphereUpdateCount: 0,
+      sphereMaxUpdates: 200,
       popupRef: null,
       stats: null
     };
@@ -406,7 +418,13 @@ export default {
       }
     },
     onClickGenerate() {
+      // 構造（幅/高さ/バージョン）に影響する完全再生成なのでビルドバージョンを上げてiframe差し替えを促す
+      this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
       this.generateSignal += 1;
+    },
+    onClickReviseHighFrequency() {
+      // Generate後のキャッシュを前提とした高頻度更新
+      this.reviseSignal += 1;
     },
     
     onGenerated(payload) {
@@ -436,8 +454,10 @@ export default {
       } catch (e) {
         this.planeDisplayColors = [];
       }
-      // 1.3) 平面地図専用ポップアップを更新
+      // 1.3) 平面地図専用ポップアップを更新（初回は作成、続きは差分更新）
       this.openOrUpdatePlanePopup();
+      // 非リロードでの差分更新を試みる（Plane + Sphere）
+      this.updatePlaneAndSphereIframes();
       // 2) 親へ伝搬（AppからTerrain_Displayへ受け渡し用）
       this.$emit('generated', {
         gridData: payload.gridData || null,
@@ -516,6 +536,99 @@ export default {
       this.stats.gridTypeCounts = counts;
       // 最後にポップアップを更新
       this.openOrUpdatePopup();
+    },
+
+    onRevised(payload) {
+      // Revise は Plane map のみ更新（Sphereは更新しない）
+      const gridData = (payload && Array.isArray(payload.gridData)) ? payload.gridData : [];
+      if (!this.stats) this.stats = {};
+      if (payload && typeof payload.computedTopGlacierRows === 'number') {
+        this.stats.computedTopGlacierRows = payload.computedTopGlacierRows;
+      }
+
+      // 平面表示色（+2枠）を更新
+      try {
+        const era = this.local && this.local.era ? this.local.era : this.storeEra;
+        const eraColors = getEraTerrainColors(era);
+        const displayColors = (gridData && gridData.length === this.gridWidth * this.gridHeight)
+          ? deriveDisplayColorsFromGridData(gridData, this.gridWidth, this.gridHeight, undefined, eraColors, /*preferPalette*/ true)
+          : [];
+        this.planeDisplayColors = Array.isArray(displayColors) ? displayColors : [];
+      } catch (e) {
+        this.planeDisplayColors = [];
+      }
+
+      // 統計（グリッド種類カウント）を更新して、Parameters popupにも反映
+      this._updateGridTypeCountsFromGridData(gridData);
+      this.openOrUpdatePopup();
+
+      // Plane iframe だけ差し替え（sphere iframeは触らない）
+      this.updatePlaneIframeOnly();
+    },
+
+    _updateGridTypeCountsFromGridData(gridData) {
+      const N = (Array.isArray(gridData) && gridData.length) ? gridData.length : (this.gridWidth * this.gridHeight);
+      const counts = {
+        deepSea: 0,
+        shallowSea: 0,
+        glacier: 0,
+        lowland: 0,
+        desert: 0,
+        highland: 0,
+        alpine: 0,
+        lake: 0,
+        tundra: 0,
+        bryophyte: 0,
+        city: 0,
+        cultivated: 0,
+        polluted: 0,
+        seaCity: 0,
+        seaCultivated: 0,
+        seaPolluted: 0,
+        total: N
+      };
+      if (Array.isArray(gridData) && gridData.length === N) {
+        for (let i = 0; i < N; i++) {
+          const cell = gridData[i];
+          let cat = null;
+          // 海棲グリッドの優先順位: seaPolluted > seaCity > seaCultivated
+          if (cell && cell.seaPolluted) {
+            cat = 'seaPolluted';
+          } else if (cell && cell.seaCity) {
+            cat = 'seaCity';
+          } else if (cell && cell.seaCultivated) {
+            cat = 'seaCultivated';
+          } else if (cell && cell.polluted) {
+            cat = 'polluted';
+          } else if (cell && cell.city) {
+            cat = 'city';
+          } else if (cell && cell.bryophyte) {
+            cat = 'bryophyte';
+          } else if (cell && cell.cultivated) {
+            cat = 'cultivated';
+          } else if (cell && cell.terrain && cell.terrain.type === 'sea') {
+            const sea = cell.terrain.sea;
+            if (sea === 'deep') cat = 'deepSea';
+            else if (sea === 'glacier') cat = 'glacier';
+            else cat = 'shallowSea';
+          } else if (cell && cell.terrain && cell.terrain.type === 'land') {
+            const l = cell.terrain.land;
+            if (l === 'lowland') cat = 'lowland';
+            else if (l === 'desert') cat = 'desert';
+            else if (l === 'highland') cat = 'highland';
+            else if (l === 'alpine') cat = 'alpine';
+            else if (l === 'tundra') cat = 'tundra';
+            else if (l === 'lake') cat = 'lake';
+            else if (l === 'glacier') cat = 'glacier';
+            else cat = 'lowland';
+          } else {
+            cat = 'lowland';
+          }
+          counts[cat] += 1;
+        }
+      }
+      if (!this.stats) this.stats = {};
+      this.stats.gridTypeCounts = counts;
     },
     openOrUpdatePopup() {
       const w = this.popupRef && !this.popupRef.closed ? this.popupRef : window.open('', 'ParametersOutput', 'width=520,height=700');
@@ -647,6 +760,109 @@ export default {
       const sphereHtml = this._getSphereHtmlForIframe();
       this._setPlaneSphereIframes(doc, planeHtml, sphereHtml);
     },
+    updatePlaneIframeOnly() {
+      // 既存の Plane&Sphere popup があれば、Plane iframe だけ更新する。
+      // srcdoc差し替えは iframe をリロードしてちらつくため、可能なら iframe 内の関数で canvas だけ再描画する。
+      const w = (this.planePopupRef && !this.planePopupRef.closed) ? this.planePopupRef : null;
+      if (!w) {
+        // 無ければ従来通り作成（この場合は sphere iframe も初期化される）
+        this.openOrUpdatePlanePopup();
+        return;
+      }
+      try {
+        const doc = w.document;
+        const pif = doc.getElementById('plane-iframe');
+        if (!pif) {
+          this.openOrUpdatePlanePopup();
+          return;
+        }
+        // 1) まずは「リロードなし更新」を試す
+        const pw = pif.contentWindow;
+        const fn = pw && typeof pw.__updatePlane === 'function' ? pw.__updatePlane : null;
+        const pv = pw && typeof pw.__planeVersion !== 'undefined' ? pw.__planeVersion : null;
+        const displayColors = Array.isArray(this.planeDisplayColors) ? this.planeDisplayColors : [];
+        const cell = Number(this.planeGridCellPx) || 3;
+        const displayW = this.gridWidth + 2;
+        const displayH = this.gridHeight + 2;
+        // バージョンが異なれば iframe を完全差し替えして内部スクリプトを更新する
+        if (pv !== null && pv !== this.planeBuildVersion) {
+          const planeHtml = this.buildPlaneHtml();
+          pif.srcdoc = planeHtml;
+          return;
+        }
+        if (fn) {
+          try {
+            // updateCount が一定回数を越えていれば内部で cleanup させ、srcdoc で再作成する
+            const updateCount = pw.__planeUpdateCount || 0;
+            const MAX_UPDATES = 200;
+            if (updateCount >= MAX_UPDATES && typeof pw.__cleanupPlane === 'function') {
+              try { pw.__cleanupPlane(); } catch (e) { /* ignore cleanup errors */ }
+              const planeHtml = this.buildPlaneHtml();
+              pif.srcdoc = planeHtml;
+              return;
+            }
+            fn(displayColors, displayW, displayH, cell);
+            if (typeof pw.__planeUpdateCount === 'number') pw.__planeUpdateCount++;
+            else pw.__planeUpdateCount = 1;
+            return;
+          } catch (e) {
+            // フォールバックして再描画
+            const planeHtml = this.buildPlaneHtml();
+            pif.srcdoc = planeHtml;
+            return;
+          }
+        }
+        // 2) 初回/互換: srcdoc差し替え（ちらつきやすい）
+        const planeHtml = this.buildPlaneHtml();
+        pif.srcdoc = planeHtml;
+      } catch (e) {
+        this.openOrUpdatePlanePopup();
+      }
+    },
+    // 更新: Plane と Sphere を非リロードで可能なら差分更新する（Generate/Revise 共通で使える）
+    updatePlaneAndSphereIframes() {
+      // Plane 更新
+      this.updatePlaneIframeOnly();
+
+      // Sphere 更新（Generate時はSphereも更新する。Reviseでは呼ばれない設計）
+      try {
+        const w = (this.planePopupRef && !this.planePopupRef.closed) ? this.planePopupRef : null;
+        if (!w) return;
+        const doc = w.document;
+        const sif = doc.getElementById('sphere-iframe');
+        if (!sif) return;
+        // If sphere iframe already attached and parent sphere component has initialized, request redraw
+        const sphComp = (this.$refs && this.$refs.sphere) ? this.$refs.sphere : null;
+        if (sphComp && this._sphereWin) {
+          // Use update count to avoid indefinite non-reload updates (resource leakage)
+          if ((this.sphereUpdateCount || 0) >= (this.sphereMaxUpdates || 200)) {
+            try { sphComp.cleanupSpherePopup(); } catch (e) { /* ignore cleanup errors */ }
+            // re-create iframe content
+            const sphereHtml = this._getSphereHtmlForIframe();
+            try { sif.srcdoc = sphereHtml; } catch (e) { /* ignore srcdoc set errors */ }
+            this.sphereUpdateCount = 0;
+            return;
+          }
+          try {
+            sphComp.requestRedraw();
+            this.sphereUpdateCount = (this.sphereUpdateCount || 0) + 1;
+            return;
+          } catch (e) {
+            // fallback: replace srcdoc
+            const sphereHtml = this._getSphereHtmlForIframe();
+            try { sif.srcdoc = sphereHtml; } catch (e) { /* ignore srcdoc set errors */ }
+            this.sphereUpdateCount = 0;
+            return;
+          }
+        } else {
+          // not attached yet: replace srcdoc so onload attaches
+          const sphereHtml = this._getSphereHtmlForIframe();
+          try { sif.srcdoc = sphereHtml; } catch (e) { /* ignore srcdoc set errors */ }
+          this.sphereUpdateCount = 0;
+          return;
+        }
+        } catch (e) { /* ignore overall update errors */ }
+    },
     _getOrOpenPlaneSpherePopup() {
       const w = (this.planePopupRef && !this.planePopupRef.closed)
         ? this.planePopupRef
@@ -694,8 +910,9 @@ export default {
         const sif = doc.getElementById('sphere-iframe');
         if (pif) pif.srcdoc = planeHtml;
         if (!sif) return;
+        // Sphere は可能なら再利用してリロードを避ける（ちらつき防止）
+        // 初回は srcdoc を流し込み、onload で親側に canvas を渡す
         sif.srcdoc = sphereHtml;
-        // iframe の DOM が出来てから canvas を拾って Sphere_Display 側に渡す
         sif.onload = () => {
           this._attachSphereToIframe(sif);
         };
@@ -720,6 +937,7 @@ export default {
       const cell = Number(this.planeGridCellPx) || 3;
       const displayW = this.gridWidth + 2;
       const displayH = this.gridHeight + 2;
+      const buildVersion = this.planeBuildVersion || 0;
       return `
 <!doctype html>
 <html>
@@ -741,25 +959,117 @@ export default {
     <script>
       (function(){
         try {
-          var colors = ${JSON.stringify(displayColors)};
-          var displayW = ${displayW};
-          var displayH = ${displayH};
-          var cell = ${cell};
           var cvs = document.getElementById('plane-canvas');
           if (!cvs) return;
-          cvs.width = Math.max(1, displayW * cell);
-          cvs.height = Math.max(1, displayH * cell);
           var ctx = cvs.getContext('2d');
           if (!ctx) return;
-          var i = 0;
-          for (var y = 0; y < displayH; y++) {
-            for (var x = 0; x < displayW; x++) {
-              var col = colors[i++] || '#000000';
-              ctx.fillStyle = col;
-              ctx.fillRect(x * cell, y * cell, cell, cell);
-            }
+
+          // ダブルバッファ（ちらつき防止）
+          var back = document.createElement('canvas');
+          var bctx = back.getContext('2d');
+
+          function draw(colors, w, h, cell) {
+            try {
+              w = Math.max(1, w|0);
+              h = Math.max(1, h|0);
+              cell = Math.max(1, cell|0);
+              cvs.width = w * cell;
+              cvs.height = h * cell;
+              back.width = cvs.width;
+              back.height = cvs.height;
+              var i = 0;
+              for (var y = 0; y < h; y++) {
+                for (var x = 0; x < w; x++) {
+                  var col = (colors && colors[i]) ? colors[i] : '#000000';
+                  i++;
+                  bctx.fillStyle = col;
+                  bctx.fillRect(x * cell, y * cell, cell, cell);
+                }
+              }
+              ctx.clearRect(0, 0, cvs.width, cvs.height);
+              ctx.drawImage(back, 0, 0);
+            } catch (e) { /* ignore draw errors */ }
           }
-        } catch (e) {}
+
+          // バージョン情報（親が比較して差し替え判断する）
+          window.__planeVersion = ${buildVersion};
+          // update 回数カウンタ（再生成閾値に達したら親が再作成する）
+          window.__planeUpdateCount = 0;
+          // 内部で持つ一時RAFハンドル
+          window.__planeRAF = null;
+          window.__pendingPlane = null;
+
+          // cleanup API（親が呼べる）。タイマーやWebGLコンテキスト等があればここで解放する。
+          window.__cleanupPlane = function() {
+            try {
+              // Stop RAF / timers
+              try { if (window.__planeRAF) { cancelAnimationFrame(window.__planeRAF); window.__planeRAF = null; } } catch(e){}
+              try { if (window.__planeTimer) { clearInterval(window.__planeTimer); window.__planeTimer = null; } } catch(e){}
+              // Remove pending draw
+              window.__pendingPlane = null;
+
+              // Remove known event handlers if present
+              try { if (window.__planeOnResize) window.removeEventListener('resize', window.__planeOnResize); } catch(e){}
+
+              // WebGL resource cleanup (if any)
+              try {
+                var cvs = document.getElementById('plane-canvas');
+                if (cvs) {
+                  var gl = cvs.getContext('webgl2') || cvs.getContext('webgl') || cvs.getContext('experimental-webgl');
+                  if (gl) {
+                    try {
+                      // Delete tracked resources if arrays exist
+                      if (Array.isArray(window.__planeTextures)) {
+                        window.__planeTextures.forEach(function(t){ try { gl.deleteTexture(t); } catch(e){} });
+                      }
+                      if (Array.isArray(window.__planeBuffers)) {
+                        window.__planeBuffers.forEach(function(b){ try { gl.deleteBuffer(b); } catch(e){} });
+                      }
+                      if (Array.isArray(window.__planePrograms)) {
+                        window.__planePrograms.forEach(function(p){ try { gl.deleteProgram(p); } catch(e){} });
+                      }
+                      if (Array.isArray(window.__planeShaders)) {
+                        window.__planeShaders.forEach(function(s){ try { gl.deleteShader(s); } catch(e){} });
+                      }
+                    } catch(e) { /* ignore gl resource deletion errors */ }
+                    // Try to lose context to free GPU resources
+                    try {
+                      var loseExt = gl.getExtension && (gl.getExtension('WEBGL_lose_context') || gl.getExtension('MOZ_WEBGL_lose_context') || gl.getExtension('WEBKIT_WEBGL_lose_context'));
+                      if (loseExt && typeof loseExt.loseContext === 'function') {
+                        try { loseExt.loseContext(); } catch(e) {}
+                      }
+                    } catch(e) { /* ignore getExtension errors */ }
+                  }
+                }
+              } catch(e) { /* ignore overall WebGL cleanup errors */ }
+
+              // Clear references to help GC
+              try { window.__planeTextures = null; } catch(e){}
+              try { window.__planeBuffers = null; } catch(e){}
+              try { window.__planePrograms = null; } catch(e){}
+              try { window.__planeShaders = null; } catch(e){}
+              try { window.__planeOnResize = null; } catch(e){}
+            } catch (e) { /* ignore cleanup wrapper errors */ }
+          };
+
+          // 親から呼べる更新関数（iframeリロード不要）
+          window.__updatePlane = function(colors, w, h, cell) {
+            // rAFでまとめて描画（連打時のちらつき軽減）
+            window.__pendingPlane = { colors: colors, w: w, h: h, cell: cell };
+            if (window.__planeRAF) return;
+            window.__planeRAF = requestAnimationFrame(function(){
+              window.__planeRAF = null;
+              var p = window.__pendingPlane;
+              window.__pendingPlane = null;
+              if (!p) return;
+              draw(p.colors, p.w, p.h, p.cell);
+              window.__planeUpdateCount = (window.__planeUpdateCount || 0) + 1;
+            });
+          };
+
+          // 初期描画
+          window.__updatePlane(${JSON.stringify(displayColors)}, ${displayW}, ${displayH}, ${cell});
+          } catch (e) { /* ignore init errors */ }
       })();
     </scr${''}ipt>
   </body>
