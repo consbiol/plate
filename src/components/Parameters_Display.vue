@@ -1,25 +1,15 @@
 <template>
   <div class="parameters-display">
-  <!-- T_mannen コントロールバー -->
-  <div style="display:flex;align-items:center;gap:12px;justify-content:space-between;margin:6px 8px 12px;padding:8px;border:1px solid #333;border-radius:6px;background:#1a1a1a;">
-    <div>
-      <strong>T_mannen:</strong>
-      <span style="margin-left:8px;">{{ tmannenValueDisplay }}</span>
-    </div>
-    <div>
-      <button @click="startTMannen" style="margin-right:8px;">Start</button>
-      <button @click="stopTMannen" style="margin-right:8px;">Stop</button>
-      <button @click="increaseTMSpeed" style="margin-right:8px;">+Speed</button>
-      <button @click="decreaseTMSpeed" style="margin-right:8px;">-Speed</button>
-      <button @click="resetTMSpeedToDefault" style="margin-left:8px;">デフォルト速度に設定</button>
-    </div>
-  </div>
     <button @click="onClickGenerate" style="margin-bottom: 12px; margin-left: 8px;">
       Generate (Popup + Render)
     </button>
-    <button @click="onClickGenerateSphere" style="margin-bottom: 12px; margin-left: 8px;">
-      Generate sphere
+    <button @click="onClickReviseHighFrequency" style="margin-bottom: 12px; margin-left: 8px;">
+      Revise 氷河・乾燥地
     </button>
+    <button @click="onClickDrift" style="margin-bottom: 12px; margin-left: 8px;">
+      Drift 大陸中心点 + ノイズ再抽選
+    </button>
+    
     <div style="margin-bottom: 8px;">
       <label>陸の中心点の数 y: </label>
       <input type="number" min="1" max="10" v-model.number="local.centersY" />
@@ -71,8 +61,8 @@
     </div>
     <div style="margin-bottom: 8px;">
       <label>雲量: </label>
-      <input type="range" min="0" max="1" step="0.1" v-model.number="local.cloudAmount" />
-      <span style="margin-left:8px">{{ (local.cloudAmount || 0).toFixed(2) }}</span>
+      <input type="range" min="0" max="1" step="0.1" v-model.number="local.f_cloud" />
+      <span style="margin-left:8px">{{ (local.f_cloud || 0).toFixed(2) }}</span>
     </div>
     <div style="margin-bottom: 8px;">
       <label>平面地図のグリッド1マスのピクセル数: </label>
@@ -87,7 +77,7 @@
     </div>
     <div style="margin-bottom: 8px;">
       <label>上端・下端氷河グリッド数: </label>
-      <span>{{ Math.round(local.topGlacierRows) }}</span>
+      <span>{{ topGlacierRowsDisplayed }}</span>
     </div>
     <div style="margin-bottom: 8px;">
       <label>陸(低地・乾燥地・ツンドラ)の氷河追加グリッド数: </label>
@@ -111,7 +101,7 @@
     </div>
     <div style="margin-bottom: 8px;">
       <label>高地の数（平均）: </label>
-      <input type="number" min="0" max="10" step="0.5" v-model.number="local.averageHighlandsPerCenter" />
+      <span>{{ computedAverageHighlandsPerCenter.toFixed(2) }}</span>
     </div>
     <div style="margin-bottom: 8px;">
       <label>都市生成確率 (低地, 海隣接で×10): </label>
@@ -120,6 +110,10 @@
     <div style="margin-bottom: 8px;">
       <label>耕作地生成確率 (低地, 海隣接で×10): </label>
       <input type="number" min="0" max="1" step="0.01" v-model.number="local.cultivatedProbability" />
+    </div>
+    <div style="margin-bottom: 8px;">
+      <label>苔類進出地生成確率 (低地, 海隣接で×100): </label>
+      <input type="number" min="0" max="1" step="0.01" v-model.number="local.bryophyteProbability" />
     </div>
     <div style="margin-bottom: 8px;">
       <label>汚染地クラスター数（マップ全体）: </label>
@@ -185,13 +179,10 @@
       <div class="row"><label style="display:inline-block;min-width:160px;">最大:</label><span>{{ stats.lowlandDistanceToSea.max.toFixed(2) }}</span></div>
       <div class="row"><label style="display:inline-block;min-width:160px;">低地グリッド数:</label><span>{{ stats.lowlandDistanceToSea.count }}</span></div>
     </div>
-    <div v-if="stats && typeof stats.avgNearestChebyshevDistance === 'number'" style="margin-top: 16px; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto;">
-      <div style="font-weight: bold; margin-bottom: 6px;">最近傍 Chebyshev 距離:</div>
-      <div class="row"><label style="display:inline-block;min-width:160px;">平均:</label><span>{{ stats.avgNearestChebyshevDistance.toFixed(2) }}</span></div>
-    </div>
 
     <!-- 非表示の計算コンポーネント（テンプレート内に配置することで使用済みとして認識される） -->
     <Grids_Calculation
+      ref="calc"
       :gridWidth="gridWidth"
       :gridHeight="gridHeight"
       :seaLandRatio="local.seaLandRatio"
@@ -219,13 +210,16 @@
       :highlandGlacierExtraRows="local.highlandGlacierExtraRows"
       :alpineGlacierExtraRows="local.alpineGlacierExtraRows"
       :averageLakesPerCenter="local.averageLakesPerCenter"
-      :averageHighlandsPerCenter="local.averageHighlandsPerCenter"
+      :averageHighlandsPerCenter="computedAverageHighlandsPerCenter"
       :centerParameters="mutableCenterParams"
       :generateSignal="generateSignal"
+      :reviseSignal="reviseSignal"
+      :driftSignal="driftSignal"
         :deterministicSeed="local.deterministicSeed"
-      :era="local.era || ($store && $store.getters ? $store.getters.era : null)"
+      :era="local.era || storeEra"
       :cityGenerationProbability="local.cityProbability"
       :cultivatedGenerationProbability="local.cultivatedProbability"
+      :bryophyteGenerationProbability="local.bryophyteProbability"
       :pollutedAreasCount="local.pollutedAreasCount"
       :seaCityGenerationProbability="local.seaCityProbability"
       :seaCultivatedGenerationProbability="local.seaCultivatedProbability"
@@ -233,6 +227,8 @@
       :showCentersRed="local.showCentersRed"
       :centerBias="local.centerBias"
       @generated="onGenerated"
+      @revised="onRevised"
+      @drifted="onGenerated"
     />
 
     <!-- 非表示の球表示コンポーネント -->
@@ -242,8 +238,8 @@
       :gridHeight="gridHeight"
       :gridData="gridDataLocal"
       :polarBufferRows="75"
-      :cloudAmount="local.cloudAmount"
-      :era="$store && $store.getters ? $store.getters.era : null"
+      :f_cloud="local.f_cloud"
+      :era="storeEra"
     />
   </div>
 </template>
@@ -255,158 +251,114 @@
 import Grids_Calculation from './Grids_Calculation.vue';
 import Sphere_Display from './Sphere_Display.vue';
 import { deriveDisplayColorsFromGridData, getEraTerrainColors } from '../utils/colors.js';
+import { ERAS, GRID_DEFAULTS, PARAM_DEFAULTS, createLocalParams } from '../utils/paramsDefaults.js';
+import { computeGlacierBaseRowsFromTemperature } from '../utils/terrain/glacierAnchors.js';
 export default {
   name: 'Parameters_Display',
   components: { Grids_Calculation, Sphere_Display },
   props: {
-    // 陸の中心点の数（デフォルト: 5）: 地形生成の起点となる中心点の個数。多いほど複雑な地形になります。
-    centersY: { type: Number, required: false, default: 5 },
-    // 陸の割合（デフォルト: 0.2）: 全グリッド中、陸地が占める割合。0.2は20%が陸地、80%が海を意味します。
-    seaLandRatio: { type: Number, required: false, default: 0.2 },
-    // 中心間の排他距離（デフォルト: 20グリッド）: 各中心点間の最小距離。近すぎると重複した地形になります。
-    minCenterDistance: { type: Number, required: false, default: 20 },
-    // 浅瀬・深海間の距離閾値（デフォルト: 5グリッド）: 海グリッドが浅瀬か深海かを判定する距離の基準値。大きいほど浅瀬が広がります。
-    baseSeaDistanceThreshold: { type: Number, required: false, default: 5 },
-    // 低地・乾燥地間の距離閾値（デフォルト: 10グリッド）: 陸グリッドが低地か乾燥地かを判定する距離の基準値。大きいほど低地が広がります。
-    baseLandDistanceThreshold: { type: Number, required: false, default: 10 },
+    // 陸の中心点の数: 地形生成の起点となる中心点の個数。多いほど複雑な地形になります。
+    centersY: { type: Number, required: false, default: PARAM_DEFAULTS.centersY },
+    // 陸の割合: 全グリッド中、陸地が占める割合の指標
+    seaLandRatio: { type: Number, required: false, default: PARAM_DEFAULTS.seaLandRatio },
+    // 中心間の排他距離: 各中心点間の最小距離。近すぎると重複した地形になります。
+    minCenterDistance: { type: Number, required: false, default: PARAM_DEFAULTS.minCenterDistance },
+    // 浅瀬・深海間の距離閾値: 海グリッドが浅瀬か深海かを判定する距離の基準値。大きいほど浅瀬が広がります。
+    baseSeaDistanceThreshold: { type: Number, required: false, default: PARAM_DEFAULTS.baseSeaDistanceThreshold },
+    // 低地・乾燥地間の距離閾値: 陸グリッドが低地か乾燥地かを判定する距離の基準値。大きいほど低地が広がります。
+    baseLandDistanceThreshold: { type: Number, required: false, default: PARAM_DEFAULTS.baseLandDistanceThreshold },
     // 低地・乾燥地間の距離閾値（帯ごと、上端/下端から5グリッド単位、帯1..帯10）
-    landDistanceThreshold1: { type: Number, required: false, default: 35 },
-    landDistanceThreshold2: { type: Number, required: false, default: 35 },
-    landDistanceThreshold3: { type: Number, required: false, default: 35 },
-    landDistanceThreshold4: { type: Number, required: false, default: 35 },
-    landDistanceThreshold5: { type: Number, required: false, default: 25 },
-    landDistanceThreshold6: { type: Number, required: false, default: 10 },
-    landDistanceThreshold7: { type: Number, required: false, default: 5 },
-    landDistanceThreshold8: { type: Number, required: false, default: 10 },
-    landDistanceThreshold9: { type: Number, required: false, default: 25 },
-    landDistanceThreshold10: { type: Number, required: false, default: 35 },
+    landDistanceThreshold1: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold1 },
+    landDistanceThreshold2: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold2 },
+    landDistanceThreshold3: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold3 },
+    landDistanceThreshold4: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold4 },
+    landDistanceThreshold5: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold5 },
+    landDistanceThreshold6: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold6 },
+    landDistanceThreshold7: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold7 },
+    landDistanceThreshold8: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold8 },
+    landDistanceThreshold9: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold9 },
+    landDistanceThreshold10: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold10 },
     // 帯の縦揺らぎ（行数）: 0で無効
-    landBandVerticalWobbleRows: { type: Number, required: false, default: 2 },
+    landBandVerticalWobbleRows: { type: Number, required: false, default: PARAM_DEFAULTS.landBandVerticalWobbleRows },
     // 上端・下端ツンドラグリッド追加数（デフォルト: 7）: 上端・下端氷河グリッド数からの追加グリッド数
-    tundraExtraRows: { type: Number, required: false, default: 7 },
+    tundraExtraRows: { type: Number, required: false, default: PARAM_DEFAULTS.tundraExtraRows },
     // 上端・下端氷河グリッド数（デフォルト: 5）: 上下端から何グリッド分を氷河に上書きするかの基準値（海/湖は追加なし）。
-    topGlacierRows: { type: Number, required: false, default: 5 },
+    topGlacierRows: { type: Number, required: false, default: PARAM_DEFAULTS.topGlacierRows },
     // 陸(低地・乾燥地・ツンドラ)の氷河追加グリッド数（デフォルト: 5）: 陸地タイプに応じて氷河上書き範囲を追加するグリッド数。
-    landGlacierExtraRows: { type: Number, required: false, default: 5 },
+    landGlacierExtraRows: { type: Number, required: false, default: PARAM_DEFAULTS.landGlacierExtraRows },
     // 高地の氷河追加グリッド数（デフォルト: 15）: 高地タイプに応じて氷河上書き範囲を追加するグリッド数。
-    highlandGlacierExtraRows: { type: Number, required: false, default: 15 },
+    highlandGlacierExtraRows: { type: Number, required: false, default: PARAM_DEFAULTS.highlandGlacierExtraRows },
     // 高山の氷河追加グリッド数（デフォルト: 20）: 高山タイプに応じて氷河上書き範囲を追加するグリッド数。
-    alpineGlacierExtraRows: { type: Number, required: false, default: 20},
+    alpineGlacierExtraRows: { type: Number, required: false, default: PARAM_DEFAULTS.alpineGlacierExtraRows },
     // 湖の数（平均）（デフォルト: 1）: 各中心点あたりの平均的な湖の個数。ポアソン分布で決定されます。
-    averageLakesPerCenter: { type: Number, required: false, default: 2 },
+    averageLakesPerCenter: { type: Number, required: false, default: PARAM_DEFAULTS.averageLakesPerCenter },
     // 高地の数（平均）（デフォルト: 1）: 各中心点あたりの平均的な高地の個数。ポアソン分布で決定されます。サイズは湖の10倍、形状はメイン方向に沿った帯状で横方向にノイズ性の広がりを持ちます。色は灰色がかった茶色（茶色気味）です。
-    averageHighlandsPerCenter: { type: Number, required: false, default: 5 },
+    averageHighlandsPerCenter: { type: Number, required: false, default: PARAM_DEFAULTS.averageHighlandsPerCenter },
     // 中心点のパラメータ配列（デフォルト: 空配列）: 各中心点の影響係数、減衰率、方向角度などの詳細パラメータ。
     centerParameters: { type: Array, required: false, default: () => [] },
     // 雲量（0..1）: 被覆度優先で効く
-    cloudAmount: { type: Number, required: false, default: 0.4 },
+    f_cloud: { type: Number, required: false, default: PARAM_DEFAULTS.f_cloud },
     // 都市生成確率（低地、海隣接で10倍）
-    cityProbability: { type: Number, required: false, default: 0.002 },
+    cityProbability: { type: Number, required: false, default: PARAM_DEFAULTS.cityProbability },
     // 耕作地生成確率（低地、海隣接で10倍）
-    cultivatedProbability: { type: Number, required: false, default: 0.05 },
+    cultivatedProbability: { type: Number, required: false, default: PARAM_DEFAULTS.cultivatedProbability },
+    // 苔類進出地生成確率（低地、海隣接で100倍）
+    bryophyteProbability: { type: Number, required: false, default: PARAM_DEFAULTS.bryophyteProbability },
     // 汚染地クラスター数（マップ全体、シードで開始セルを決定）
-    pollutedAreasCount: { type: Number, required: false, default: 1 },
+    pollutedAreasCount: { type: Number, required: false, default: PARAM_DEFAULTS.pollutedAreasCount },
     // 海棲都市生成確率（浅瀬、陸隣接で10倍）
-    seaCityProbability: { type: Number, required: false, default: 0.002 },
+    seaCityProbability: { type: Number, required: false, default: PARAM_DEFAULTS.seaCityProbability },
     // 海棲耕作地生成確率（浅瀬、陸隣接で10倍）
-    seaCultivatedProbability: { type: Number, required: false, default: 0.05 },
+    seaCultivatedProbability: { type: Number, required: false, default: PARAM_DEFAULTS.seaCultivatedProbability },
     // 海棲汚染地クラスター数（マップ全体、シードで開始セルを決定）
-    seaPollutedAreasCount: { type: Number, required: false, default: 1 },
+    seaPollutedAreasCount: { type: Number, required: false, default: PARAM_DEFAULTS.seaPollutedAreasCount },
     // 大陸中心点を赤で表示（デフォルト: ON）
-    showCentersRed: { type: Boolean, required: false, default: true },
+    showCentersRed: { type: Boolean, required: false, default: PARAM_DEFAULTS.showCentersRed },
     // 中心点近傍の陸生成バイアス（0で無効、値を上げると中心付近が陸になりやすい）
-    centerBias: { type: Number, required: false, default: 0.5 }
+    centerBias: { type: Number, required: false, default: PARAM_DEFAULTS.centerBias }
   },
   mounted() {
     // 初期表示時に平均気温から氷河行数を算出（デフォルト 15℃ → 5）
     this.updateAverageTemperature();
     // store の era をローカル初期値に同期（なければ一覧の先頭）
-    const storeEra = (this.$store && this.$store.getters && this.$store.getters.era) ? this.$store.getters.era : null;
-    this.local.era = storeEra || '大森林時代';
-  },
-  beforeUnmount() {
-    if (this.tmannenInterval) {
-      clearInterval(this.tmannenInterval);
-      this.tmannenInterval = null;
-    }
+    this.local.era = this.storeEra || '大森林時代';
   },
   data() {
     return {
-      // Plane Map ポップアップ縦方向の追加余白を動的に調整できるデータプロパティ
-      planePopupVerticalExtra: 40,
       // グリッド幅・高さ（初期値: 200x100）
-      gridWidth: 200,
-      gridHeight: 100,
+      gridWidth: GRID_DEFAULTS.gridWidth,
+      gridHeight: GRID_DEFAULTS.gridHeight,
       gridDataLocal: [],
       // ポップアップ描画用の平面色（+2枠込み）
       planeDisplayColors: [],
       // 平面地図専用ポップアップ
       planePopupRef: null,
-      local: {
-        centersY: this.centersY,
-        seaLandRatio: this.seaLandRatio,
-        cloudAmount: this.cloudAmount,
-        minCenterDistance: this.minCenterDistance,
-        baseSeaDistanceThreshold: this.baseSeaDistanceThreshold,
-        baseLandDistanceThreshold: this.baseLandDistanceThreshold,
-        tundraExtraRows: this.tundraExtraRows,
-        topGlacierRows: this.topGlacierRows,
-        landBandVerticalWobbleRows: this.landBandVerticalWobbleRows,
-        landDistanceThreshold1: this.landDistanceThreshold1,
-        landDistanceThreshold2: this.landDistanceThreshold2,
-        landDistanceThreshold3: this.landDistanceThreshold3,
-        landDistanceThreshold4: this.landDistanceThreshold4,
-        landDistanceThreshold5: this.landDistanceThreshold5,
-        landDistanceThreshold6: this.landDistanceThreshold6,
-        landDistanceThreshold7: this.landDistanceThreshold7,
-        landDistanceThreshold8: this.landDistanceThreshold8,
-        landDistanceThreshold9: this.landDistanceThreshold9,
-        landDistanceThreshold10: this.landDistanceThreshold10,
-        landGlacierExtraRows: this.landGlacierExtraRows,
-        highlandGlacierExtraRows: this.highlandGlacierExtraRows,
-        alpineGlacierExtraRows: this.alpineGlacierExtraRows,
-        averageLakesPerCenter: this.averageLakesPerCenter,
-        averageHighlandsPerCenter: this.averageHighlandsPerCenter,
-        deterministicSeed: '',
-        cityProbability: this.cityProbability,
-        cultivatedProbability: this.cultivatedProbability,
-        pollutedAreasCount: this.pollutedAreasCount,
-        seaCityProbability: this.seaCityProbability,
-        seaCultivatedProbability: this.seaCultivatedProbability,
-        seaPollutedAreasCount: this.seaPollutedAreasCount,
-        showCentersRed: this.showCentersRed,
-        centerBias: this.centerBias
-      },
+      local: createLocalParams(this),
       // UI で選べる時代一覧（store.era と対応）
-      eras: [
-        '爆撃時代',
-        '生命発生前時代',
-        '嫌気性細菌誕生時代',
-        '光合成細菌誕生時代',
-        '真核生物誕生時代',
-        '多細胞生物誕生時代',
-        '海洋生物多様化時代',
-        '苔類進出時代',
-        'シダ植物時代',
-        '大森林時代',
-        '文明時代',
-        '海棲文明時代'
-      ],
+      eras: ERAS,
       // 中心点のパラメータはdeepコピーして編集可能にする
       mutableCenterParams: JSON.parse(JSON.stringify(this.centerParameters || [])),
       generateSignal: 0,
+      reviseSignal: 0,
+      driftSignal: 0,
+      // plane iframe のビルドバージョン（構造変化時はインクリメント）
+      planeBuildVersion: 0,
+      // sphere の非リロード更新回数管理
+      sphereUpdateCount: 0,
+      sphereMaxUpdates: 200,
       popupRef: null,
-      stats: null,
-      tmannenInterval: null
+      stats: null
     };
   },
   computed: {
+    // store ガードを各所に散らさないための共通アクセサ
+    storeEra() {
+      return this.$store?.getters?.era ?? null;
+    },
     averageTemperature: {
       get() {
-        if (this.$store && this.$store.getters && typeof this.$store.getters.averageTemperature === 'number') {
-          return this.$store.getters.averageTemperature;
-        }
-        return 15;
+        const v = this.$store?.getters?.averageTemperature;
+        return (typeof v === 'number') ? v : 15;
       },
       set(val) {
         let num = Number(val);
@@ -423,69 +375,44 @@ export default {
     },
     planeGridCellPx: {
       get() {
-        if (this.$store && this.$store.getters && typeof this.$store.getters.planeGridCellPx === 'number') {
-          return this.$store.getters.planeGridCellPx;
-        }
-        return 3;
+        const v = this.$store?.getters?.planeGridCellPx;
+        return (typeof v === 'number') ? v : 3;
       },
       set(val) {
         let v = Math.round(Number(val));
         if (!isFinite(v)) v = 3;
         if (v < 1) v = 1;
         if (v > 10) v = 10;
-        if (this.$store && typeof this.$store.dispatch === 'function') {
-          this.$store.dispatch('updatePlaneGridCellPx', v);
-        }
+        this.$store?.dispatch?.('updatePlaneGridCellPx', v);
       }
+    },
+    computedAverageHighlandsPerCenter() {
+      const x = (this.local && typeof this.local.seaLandRatio === 'number') ? Number(this.local.seaLandRatio) : 0.3;
+      return 2 + 10 * x;
     },
     topTundraRowsComputed() {
       const glacier = (this.local && typeof this.local.topGlacierRows === 'number') ? this.local.topGlacierRows : 0;
       const extra = (this.local && typeof this.local.tundraExtraRows === 'number') ? this.local.tundraExtraRows : 0;
       return Math.max(0, glacier + extra);
-    }
-    , tmannenValueDisplay() {
-      const v = (this.$store && this.$store.state && Object.prototype.hasOwnProperty.call(this.$store.state, 'T_mannen')) ? this.$store.state.T_mannen : 0;
-      if (!Number.isFinite(v)) return '0';
-      return (Math.abs(v - Math.round(v)) < 0.0001) ? String(Math.round(v)) : v.toFixed(2);
+    },
+    // UI表示用（計算側が生成時に使った実効値を優先）
+    topGlacierRowsDisplayed() {
+      if (this.stats && typeof this.stats.computedTopGlacierRows === 'number') {
+        return Math.round(this.stats.computedTopGlacierRows);
+      }
+      const v = (this.local && typeof this.local.topGlacierRows === 'number') ? this.local.topGlacierRows : 0;
+      return Math.round(v);
     }
   },
   methods: {
     onEraChange() {
-      if (this.$store && typeof this.$store.dispatch === 'function') {
-        this.$store.dispatch('updateEra', this.local.era);
-      }
+      this.$store?.dispatch?.('updateEra', this.local.era);
     },
     // 平均気温から上端・下端氷河グリッド数を線形補間で算出（2℃刻み入力想定）
     updateAverageTemperature(value) {
       const t = (typeof value === 'number') ? value
-        : (this.$store && this.$store.getters && typeof this.$store.getters.averageTemperature === 'number'
-            ? this.$store.getters.averageTemperature : 15);
-      const anchors = [
-        { t: -25, val: 45 },
-        { t: -15, val: 35 },
-        { t: -5,  val: 25 },
-        { t: 5,   val: 15 },
-        { t: 10,  val: 10 },
-        { t: 15,  val: 5  },
-        { t: 25,  val: -5 }
-      ];
-      let v;
-      if (t <= anchors[0].t) {
-        v = anchors[0].val + (t - anchors[0].t) * (-1); // 10℃あたり+10 → 1℃で+1（温度低下で増える＝傾き-1）
-      } else if (t >= anchors[anchors.length - 1].t) {
-        const last = anchors[anchors.length - 1];
-        v = last.val + (t - last.t) * (-1);
-      } else {
-        for (let i = 0; i < anchors.length - 1; i++) {
-          const a = anchors[i];
-          const b = anchors[i + 1];
-          if (t >= a.t && t <= b.t) {
-            const ratio = (t - a.t) / (b.t - a.t);
-            v = a.val + ratio * (b.val - a.val);
-            break;
-          }
-        }
-      }
+        : this.averageTemperature;
+      const v = computeGlacierBaseRowsFromTemperature(t);
       // 端数は四捨五入。負も許容（海氷河は作成しないよう計算側でガード）
       this.local.topGlacierRows = Math.round(v);
     },
@@ -497,54 +424,39 @@ export default {
       }
     },
     onClickGenerate() {
+      // 構造（幅/高さ/バージョン）に影響する完全再生成なのでビルドバージョンを上げてiframe差し替えを促す
+      this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
       this.generateSignal += 1;
     },
-    onClickGenerateSphere() {
-      if (this.$refs.sphere) {
-        this.$refs.sphere.openSpherePopup();
-      }
+    onClickReviseHighFrequency() {
+      // Generate後のキャッシュを前提とした高頻度更新
+      this.reviseSignal += 1;
     },
-    startTMannen() {
-      if (this.$store && this.$store.state) {
-        if (this.tmannenInterval) return;
-        const intervalMs = 1000; // 1秒毎にカウント
-        this.tmannenInterval = setInterval(() => {
-          const speed = (this.$store.state.tmannenSpeed != null) ? this.$store.state.tmannenSpeed : 1.0;
-          // 整数増加を保証するため speed は accumulator で調整する。ここでは speed をそのまま渡す
-          this.$store.dispatch('updateTmannen', speed);
-        }, intervalMs);
-        this.$store.commit('setTmannenRunning', true);
-      }
+    onClickDrift() {
+      // 中心点をドリフトさせてフル再生成（ノイズは全てランダム）
+      this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
+      this.driftSignal += 1;
     },
-    stopTMannen() {
-      if (this.tmannenInterval) {
-        clearInterval(this.tmannenInterval);
-        this.tmannenInterval = null;
-      }
-      if (this.$store) this.$store.commit('setTmannenRunning', false);
-    },
-    increaseTMSpeed() {
-      const cur = (this.$store && this.$store.state && typeof this.$store.state.tmannenSpeed === 'number') ? this.$store.state.tmannenSpeed : 1.0;
-      this.$store.commit('setTmannenSpeed', Math.min(100, cur + 0.25));
-    },
-    decreaseTMSpeed() {
-      const cur = (this.$store && this.$store.state && typeof this.$store.state.tmannenSpeed === 'number') ? this.$store.state.tmannenSpeed : 1.0;
-      this.$store.commit('setTmannenSpeed', Math.max(0.1, cur - 0.25));
-    },
-    resetTMSpeedToDefault() {
-      if (this.$store && typeof this.$store.dispatch === 'function') {
-        this.$store.dispatch('resetTmannenSpeedToDefault');
-      }
-    },
+    
     onGenerated(payload) {
       // 1) パラメータの出力HTMLをポップアップ表示・更新
       this.mutableCenterParams = JSON.parse(JSON.stringify(payload.centerParameters || []));
       if (payload && typeof payload.deterministicSeed !== 'undefined') {
         this.local.deterministicSeed = payload.deterministicSeed || '';
       }
+      // 1.1) 氷河上書き前の陸/海比をローカルに保持（湖は海扱い）
+      if (payload && payload.preGlacierStats) {
+        if (!this.stats) this.stats = {};
+        this.stats.preGlacier = payload.preGlacierStats;
+      }
+      // 1.1.1) 計算側が実際に使った「上端・下端氷河row（基準）」を保存してUI表示を一致させる
+      if (payload && typeof payload.computedTopGlacierRows === 'number') {
+        if (!this.stats) this.stats = {};
+        this.stats.computedTopGlacierRows = payload.computedTopGlacierRows;
+      }
       // 1.2) 平面表示色（+2枠）を計算してポップアップ用に保持
       try {
-        const era = this.local && this.local.era ? this.local.era : (this.$store && this.$store.getters ? this.$store.getters.era : null);
+        const era = this.local && this.local.era ? this.local.era : this.storeEra;
         const eraColors = getEraTerrainColors(era);
         const displayColors = Array.isArray(payload.gridData)
           ? deriveDisplayColorsFromGridData(payload.gridData, this.gridWidth, this.gridHeight, undefined, eraColors, /*preferPalette*/ true)
@@ -553,8 +465,10 @@ export default {
       } catch (e) {
         this.planeDisplayColors = [];
       }
-      // 1.3) 平面地図専用ポップアップを更新
+      // 1.3) 平面地図専用ポップアップを更新（初回は作成、続きは差分更新）
       this.openOrUpdatePlanePopup();
+      // 非リロードでの差分更新を試みる（Plane + Sphere）
+      this.updatePlaneAndSphereIframes();
       // 2) 親へ伝搬（AppからTerrain_Displayへ受け渡し用）
       this.$emit('generated', {
         gridData: payload.gridData || null,
@@ -569,9 +483,6 @@ export default {
       if (payload.lowlandDistanceToSeaStats) {
         this.stats.lowlandDistanceToSea = payload.lowlandDistanceToSeaStats;
       }
-      if (typeof payload.avgNearestChebyshevDistance === 'number') {
-        this.stats.avgNearestChebyshevDistance = payload.avgNearestChebyshevDistance;
-      }
       // 3.1) グリッド種類のカウント（合計 N）
       const gridData = Array.isArray(payload.gridData) ? payload.gridData : [];
       const N = gridData.length || (this.gridWidth * this.gridHeight);
@@ -585,6 +496,7 @@ export default {
         alpine: 0,
         lake: 0,
         tundra: 0,
+        bryophyte: 0,
         city: 0,
         cultivated: 0,
         polluted: 0,
@@ -607,6 +519,8 @@ export default {
           cat = 'polluted';
         } else if (cell && cell.city) {
           cat = 'city';
+        } else if (cell && cell.bryophyte) {
+          cat = 'bryophyte';
         } else if (cell && cell.cultivated) {
           cat = 'cultivated';
         } else if (cell && cell.terrain && cell.terrain.type === 'sea') {
@@ -634,6 +548,99 @@ export default {
       // 最後にポップアップを更新
       this.openOrUpdatePopup();
     },
+
+    onRevised(payload) {
+      // Revise は Plane map のみ更新（Sphereは更新しない）
+      const gridData = (payload && Array.isArray(payload.gridData)) ? payload.gridData : [];
+      if (!this.stats) this.stats = {};
+      if (payload && typeof payload.computedTopGlacierRows === 'number') {
+        this.stats.computedTopGlacierRows = payload.computedTopGlacierRows;
+      }
+
+      // 平面表示色（+2枠）を更新
+      try {
+        const era = this.local && this.local.era ? this.local.era : this.storeEra;
+        const eraColors = getEraTerrainColors(era);
+        const displayColors = (gridData && gridData.length === this.gridWidth * this.gridHeight)
+          ? deriveDisplayColorsFromGridData(gridData, this.gridWidth, this.gridHeight, undefined, eraColors, /*preferPalette*/ true)
+          : [];
+        this.planeDisplayColors = Array.isArray(displayColors) ? displayColors : [];
+      } catch (e) {
+        this.planeDisplayColors = [];
+      }
+
+      // 統計（グリッド種類カウント）を更新して、Parameters popupにも反映
+      this._updateGridTypeCountsFromGridData(gridData);
+      this.openOrUpdatePopup();
+
+      // Plane iframe だけ差し替え（sphere iframeは触らない）
+      this.updatePlaneIframeOnly();
+    },
+
+    _updateGridTypeCountsFromGridData(gridData) {
+      const N = (Array.isArray(gridData) && gridData.length) ? gridData.length : (this.gridWidth * this.gridHeight);
+      const counts = {
+        deepSea: 0,
+        shallowSea: 0,
+        glacier: 0,
+        lowland: 0,
+        desert: 0,
+        highland: 0,
+        alpine: 0,
+        lake: 0,
+        tundra: 0,
+        bryophyte: 0,
+        city: 0,
+        cultivated: 0,
+        polluted: 0,
+        seaCity: 0,
+        seaCultivated: 0,
+        seaPolluted: 0,
+        total: N
+      };
+      if (Array.isArray(gridData) && gridData.length === N) {
+        for (let i = 0; i < N; i++) {
+          const cell = gridData[i];
+          let cat = null;
+          // 海棲グリッドの優先順位: seaPolluted > seaCity > seaCultivated
+          if (cell && cell.seaPolluted) {
+            cat = 'seaPolluted';
+          } else if (cell && cell.seaCity) {
+            cat = 'seaCity';
+          } else if (cell && cell.seaCultivated) {
+            cat = 'seaCultivated';
+          } else if (cell && cell.polluted) {
+            cat = 'polluted';
+          } else if (cell && cell.city) {
+            cat = 'city';
+          } else if (cell && cell.bryophyte) {
+            cat = 'bryophyte';
+          } else if (cell && cell.cultivated) {
+            cat = 'cultivated';
+          } else if (cell && cell.terrain && cell.terrain.type === 'sea') {
+            const sea = cell.terrain.sea;
+            if (sea === 'deep') cat = 'deepSea';
+            else if (sea === 'glacier') cat = 'glacier';
+            else cat = 'shallowSea';
+          } else if (cell && cell.terrain && cell.terrain.type === 'land') {
+            const l = cell.terrain.land;
+            if (l === 'lowland') cat = 'lowland';
+            else if (l === 'desert') cat = 'desert';
+            else if (l === 'highland') cat = 'highland';
+            else if (l === 'alpine') cat = 'alpine';
+            else if (l === 'tundra') cat = 'tundra';
+            else if (l === 'lake') cat = 'lake';
+            else if (l === 'glacier') cat = 'glacier';
+            else cat = 'lowland';
+          } else {
+            cat = 'lowland';
+          }
+          counts[cat] += 1;
+        }
+      }
+      if (!this.stats) this.stats = {};
+      this.stats.gridTypeCounts = counts;
+    },
     openOrUpdatePopup() {
       const w = this.popupRef && !this.popupRef.closed ? this.popupRef : window.open('', 'ParametersOutput', 'width=520,height=700');
       this.popupRef = w;
@@ -644,17 +651,17 @@ export default {
       doc.write(html);
       doc.close();
     },
-    buildOutputHtml() {
-      const params = this.local;
-      const centers = this.mutableCenterParams || [];
-      const escape = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-      const fmtPct = (num, den) => {
-        if (!den || den <= 0) return '0.00%';
-        return (num * 100 / den).toFixed(2) + '%';
-      };
-      const typeCounts = (this.stats && this.stats.gridTypeCounts) ? this.stats.gridTypeCounts : null;
-      const totalN = typeCounts ? (typeCounts.total || (this.gridWidth * this.gridHeight)) : (this.gridWidth * this.gridHeight);
-      const centersHtml = centers.map((p, i) => `
+    // HTML用エスケープ（popup出力の安全性確保）
+    _escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    },
+    _fmtPct(num, den) {
+      if (!den || den <= 0) return '0.00%';
+      return (num * 100 / den).toFixed(2) + '%';
+    },
+    _buildCentersHtml(centers) {
+      const escape = (v) => this._escapeHtml(v);
+      return (centers || []).map((p, i) => `
         <div style="margin-bottom:8px;padding:8px;border:1px solid #ddd;border-radius:4px;">
           <div style="font-weight:bold;margin-bottom:4px;">中心点 ${i + 1}:</div>
           <div>座標 (x, y): (${escape(p.x)}, ${escape(p.y)}) <span style="color:#666">（シード固定）</span></div>
@@ -681,6 +688,16 @@ export default {
           </ul>
         </div>
       `).join('');
+    },
+    buildOutputHtml() {
+      const params = this.local;
+      const centers = this.mutableCenterParams || [];
+      const pre = (this.stats && this.stats.preGlacier) ? this.stats.preGlacier : null;
+      const escape = (v) => this._escapeHtml(v);
+      const fmtPct = (num, den) => this._fmtPct(num, den);
+      const typeCounts = (this.stats && this.stats.gridTypeCounts) ? this.stats.gridTypeCounts : null;
+      const totalN = typeCounts ? (typeCounts.total || (this.gridWidth * this.gridHeight)) : (this.gridWidth * this.gridHeight);
+      const centersHtml = this._buildCentersHtml(centers);
       return `
 <!doctype html>
 <html>
@@ -708,13 +725,16 @@ export default {
     <div class="row"><label>低地・乾燥地間距離閾値:</label><span>${escape(params.baseLandDistanceThreshold)}</span></div>
     <div class="row"><label>上端・下端ツンドラ追加グリッド数:</label><span>${escape(params.tundraExtraRows)}</span></div>
     <div class="row"><label>上端・下端ツンドラ総グリッド数:</label><span>${escape(this.topTundraRowsComputed)}</span></div>
-    <div class="row"><label>上端・下端氷河グリッド数:</label><span>${escape(params.topGlacierRows)}</span></div>
+    <div class="row"><label>上端・下端氷河グリッド数:</label><span>${escape(this.topGlacierRowsDisplayed)}</span></div>
     <div class="row"><label>陸(低地・乾燥地・ツンドラ)の氷河追加グリッド数:</label><span>${escape(params.landGlacierExtraRows)}</span></div>
     <div class="row"><label>高地の氷河追加グリッド数:</label><span>${escape(params.highlandGlacierExtraRows)}</span></div>
     <div class="row"><label>高山の氷河追加グリッド数:</label><span>${escape(params.alpineGlacierExtraRows)}</span></div>
     <div class="row"><label>グリッド幅×高さ:</label><span>${escape(this.gridWidth)} × ${escape(this.gridHeight)}</span></div>
+    ${
+      pre ? `<div class="row"><label>氷河上書き前 - 陸:</label><span>${escape(pre.landCount)} (${escape((pre.landRatio*100).toFixed(2))}% )</span></div>
+             <div class="row"><label>氷河上書き前 - 海:</label><span>${escape(pre.seaCount)} (${escape((100 - (pre.landRatio*100)).toFixed(2))}% )</span></div>` : ''
+    }
     <div class="row"><label>湖の数（平均）:</label><span>${escape(params.averageLakesPerCenter)}</span></div>
-    ${(this.stats && typeof this.stats.avgNearestChebyshevDistance === 'number') ? `<div class="row"><label>最近傍 Chebyshev 距離（平均）:</label><span>${escape(this.stats.avgNearestChebyshevDistance.toFixed(2))}</span></div>` : ''}
     <div class="section-title">グリッド種類の内訳（合計 ${escape(totalN)}）</div>
     <div class="row"><label>深海:</label><span>${typeCounts ? escape(typeCounts.deepSea) : '-'} (${typeCounts ? fmtPct(typeCounts.deepSea, totalN) : '-'})</span></div>
     <div class="row"><label>浅瀬:</label><span>${typeCounts ? escape(typeCounts.shallowSea) : '-'} (${typeCounts ? fmtPct(typeCounts.shallowSea, totalN) : '-'})</span></div>
@@ -727,6 +747,7 @@ export default {
     <div class="row"><label>湖:</label><span>${typeCounts ? escape(typeCounts.lake) : '-'} (${typeCounts ? fmtPct(typeCounts.lake, totalN) : '-'})</span></div>
     <div class="row"><label>都市:</label><span>${typeCounts ? escape(typeCounts.city) : '-'} (${typeCounts ? fmtPct(typeCounts.city, totalN) : '-'})</span></div>
     <div class="row"><label>農地:</label><span>${typeCounts ? escape(typeCounts.cultivated) : '-'} (${typeCounts ? fmtPct(typeCounts.cultivated, totalN) : '-'})</span></div>
+    <div class="row"><label>苔類進出地:</label><span>${typeCounts ? escape(typeCounts.bryophyte) : '-'} (${typeCounts ? fmtPct(typeCounts.bryophyte, totalN) : '-'})</span></div>
     <div class="row"><label>汚染地:</label><span>${typeCounts ? escape(typeCounts.polluted) : '-'} (${typeCounts ? fmtPct(typeCounts.polluted, totalN) : '-'})</span></div>
     <div class="row"><label>海棲都市:</label><span>${typeCounts ? escape(typeCounts.seaCity) : '-'} (${typeCounts ? fmtPct(typeCounts.seaCity, totalN) : '-'})</span></div>
     <div class="row"><label>海棲農地:</label><span>${typeCounts ? escape(typeCounts.seaCultivated) : '-'} (${typeCounts ? fmtPct(typeCounts.seaCultivated, totalN) : '-'})</span></div>
@@ -737,34 +758,197 @@ export default {
 </html>`;
     },
     openOrUpdatePlanePopup() {
-      const cell = Number(this.planeGridCellPx) || 3;
-      const displayW = this.gridWidth + 2;
-      const displayH = this.gridHeight + 2;
-      const canvasWidth = Math.max(1, displayW * cell);
-      const canvasHeight = Math.max(1, displayH * cell);
-      // ウィンドウサイズをcanvasに合わせて計算（padding 12px * 2 + border 1px * 2 + 行の高さ + 追加余白）
-      const EXTRA_POPUP_VERTICAL = 20; // 高さ方向の追加余白
-      const windowWidth = canvasWidth + 24 + 2 + 20;
-      const windowHeight = canvasHeight + 24 + 2 + 60 + EXTRA_POPUP_VERTICAL;
-      const shouldReuse = this.planePopupRef && !this.planePopupRef.closed;
-      const w = shouldReuse ? this.planePopupRef : window.open('', 'PlaneView', `width=${windowWidth},height=${windowHeight}`);
-      this.planePopupRef = w;
+      // build plane and sphere HTML and embed them into two iframes within a single popup
+      const w = this._getOrOpenPlaneSpherePopup();
       if (!w) return;
       const doc = w.document;
-      const html = this.buildPlaneHtml();
+
+      // 1) 外枠（iframe2枚だけ）を先に描画
+      this._writeDoc(doc, this._buildPlaneSphereShellHtml());
+
+      // 2) iframeの中身を流し込む（srcdoc）
+      const planeHtml = this.buildPlaneHtml();
+      const sphereHtml = this._getSphereHtmlForIframe();
+      this._setPlaneSphereIframes(doc, planeHtml, sphereHtml);
+    },
+    updatePlaneIframeOnly() {
+      // 既存の Plane&Sphere popup があれば、Plane iframe だけ更新する。
+      // srcdoc差し替えは iframe をリロードしてちらつくため、可能なら iframe 内の関数で canvas だけ再描画する。
+      const w = (this.planePopupRef && !this.planePopupRef.closed) ? this.planePopupRef : null;
+      if (!w) {
+        // 無ければ従来通り作成（この場合は sphere iframe も初期化される）
+        this.openOrUpdatePlanePopup();
+        return;
+      }
+      try {
+        const doc = w.document;
+        const pif = doc.getElementById('plane-iframe');
+        if (!pif) {
+          this.openOrUpdatePlanePopup();
+          return;
+        }
+        // 1) まずは「リロードなし更新」を試す
+        const pw = pif.contentWindow;
+        const fn = pw && typeof pw.__updatePlane === 'function' ? pw.__updatePlane : null;
+        const pv = pw && typeof pw.__planeVersion !== 'undefined' ? pw.__planeVersion : null;
+        const displayColors = Array.isArray(this.planeDisplayColors) ? this.planeDisplayColors : [];
+        const cell = Number(this.planeGridCellPx) || 3;
+        const displayW = this.gridWidth + 2;
+        const displayH = this.gridHeight + 2;
+        // バージョンが異なれば iframe を完全差し替えして内部スクリプトを更新する
+        if (pv !== null && pv !== this.planeBuildVersion) {
+          const planeHtml = this.buildPlaneHtml();
+          pif.srcdoc = planeHtml;
+          return;
+        }
+        if (fn) {
+          try {
+            // updateCount が一定回数を越えていれば内部で cleanup させ、srcdoc で再作成する
+            const updateCount = pw.__planeUpdateCount || 0;
+            const MAX_UPDATES = 200;
+            if (updateCount >= MAX_UPDATES && typeof pw.__cleanupPlane === 'function') {
+              try { pw.__cleanupPlane(); } catch (e) { /* ignore cleanup errors */ }
+              const planeHtml = this.buildPlaneHtml();
+              pif.srcdoc = planeHtml;
+              return;
+            }
+            fn(displayColors, displayW, displayH, cell);
+            if (typeof pw.__planeUpdateCount === 'number') pw.__planeUpdateCount++;
+            else pw.__planeUpdateCount = 1;
+            return;
+          } catch (e) {
+            // フォールバックして再描画
+            const planeHtml = this.buildPlaneHtml();
+            pif.srcdoc = planeHtml;
+            return;
+          }
+        }
+        // 2) 初回/互換: srcdoc差し替え（ちらつきやすい）
+        const planeHtml = this.buildPlaneHtml();
+        pif.srcdoc = planeHtml;
+      } catch (e) {
+        this.openOrUpdatePlanePopup();
+      }
+    },
+    // 更新: Plane と Sphere を非リロードで可能なら差分更新する（Generate/Revise 共通で使える）
+    updatePlaneAndSphereIframes() {
+      // Plane 更新
+      this.updatePlaneIframeOnly();
+
+      // Sphere 更新（Generate時はSphereも更新する。Reviseでは呼ばれない設計）
+      try {
+        const w = (this.planePopupRef && !this.planePopupRef.closed) ? this.planePopupRef : null;
+        if (!w) return;
+        const doc = w.document;
+        const sif = doc.getElementById('sphere-iframe');
+        if (!sif) return;
+        // If sphere iframe already attached and parent sphere component has initialized, request redraw
+        const sphComp = (this.$refs && this.$refs.sphere) ? this.$refs.sphere : null;
+        if (sphComp && this._sphereWin) {
+          // Use update count to avoid indefinite non-reload updates (resource leakage)
+          if ((this.sphereUpdateCount || 0) >= (this.sphereMaxUpdates || 200)) {
+            try { sphComp.cleanupSpherePopup(); } catch (e) { /* ignore cleanup errors */ }
+            // re-create iframe content
+            const sphereHtml = this._getSphereHtmlForIframe();
+            try { sif.srcdoc = sphereHtml; } catch (e) { /* ignore srcdoc set errors */ }
+            this.sphereUpdateCount = 0;
+            return;
+          }
+          try {
+            sphComp.requestRedraw();
+            this.sphereUpdateCount = (this.sphereUpdateCount || 0) + 1;
+            return;
+          } catch (e) {
+            // fallback: replace srcdoc
+            const sphereHtml = this._getSphereHtmlForIframe();
+            try { sif.srcdoc = sphereHtml; } catch (e) { /* ignore srcdoc set errors */ }
+            this.sphereUpdateCount = 0;
+            return;
+          }
+        } else {
+          // not attached yet: replace srcdoc so onload attaches
+          const sphereHtml = this._getSphereHtmlForIframe();
+          try { sif.srcdoc = sphereHtml; } catch (e) { /* ignore srcdoc set errors */ }
+          this.sphereUpdateCount = 0;
+          return;
+        }
+        } catch (e) { /* ignore overall update errors */ }
+    },
+    _getOrOpenPlaneSpherePopup() {
+      const w = (this.planePopupRef && !this.planePopupRef.closed)
+        ? this.planePopupRef
+        : window.open('', 'PlaneSphereView', 'width=1400,height=900,scrollbars=yes');
+      this.planePopupRef = w;
+      return w;
+    },
+    _buildPlaneSphereShellHtml() {
+      return `
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Plane & Sphere View</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html,body{height:100%;margin:0}
+      .wrap{display:flex;gap:8px;height:100vh;padding:8px;box-sizing:border-box;background:#000;color:#fff}
+      iframe{flex:1;border:1px solid #444;border-radius:6px;background:#000}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <iframe id="plane-iframe" title="Plane Map"></iframe>
+      <iframe id="sphere-iframe" title="Sphere View"></iframe>
+    </div>
+  </body>
+</html>`;
+    },
+    _writeDoc(doc, html) {
+      if (!doc) return;
       doc.open();
       doc.write(html);
       doc.close();
-      // 既に開かれている窓の場合はサイズを再設定してみる
-      if (shouldReuse && typeof w.resizeTo === 'function') {
-        try { w.resizeTo(windowWidth, windowHeight); } catch (e) { /* ignore */ }
-      }
+    },
+    _getSphereHtmlForIframe() {
+      const sph = (this.$refs && this.$refs.sphere) ? this.$refs.sphere : null;
+      if (sph && typeof sph.buildHtml === 'function') return sph.buildHtml();
+      return '<!doctype html><html><body><div>Sphere unavailable</div></body></html>';
+    },
+    _setPlaneSphereIframes(doc, planeHtml, sphereHtml) {
+      // set iframe contents from parent so we can wire sphere canvas to component methods
+      try {
+        const pif = doc.getElementById('plane-iframe');
+        const sif = doc.getElementById('sphere-iframe');
+        if (pif) pif.srcdoc = planeHtml;
+        if (!sif) return;
+        // Sphere は可能なら再利用してリロードを避ける（ちらつき防止）
+        // 初回は srcdoc を流し込み、onload で親側に canvas を渡す
+        sif.srcdoc = sphereHtml;
+        sif.onload = () => {
+          this._attachSphereToIframe(sif);
+        };
+      } catch (e) { void e; }
+    },
+    _attachSphereToIframe(sif) {
+      try {
+        const sw = sif.contentWindow;
+        if (!sw) return;
+        const sdoc = sw.document;
+        const canvas = sdoc.getElementById('sphere-canvas');
+        if (!canvas) return;
+        const sph = (this.$refs && this.$refs.sphere) ? this.$refs.sphere : null;
+        if (!sph) return;
+        // iframe内の球ビューは Sphere_Display 側でセットアップ（HTML生成とイベント配線を分離）
+        sph.attachToWindow(sw, canvas);
+        sw.addEventListener('beforeunload', () => { sph.cleanupSpherePopup(); });
+      } catch (e) { void e; }
     },
     buildPlaneHtml() {
       const displayColors = Array.isArray(this.planeDisplayColors) ? this.planeDisplayColors : [];
       const cell = Number(this.planeGridCellPx) || 3;
       const displayW = this.gridWidth + 2;
       const displayH = this.gridHeight + 2;
+      const buildVersion = this.planeBuildVersion || 0;
       return `
 <!doctype html>
 <html>
@@ -780,43 +964,123 @@ export default {
     </style>
   </head>
   <body>
+    <h1>Plane Map</h1>
+    <div class="row">${displayW} x ${displayH} cells, ${cell}px each</div>
     <canvas id="plane-canvas"></canvas>
     <script>
       (function(){
         try {
-          var colors = ${JSON.stringify(displayColors)};
-          var displayW = ${displayW};
-          var displayH = ${displayH};
-          var cell = ${cell};
           var cvs = document.getElementById('plane-canvas');
           if (!cvs) return;
-          cvs.width = Math.max(1, displayW * cell);
-          cvs.height = Math.max(1, displayH * cell);
           var ctx = cvs.getContext('2d');
           if (!ctx) return;
-          var i = 0;
-          for (var y = 0; y < displayH; y++) {
-            for (var x = 0; x < displayW; x++) {
-              var col = colors[i++] || '#000000';
-              ctx.fillStyle = col;
-              ctx.fillRect(x * cell, y * cell, cell, cell);
-            }
+
+          // ダブルバッファ（ちらつき防止）
+          var back = document.createElement('canvas');
+          var bctx = back.getContext('2d');
+
+          function draw(colors, w, h, cell) {
+            try {
+              w = Math.max(1, w|0);
+              h = Math.max(1, h|0);
+              cell = Math.max(1, cell|0);
+              cvs.width = w * cell;
+              cvs.height = h * cell;
+              back.width = cvs.width;
+              back.height = cvs.height;
+              var i = 0;
+              for (var y = 0; y < h; y++) {
+                for (var x = 0; x < w; x++) {
+                  var col = (colors && colors[i]) ? colors[i] : '#000000';
+                  i++;
+                  bctx.fillStyle = col;
+                  bctx.fillRect(x * cell, y * cell, cell, cell);
+                }
+              }
+              ctx.clearRect(0, 0, cvs.width, cvs.height);
+              ctx.drawImage(back, 0, 0);
+            } catch (e) { /* ignore draw errors */ }
           }
-          // canvasのサイズに合わせてウィンドウをリサイズ
-          var canvasWidth = cvs.width;
-          var canvasHeight = cvs.height;
-          var padding = 12 * 2; // body padding
-          var border = 1 * 2; // canvas border
-          var rowHeight = 30; // row要素の高さ
-          var margin = 20; // マージン
-          // 追加余白を popup 内部でも適用する
-          var EXTRA_POPUP_VERTICAL = ${Number(this.planePopupVerticalExtra) || 0};
-          var newWidth = canvasWidth + padding + border + margin;
-          var newHeight = canvasHeight + padding + border + rowHeight + margin + EXTRA_POPUP_VERTICAL;
-          if (window.resizeTo) {
-            window.resizeTo(newWidth, newHeight);
-          }
-        } catch (e) {}
+
+          // バージョン情報（親が比較して差し替え判断する）
+          window.__planeVersion = ${buildVersion};
+          // update 回数カウンタ（再生成閾値に達したら親が再作成する）
+          window.__planeUpdateCount = 0;
+          // 内部で持つ一時RAFハンドル
+          window.__planeRAF = null;
+          window.__pendingPlane = null;
+
+          // cleanup API（親が呼べる）。タイマーやWebGLコンテキスト等があればここで解放する。
+          window.__cleanupPlane = function() {
+            try {
+              // Stop RAF / timers
+              try { if (window.__planeRAF) { cancelAnimationFrame(window.__planeRAF); window.__planeRAF = null; } } catch(e){}
+              try { if (window.__planeTimer) { clearInterval(window.__planeTimer); window.__planeTimer = null; } } catch(e){}
+              // Remove pending draw
+              window.__pendingPlane = null;
+
+              // Remove known event handlers if present
+              try { if (window.__planeOnResize) window.removeEventListener('resize', window.__planeOnResize); } catch(e){}
+
+              // WebGL resource cleanup (if any)
+              try {
+                var cvs = document.getElementById('plane-canvas');
+                if (cvs) {
+                  var gl = cvs.getContext('webgl2') || cvs.getContext('webgl') || cvs.getContext('experimental-webgl');
+                  if (gl) {
+                    try {
+                      // Delete tracked resources if arrays exist
+                      if (Array.isArray(window.__planeTextures)) {
+                        window.__planeTextures.forEach(function(t){ try { gl.deleteTexture(t); } catch(e){} });
+                      }
+                      if (Array.isArray(window.__planeBuffers)) {
+                        window.__planeBuffers.forEach(function(b){ try { gl.deleteBuffer(b); } catch(e){} });
+                      }
+                      if (Array.isArray(window.__planePrograms)) {
+                        window.__planePrograms.forEach(function(p){ try { gl.deleteProgram(p); } catch(e){} });
+                      }
+                      if (Array.isArray(window.__planeShaders)) {
+                        window.__planeShaders.forEach(function(s){ try { gl.deleteShader(s); } catch(e){} });
+                      }
+                    } catch(e) { /* ignore gl resource deletion errors */ }
+                    // Try to lose context to free GPU resources
+                    try {
+                      var loseExt = gl.getExtension && (gl.getExtension('WEBGL_lose_context') || gl.getExtension('MOZ_WEBGL_lose_context') || gl.getExtension('WEBKIT_WEBGL_lose_context'));
+                      if (loseExt && typeof loseExt.loseContext === 'function') {
+                        try { loseExt.loseContext(); } catch(e) {}
+                      }
+                    } catch(e) { /* ignore getExtension errors */ }
+                  }
+                }
+              } catch(e) { /* ignore overall WebGL cleanup errors */ }
+
+              // Clear references to help GC
+              try { window.__planeTextures = null; } catch(e){}
+              try { window.__planeBuffers = null; } catch(e){}
+              try { window.__planePrograms = null; } catch(e){}
+              try { window.__planeShaders = null; } catch(e){}
+              try { window.__planeOnResize = null; } catch(e){}
+            } catch (e) { /* ignore cleanup wrapper errors */ }
+          };
+
+          // 親から呼べる更新関数（iframeリロード不要）
+          window.__updatePlane = function(colors, w, h, cell) {
+            // rAFでまとめて描画（連打時のちらつき軽減）
+            window.__pendingPlane = { colors: colors, w: w, h: h, cell: cell };
+            if (window.__planeRAF) return;
+            window.__planeRAF = requestAnimationFrame(function(){
+              window.__planeRAF = null;
+              var p = window.__pendingPlane;
+              window.__pendingPlane = null;
+              if (!p) return;
+              draw(p.colors, p.w, p.h, p.cell);
+              window.__planeUpdateCount = (window.__planeUpdateCount || 0) + 1;
+            });
+          };
+
+          // 初期描画
+          window.__updatePlane(${JSON.stringify(displayColors)}, ${displayW}, ${displayH}, ${cell});
+          } catch (e) { /* ignore init errors */ }
       })();
     </scr${''}ipt>
   </body>

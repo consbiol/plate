@@ -28,7 +28,7 @@ export default {
   },
   computed: {
     cellSizePx() {
-      const v = (this.$store && this.$store.getters && typeof this.$store.getters.planeGridCellPx === 'number')
+      const v = (typeof this.$store?.getters?.planeGridCellPx === 'number')
         ? this.$store.getters.planeGridCellPx
         : 3;
       const iv = Math.round(Number(v));
@@ -63,7 +63,7 @@ export default {
       }
       // 2) gridData があれば、時代色を優先して導出（colorHexは無視）
       if (this.gridData && this.gridData.length === this.gridWidth * this.gridHeight) {
-        const era = this.era || ((this.$store && this.$store.getters && this.$store.getters.era) ? this.$store.getters.era : null);
+        const era = this.era || (this.$store?.getters?.era ?? null);
         const eraColors = getEraTerrainColors(era);
         return deriveDisplayColorsFromGridData(this.gridData, this.gridWidth, this.gridHeight, undefined, eraColors, /*preferPalette*/ true);
       } 
