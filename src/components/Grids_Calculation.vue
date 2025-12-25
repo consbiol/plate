@@ -28,6 +28,7 @@ import { applySeededLogToCenterParameters } from '../utils/terrain/centerParams.
 import { computePreGlacierStats, buildGeneratedPayload } from '../utils/terrain/output.js';
 import { computeTopGlacierRowsFromAverageTemperature } from '../utils/terrain/glacierRows.js';
 import { noise2D as noise2DUtil, fractalNoise2D as fractalNoise2DUtil } from '../utils/noise.js';
+import { poissonSample } from '../utils/stats/poisson.js';
 // このコンポーネントは「計算専用」です（UIや描画は行いません）。
 // 概要:
 // 1) 陸中心のサンプリングと各中心の影響（スコア）計算
@@ -197,16 +198,7 @@ export default {
     },
     // Poissonサンプリング（湖/高地の個数決定用）- 既存ロジックの関数化（乱数消費順不変）
     _poissonSample(lambda, maxK = 20, rng) {
-      let count = 0;
-      let p = Math.exp(-lambda);
-      let rand = (rng || Math.random)();
-      let sum = p;
-      for (let k = 0; k < maxK; k++) {
-        if (rand < sum) { count = k; break; }
-        p = p * lambda / (k + 1);
-        sum += p;
-      }
-      return count;
+      return poissonSample(lambda, maxK, rng);
     },
     // 湖の生成（各中心ごと）＋周囲低地化（縁取り）
     _generateLakes(centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog) {

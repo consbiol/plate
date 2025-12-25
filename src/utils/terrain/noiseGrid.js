@@ -5,6 +5,15 @@ function isSeedStrictEra(vm) {
 }
 
 export function getDirections8() {
+  // Use centralized DIRS8 constant to avoid duplicate definitions
+  // Import dynamically to avoid circular import issues when module is required early.
+  try {
+    // eslint-disable-next-line global-require
+    const { DIRS8 } = require('./features/constants');
+    if (Array.isArray(DIRS8) && DIRS8.length > 0) return DIRS8;
+  } catch (e) {
+    // fallback to local definition
+  }
   return [
     { dx: -1, dy: -1 }, { dx: 0, dy: -1 }, { dx: 1, dy: -1 },
     { dx: -1, dy: 0 },                     { dx: 1, dy: 0 },

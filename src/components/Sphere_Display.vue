@@ -9,6 +9,7 @@ import {
   getEraLandTint,
   getEraCloudTint
 } from '../utils/colors.js';
+import { fractalNoise2D as fractalNoise2DUtil } from '../utils/noise.js';
 export default {
   name: 'Sphere_Display',
   props: {
@@ -211,18 +212,10 @@ export default {
       return s - Math.floor(s);
     },
     _fractalNoise2D(x, y, octaves = 4, persistence = 0.5) {
-      let value = 0;
-      let amplitude = 1;
-      let frequency = 1;
-      let maxValue = 0;
-      for (let i = 0; i < octaves; i++) {
-        value += (this._hashNoise2D(x * frequency, y * frequency) * 2 - 1) * amplitude;
-        maxValue += amplitude;
-        amplitude *= persistence;
-        frequency *= 2;
-      }
-      // normalize to 0..1
-      return (value / maxValue) * 0.5 + 0.5;
+      // Delegate to shared noise util but preserve previous return range (0..1)
+      const v = fractalNoise2DUtil(x, y, octaves, persistence, 1.0);
+      // fractalNoise2DUtil returns roughly in [-1,1]; map to [0,1]
+      return (v * 0.5) + 0.5;
     },
     // --- Cloud (CPU) tileable noise helpers ---
     _rand2(ix, iy) {

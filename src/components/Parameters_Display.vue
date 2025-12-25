@@ -241,6 +241,7 @@ import Grids_Calculation from './Grids_Calculation.vue';
 import Sphere_Display from './Sphere_Display.vue';
 import { deriveDisplayColorsFromGridData, getEraTerrainColors } from '../utils/colors.js';
 import { ERAS, GRID_DEFAULTS, PARAM_DEFAULTS, createLocalParams } from '../utils/paramsDefaults.js';
+import { computeGlacierBaseRowsFromTemperature } from '../utils/terrain/glacierAnchors.js';
 export default {
   name: 'Parameters_Display',
   components: { Grids_Calculation, Sphere_Display },
@@ -393,33 +394,7 @@ export default {
     updateAverageTemperature(value) {
       const t = (typeof value === 'number') ? value
         : this.averageTemperature;
-      const anchors = [
-        // Grids_Calculation.vue と同じアンカー（温度→基準氷河row）
-        { t: -25, val: 42 },
-        { t: -15, val: 32 },
-        { t: -5,  val: 22 },
-        { t: 5,   val: 12 },
-        { t: 10,  val: 7  },
-        { t: 15,  val: 2  },
-        { t: 25,  val: -8 }
-      ];
-      let v;
-      if (t <= anchors[0].t) {
-        v = anchors[0].val + (t - anchors[0].t) * (-1); // 10℃あたり+10 → 1℃で+1（温度低下で増える＝傾き-1）
-      } else if (t >= anchors[anchors.length - 1].t) {
-        const last = anchors[anchors.length - 1];
-        v = last.val + (t - last.t) * (-1);
-      } else {
-        for (let i = 0; i < anchors.length - 1; i++) {
-          const a = anchors[i];
-          const b = anchors[i + 1];
-          if (t >= a.t && t <= b.t) {
-            const ratio = (t - a.t) / (b.t - a.t);
-            v = a.val + ratio * (b.val - a.val);
-            break;
-          }
-        }
-      }
+      const v = computeGlacierBaseRowsFromTemperature(t);
       // 端数は四捨五入。負も許容（海氷河は作成しないよう計算側でガード）
       this.local.topGlacierRows = Math.round(v);
     },
