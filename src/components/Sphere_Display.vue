@@ -3,8 +3,12 @@
 </template>
 
 <script>
-import { deriveDisplayColorsFromGridData } from '../utils/colors.js';
-import { getEraTerrainColors, getEraLandTint, getEraCloudTint } from '../utils/colors.js';
+import {
+  deriveDisplayColorsFromGridData,
+  getEraTerrainColors,
+  getEraLandTint,
+  getEraCloudTint
+} from '../utils/colors.js';
 export default {
   name: 'Sphere_Display',
   props: {
@@ -28,98 +32,34 @@ export default {
     // 極周辺での雲生成ブースト強度（0..1）。0で無効、1で強ブースト
     polarCloudBoost: { type: Number, required: false, default: 1.0 }
   },
+  // 破棄時にポップアップ/回転ループを確実に止める（メモリリーク・背景回転防止）
+  beforeUnmount() {
+    this.cleanupSpherePopup();
+  },
   watch: {
     era() {
       // 時代変更時に即時再描画（回転していない場合の反映用）
-      if (this._sphereCanvas) {
-        if (this._useWebGL) this.drawWebGL(); else this.drawSphere(this._sphereCanvas);
-      }
+      this.requestRedraw();
     },
     f_cloud() {
-      if (this._sphereCanvas) {
-        if (this._useWebGL) this.drawWebGL(); else this.drawSphere(this._sphereCanvas);
-      }
+      this.requestRedraw();
     },
     cloudPeriod() {
-      if (this._sphereCanvas) {
-        if (this._useWebGL) this.drawWebGL(); else this.drawSphere(this._sphereCanvas);
-      }
+      this.requestRedraw();
     },
     polarCloudBoost() {
-      if (this._sphereCanvas) {
-        if (this._useWebGL) this.drawWebGL(); else this.drawSphere(this._sphereCanvas);
-      }
+      this.requestRedraw();
     }
   },
   methods: {
-    // colors utils are imported
-    openSpherePopup() {
-      const w = window.open('', 'SphereView', 'width=700,height=900');
-      if (!w) return;
-      this._sphereWin = w;
-      // 既存の回転を停止
-      if (this._rotationTimer) {
-        clearInterval(this._rotationTimer);
-        this._rotationTimer = null;
-      }
-      this._rotationColumns = 0;
-      this._isRotating = false;
-      this._rotationMsPerGrid = 100; // 10グリッド/秒
-      this._minMsPerGrid = 20; // 最大50 grid/s
-      this._maxMsPerGrid = 5000;
-      this._rafId = null;
-      this._lastTimestamp = null;
-      this._accumMs = 0;
-      const doc = w.document;
-      const html = this.buildHtml();
-      doc.open();
-      doc.write(html);
-      doc.close();
-      // 描画
-      const canvas = doc.getElementById('sphere-canvas');
-      if (!canvas) return;
-      this._sphereCanvas = canvas;
-      // Try initialize WebGL renderer; fallback to CPU draw
-      try {
-        this._useWebGL = this.initWebGL(canvas);
-      } catch (e) {
-        this._useWebGL = false;
-      }
-      // compute buffer values for debug display
-      // (debug UI removed)
-      if (this._useWebGL) {
-        this.drawWebGL();
-      } else {
-        this.drawSphere(canvas);
-      }
-      // ボタン配線
-      const rotateBtn = doc.getElementById('rotate-btn');
-      if (rotateBtn) {
-        rotateBtn.addEventListener('click', () => {
-          this.toggleRotate(rotateBtn);
-        });
-      }
-      const fasterBtn = doc.getElementById('faster-btn');
-      if (fasterBtn) {
-        fasterBtn.addEventListener('click', () => {
-          this.adjustSpeed(true);
-        });
-      }
-      const slowerBtn = doc.getElementById('slower-btn');
-      if (slowerBtn) {
-        slowerBtn.addEventListener('click', () => {
-          this.adjustSpeed(false);
-        });
-      }
-      this.updateSpeedLabel();
-      // ウィンドウクローズ時に停止
-      w.addEventListener('beforeunload', () => {
-        this.stopRotationLoop();
-        this._isRotating = false;
-      });
+    // 描画の再実行（WebGL/CPUのどちらでも同じトリガに統一）
+    requestRedraw() {
+      if (!this._sphereCanvas) return;
+      if (this._useWebGL) this.drawWebGL();
+      else this.drawSphere(this._sphereCanvas);
     },
-    // derive display colors is imported
-    buildHtml() {
+    // popup/iframe 側のHTMLを生成（表示だけ。イベント配線は別メソッドに分離）
+    buildSphereHtml() {
       return `
 <!doctype html>
 <html>
@@ -149,6 +89,107 @@ export default {
     <canvas id="sphere-canvas" width="700" height="700"></canvas>
   </body>
 </html>`;
+    },
+    // 互換用（Parameters_Display.vue が iframe srcdoc に使う）
+    buildHtml() {
+      return this.buildSphereHtml();
+    },
+    // popup/iframe 内のボタン配線を行う（副作用）
+    bindPopupControls(doc) {
+      if (!doc) return;
+      const rotateBtn = doc.getElementById('rotate-btn');
+      if (rotateBtn) {
+        rotateBtn.addEventListener('click', () => {
+          this.toggleRotate(rotateBtn);
+        });
+      }
+      const fasterBtn = doc.getElementById('faster-btn');
+      if (fasterBtn) {
+        fasterBtn.addEventListener('click', () => {
+          this.adjustSpeed(true);
+        });
+      }
+      const slowerBtn = doc.getElementById('slower-btn');
+      if (slowerBtn) {
+        slowerBtn.addEventListener('click', () => {
+          this.adjustSpeed(false);
+        });
+      }
+      this.updateSpeedLabel();
+    },
+    // popup/iframe の window/canvas を受け取り、描画と配線をまとめてセットアップ
+    attachToWindow(win, canvas) {
+      if (!win || !canvas) return false;
+      this._sphereWin = win;
+      this._sphereCanvas = canvas;
+      // 初期回転速度を 10 grid/s に設定（1 grid/s = 1000 ms, 10 grid/s = 100 ms）
+      this._rotationMsPerGrid = 100;
+      try {
+        this._useWebGL = this.initWebGL(canvas);
+      } catch (e) {
+        this._useWebGL = false;
+      }
+      this.requestRedraw();
+      this.bindPopupControls(win.document);
+      return true;
+    },
+    // 回転ループとその状態をまとめてリセット（open/close/破棄で共通化）
+    resetRotationState() {
+      // rAF 停止
+      this.stopRotationLoop();
+      // 旧実装の interval が残っている場合に備えて停止（互換用）
+      if (this._rotationTimer) {
+        clearInterval(this._rotationTimer);
+        this._rotationTimer = null;
+      }
+      // 状態初期化
+      this._rotationColumns = 0;
+      this._rotationMsPerGrid = 100; // 10グリッド/秒
+      this._minMsPerGrid = 20; // 最大50 grid/s
+      this._maxMsPerGrid = 5000;
+      this._lastTimestamp = null;
+      this._accumMs = 0;
+    },
+    // ポップアップ関連の後始末（イベント解除＋参照切り離し）
+    cleanupSpherePopup() {
+      this.resetRotationState();
+      // beforeunload の解除（再オープン時の多重登録防止）
+      try {
+        if (this._sphereWin && this._onSphereBeforeUnload && !this._sphereWin.closed) {
+          this._sphereWin.removeEventListener('beforeunload', this._onSphereBeforeUnload);
+        }
+      } catch (e) {
+        // cross-origin にはならない想定だが、念のため握りつぶす
+      }
+      this._onSphereBeforeUnload = null;
+      // canvas/window参照を切って、watcher等からの描画呼び出しを安全にする
+      this._sphereCanvas = null;
+      this._sphereWin = null;
+    },
+    // colors utils are imported
+    openSpherePopup() {
+      const w = window.open('', 'SphereView', 'width=700,height=900');
+      if (!w) return;
+      // 既存ポップアップがあれば、イベント解除と状態リセットを先に行う
+      // （連続openでbeforeunloadが多重登録されるのを防ぐ）
+      this.cleanupSpherePopup();
+      this._sphereWin = w;
+      const doc = w.document;
+      const html = this.buildSphereHtml();
+      doc.open();
+      doc.write(html);
+      doc.close();
+      // 描画
+      const canvas = doc.getElementById('sphere-canvas');
+      if (!canvas) return;
+      // compute buffer values for debug display
+      // (debug UI removed)
+      this.attachToWindow(w, canvas);
+      // ウィンドウクローズ時に停止
+      this._onSphereBeforeUnload = () => {
+        this.cleanupSpherePopup();
+      };
+      w.addEventListener('beforeunload', this._onSphereBeforeUnload);
     },
     // color string like 'rgb(r,g,b)' or '#RRGGBB' -> [r,g,b]
     parseColorToRgb(s) {

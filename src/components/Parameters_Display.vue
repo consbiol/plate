@@ -71,7 +71,7 @@
     </div>
     <div style="margin-bottom: 8px;">
       <label>上端・下端氷河グリッド数: </label>
-      <span>{{ Math.round(local.topGlacierRows) }}</span>
+      <span>{{ topGlacierRowsDisplayed }}</span>
     </div>
     <div style="margin-bottom: 8px;">
       <label>陸(低地・乾燥地・ツンドラ)の氷河追加グリッド数: </label>
@@ -207,7 +207,7 @@
       :centerParameters="mutableCenterParams"
       :generateSignal="generateSignal"
         :deterministicSeed="local.deterministicSeed"
-      :era="local.era || ($store && $store.getters ? $store.getters.era : null)"
+      :era="local.era || storeEra"
       :cityGenerationProbability="local.cityProbability"
       :cultivatedGenerationProbability="local.cultivatedProbability"
       :bryophyteGenerationProbability="local.bryophyteProbability"
@@ -228,7 +228,7 @@
       :gridData="gridDataLocal"
       :polarBufferRows="75"
       :f_cloud="local.f_cloud"
-      :era="$store && $store.getters ? $store.getters.era : null"
+      :era="storeEra"
     />
   </div>
 </template>
@@ -240,137 +240,90 @@
 import Grids_Calculation from './Grids_Calculation.vue';
 import Sphere_Display from './Sphere_Display.vue';
 import { deriveDisplayColorsFromGridData, getEraTerrainColors } from '../utils/colors.js';
+import { ERAS, GRID_DEFAULTS, PARAM_DEFAULTS, createLocalParams } from '../utils/paramsDefaults.js';
 export default {
   name: 'Parameters_Display',
   components: { Grids_Calculation, Sphere_Display },
   props: {
     // 陸の中心点の数: 地形生成の起点となる中心点の個数。多いほど複雑な地形になります。
-    centersY: { type: Number, required: false, default: 7 },
+    centersY: { type: Number, required: false, default: PARAM_DEFAULTS.centersY },
     // 陸の割合: 全グリッド中、陸地が占める割合の指標
-    seaLandRatio: { type: Number, required: false, default: 0.3 },
+    seaLandRatio: { type: Number, required: false, default: PARAM_DEFAULTS.seaLandRatio },
     // 中心間の排他距離: 各中心点間の最小距離。近すぎると重複した地形になります。
-    minCenterDistance: { type: Number, required: false, default: 20 },
+    minCenterDistance: { type: Number, required: false, default: PARAM_DEFAULTS.minCenterDistance },
     // 浅瀬・深海間の距離閾値: 海グリッドが浅瀬か深海かを判定する距離の基準値。大きいほど浅瀬が広がります。
-    baseSeaDistanceThreshold: { type: Number, required: false, default: 5 },
+    baseSeaDistanceThreshold: { type: Number, required: false, default: PARAM_DEFAULTS.baseSeaDistanceThreshold },
     // 低地・乾燥地間の距離閾値: 陸グリッドが低地か乾燥地かを判定する距離の基準値。大きいほど低地が広がります。
-    baseLandDistanceThreshold: { type: Number, required: false, default: 10 },
+    baseLandDistanceThreshold: { type: Number, required: false, default: PARAM_DEFAULTS.baseLandDistanceThreshold },
     // 低地・乾燥地間の距離閾値（帯ごと、上端/下端から5グリッド単位、帯1..帯10）
-    landDistanceThreshold1: { type: Number, required: false, default: 10 },
-    landDistanceThreshold2: { type: Number, required: false, default: 15 },
-    landDistanceThreshold3: { type: Number, required: false, default: 15 },
-    landDistanceThreshold4: { type: Number, required: false, default: 10 },
-    landDistanceThreshold5: { type: Number, required: false, default: 8 },
-    landDistanceThreshold6: { type: Number, required: false, default: 4 },
-    landDistanceThreshold7: { type: Number, required: false, default: 1 },
-    landDistanceThreshold8: { type: Number, required: false, default: 4 },
-    landDistanceThreshold9: { type: Number, required: false, default: 8 },
-    landDistanceThreshold10: { type: Number, required: false, default: 15 },
+    landDistanceThreshold1: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold1 },
+    landDistanceThreshold2: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold2 },
+    landDistanceThreshold3: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold3 },
+    landDistanceThreshold4: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold4 },
+    landDistanceThreshold5: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold5 },
+    landDistanceThreshold6: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold6 },
+    landDistanceThreshold7: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold7 },
+    landDistanceThreshold8: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold8 },
+    landDistanceThreshold9: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold9 },
+    landDistanceThreshold10: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold10 },
     // 帯の縦揺らぎ（行数）: 0で無効
-    landBandVerticalWobbleRows: { type: Number, required: false, default: 2 },
+    landBandVerticalWobbleRows: { type: Number, required: false, default: PARAM_DEFAULTS.landBandVerticalWobbleRows },
     // 上端・下端ツンドラグリッド追加数（デフォルト: 7）: 上端・下端氷河グリッド数からの追加グリッド数
-    tundraExtraRows: { type: Number, required: false, default: 7 },
+    tundraExtraRows: { type: Number, required: false, default: PARAM_DEFAULTS.tundraExtraRows },
     // 上端・下端氷河グリッド数（デフォルト: 5）: 上下端から何グリッド分を氷河に上書きするかの基準値（海/湖は追加なし）。
-    topGlacierRows: { type: Number, required: false, default: 5 },
+    topGlacierRows: { type: Number, required: false, default: PARAM_DEFAULTS.topGlacierRows },
     // 陸(低地・乾燥地・ツンドラ)の氷河追加グリッド数（デフォルト: 5）: 陸地タイプに応じて氷河上書き範囲を追加するグリッド数。
-    landGlacierExtraRows: { type: Number, required: false, default: 5 },
+    landGlacierExtraRows: { type: Number, required: false, default: PARAM_DEFAULTS.landGlacierExtraRows },
     // 高地の氷河追加グリッド数（デフォルト: 15）: 高地タイプに応じて氷河上書き範囲を追加するグリッド数。
-    highlandGlacierExtraRows: { type: Number, required: false, default: 15 },
+    highlandGlacierExtraRows: { type: Number, required: false, default: PARAM_DEFAULTS.highlandGlacierExtraRows },
     // 高山の氷河追加グリッド数（デフォルト: 20）: 高山タイプに応じて氷河上書き範囲を追加するグリッド数。
-    alpineGlacierExtraRows: { type: Number, required: false, default: 20},
+    alpineGlacierExtraRows: { type: Number, required: false, default: PARAM_DEFAULTS.alpineGlacierExtraRows },
     // 湖の数（平均）（デフォルト: 1）: 各中心点あたりの平均的な湖の個数。ポアソン分布で決定されます。
-    averageLakesPerCenter: { type: Number, required: false, default: 2 },
+    averageLakesPerCenter: { type: Number, required: false, default: PARAM_DEFAULTS.averageLakesPerCenter },
     // 高地の数（平均）（デフォルト: 1）: 各中心点あたりの平均的な高地の個数。ポアソン分布で決定されます。サイズは湖の10倍、形状はメイン方向に沿った帯状で横方向にノイズ性の広がりを持ちます。色は灰色がかった茶色（茶色気味）です。
-    averageHighlandsPerCenter: { type: Number, required: false, default: 5 },
+    averageHighlandsPerCenter: { type: Number, required: false, default: PARAM_DEFAULTS.averageHighlandsPerCenter },
     // 中心点のパラメータ配列（デフォルト: 空配列）: 各中心点の影響係数、減衰率、方向角度などの詳細パラメータ。
     centerParameters: { type: Array, required: false, default: () => [] },
     // 雲量（0..1）: 被覆度優先で効く
-    f_cloud: { type: Number, required: false, default: 0.67 },
+    f_cloud: { type: Number, required: false, default: PARAM_DEFAULTS.f_cloud },
     // 都市生成確率（低地、海隣接で10倍）
-    cityProbability: { type: Number, required: false, default: 0.002 },
+    cityProbability: { type: Number, required: false, default: PARAM_DEFAULTS.cityProbability },
     // 耕作地生成確率（低地、海隣接で10倍）
-    cultivatedProbability: { type: Number, required: false, default: 0.05 },
+    cultivatedProbability: { type: Number, required: false, default: PARAM_DEFAULTS.cultivatedProbability },
     // 苔類進出地生成確率（低地、海隣接で100倍）
-    bryophyteProbability: { type: Number, required: false, default: 0.005 },
+    bryophyteProbability: { type: Number, required: false, default: PARAM_DEFAULTS.bryophyteProbability },
     // 汚染地クラスター数（マップ全体、シードで開始セルを決定）
-    pollutedAreasCount: { type: Number, required: false, default: 1 },
+    pollutedAreasCount: { type: Number, required: false, default: PARAM_DEFAULTS.pollutedAreasCount },
     // 海棲都市生成確率（浅瀬、陸隣接で10倍）
-    seaCityProbability: { type: Number, required: false, default: 0.002 },
+    seaCityProbability: { type: Number, required: false, default: PARAM_DEFAULTS.seaCityProbability },
     // 海棲耕作地生成確率（浅瀬、陸隣接で10倍）
-    seaCultivatedProbability: { type: Number, required: false, default: 0.05 },
+    seaCultivatedProbability: { type: Number, required: false, default: PARAM_DEFAULTS.seaCultivatedProbability },
     // 海棲汚染地クラスター数（マップ全体、シードで開始セルを決定）
-    seaPollutedAreasCount: { type: Number, required: false, default: 1 },
+    seaPollutedAreasCount: { type: Number, required: false, default: PARAM_DEFAULTS.seaPollutedAreasCount },
     // 大陸中心点を赤で表示（デフォルト: ON）
-    showCentersRed: { type: Boolean, required: false, default: true },
+    showCentersRed: { type: Boolean, required: false, default: PARAM_DEFAULTS.showCentersRed },
     // 中心点近傍の陸生成バイアス（0で無効、値を上げると中心付近が陸になりやすい）
-    centerBias: { type: Number, required: false, default: 0.5 }
+    centerBias: { type: Number, required: false, default: PARAM_DEFAULTS.centerBias }
   },
   mounted() {
     // 初期表示時に平均気温から氷河行数を算出（デフォルト 15℃ → 5）
     this.updateAverageTemperature();
     // store の era をローカル初期値に同期（なければ一覧の先頭）
-    const storeEra = (this.$store && this.$store.getters && this.$store.getters.era) ? this.$store.getters.era : null;
-    this.local.era = storeEra || '大森林時代';
+    this.local.era = this.storeEra || '大森林時代';
   },
   data() {
     return {
       // グリッド幅・高さ（初期値: 200x100）
-      gridWidth: 200,
-      gridHeight: 100,
+      gridWidth: GRID_DEFAULTS.gridWidth,
+      gridHeight: GRID_DEFAULTS.gridHeight,
       gridDataLocal: [],
       // ポップアップ描画用の平面色（+2枠込み）
       planeDisplayColors: [],
       // 平面地図専用ポップアップ
       planePopupRef: null,
-      local: {
-        centersY: this.centersY,
-        seaLandRatio: this.seaLandRatio,
-        f_cloud: this.f_cloud,
-        minCenterDistance: this.minCenterDistance,
-        baseSeaDistanceThreshold: this.baseSeaDistanceThreshold,
-        baseLandDistanceThreshold: this.baseLandDistanceThreshold,
-        tundraExtraRows: this.tundraExtraRows,
-        topGlacierRows: this.topGlacierRows,
-        landBandVerticalWobbleRows: this.landBandVerticalWobbleRows,
-        landDistanceThreshold1: this.landDistanceThreshold1,
-        landDistanceThreshold2: this.landDistanceThreshold2,
-        landDistanceThreshold3: this.landDistanceThreshold3,
-        landDistanceThreshold4: this.landDistanceThreshold4,
-        landDistanceThreshold5: this.landDistanceThreshold5,
-        landDistanceThreshold6: this.landDistanceThreshold6,
-        landDistanceThreshold7: this.landDistanceThreshold7,
-        landDistanceThreshold8: this.landDistanceThreshold8,
-        landDistanceThreshold9: this.landDistanceThreshold9,
-        landDistanceThreshold10: this.landDistanceThreshold10,
-        landGlacierExtraRows: this.landGlacierExtraRows,
-        highlandGlacierExtraRows: this.highlandGlacierExtraRows,
-        alpineGlacierExtraRows: this.alpineGlacierExtraRows,
-        averageLakesPerCenter: this.averageLakesPerCenter,
-        deterministicSeed: '',
-        cityProbability: this.cityProbability,
-        cultivatedProbability: this.cultivatedProbability,
-        bryophyteProbability: this.bryophyteProbability,
-        pollutedAreasCount: this.pollutedAreasCount,
-        seaCityProbability: this.seaCityProbability,
-        seaCultivatedProbability: this.seaCultivatedProbability,
-        seaPollutedAreasCount: this.seaPollutedAreasCount,
-        showCentersRed: this.showCentersRed,
-        centerBias: this.centerBias
-      },
+      local: createLocalParams(this),
       // UI で選べる時代一覧（store.era と対応）
-      eras: [
-        '爆撃時代',
-        '生命発生前時代',
-        '嫌気性細菌誕生時代',
-        '光合成細菌誕生時代',
-        '真核生物誕生時代',
-        '多細胞生物誕生時代',
-        '海洋生物多様化時代',
-        '苔類進出時代',
-        'シダ植物時代',
-        '大森林時代',
-        '文明時代',
-        '海棲文明時代'
-      ],
+      eras: ERAS,
       // 中心点のパラメータはdeepコピーして編集可能にする
       mutableCenterParams: JSON.parse(JSON.stringify(this.centerParameters || [])),
       generateSignal: 0,
@@ -379,12 +332,14 @@ export default {
     };
   },
   computed: {
+    // store ガードを各所に散らさないための共通アクセサ
+    storeEra() {
+      return this.$store?.getters?.era ?? null;
+    },
     averageTemperature: {
       get() {
-        if (this.$store && this.$store.getters && typeof this.$store.getters.averageTemperature === 'number') {
-          return this.$store.getters.averageTemperature;
-        }
-        return 15;
+        const v = this.$store?.getters?.averageTemperature;
+        return (typeof v === 'number') ? v : 15;
       },
       set(val) {
         let num = Number(val);
@@ -401,19 +356,15 @@ export default {
     },
     planeGridCellPx: {
       get() {
-        if (this.$store && this.$store.getters && typeof this.$store.getters.planeGridCellPx === 'number') {
-          return this.$store.getters.planeGridCellPx;
-        }
-        return 3;
+        const v = this.$store?.getters?.planeGridCellPx;
+        return (typeof v === 'number') ? v : 3;
       },
       set(val) {
         let v = Math.round(Number(val));
         if (!isFinite(v)) v = 3;
         if (v < 1) v = 1;
         if (v > 10) v = 10;
-        if (this.$store && typeof this.$store.dispatch === 'function') {
-          this.$store.dispatch('updatePlaneGridCellPx', v);
-        }
+        this.$store?.dispatch?.('updatePlaneGridCellPx', v);
       }
     },
     computedAverageHighlandsPerCenter() {
@@ -424,27 +375,33 @@ export default {
       const glacier = (this.local && typeof this.local.topGlacierRows === 'number') ? this.local.topGlacierRows : 0;
       const extra = (this.local && typeof this.local.tundraExtraRows === 'number') ? this.local.tundraExtraRows : 0;
       return Math.max(0, glacier + extra);
+    },
+    // UI表示用（計算側が生成時に使った実効値を優先）
+    topGlacierRowsDisplayed() {
+      if (this.stats && typeof this.stats.computedTopGlacierRows === 'number') {
+        return Math.round(this.stats.computedTopGlacierRows);
+      }
+      const v = (this.local && typeof this.local.topGlacierRows === 'number') ? this.local.topGlacierRows : 0;
+      return Math.round(v);
     }
   },
   methods: {
     onEraChange() {
-      if (this.$store && typeof this.$store.dispatch === 'function') {
-        this.$store.dispatch('updateEra', this.local.era);
-      }
+      this.$store?.dispatch?.('updateEra', this.local.era);
     },
     // 平均気温から上端・下端氷河グリッド数を線形補間で算出（2℃刻み入力想定）
     updateAverageTemperature(value) {
       const t = (typeof value === 'number') ? value
-        : (this.$store && this.$store.getters && typeof this.$store.getters.averageTemperature === 'number'
-            ? this.$store.getters.averageTemperature : 15);
+        : this.averageTemperature;
       const anchors = [
-        { t: -25, val: 45 },
-        { t: -15, val: 35 },
-        { t: -5,  val: 25 },
-        { t: 5,   val: 15 },
-        { t: 10,  val: 10 },
-        { t: 15,  val: 5  },
-        { t: 25,  val: -5 }
+        // Grids_Calculation.vue と同じアンカー（温度→基準氷河row）
+        { t: -25, val: 42 },
+        { t: -15, val: 32 },
+        { t: -5,  val: 22 },
+        { t: 5,   val: 12 },
+        { t: 10,  val: 7  },
+        { t: 15,  val: 2  },
+        { t: 25,  val: -8 }
       ];
       let v;
       if (t <= anchors[0].t) {
@@ -488,9 +445,14 @@ export default {
         if (!this.stats) this.stats = {};
         this.stats.preGlacier = payload.preGlacierStats;
       }
+      // 1.1.1) 計算側が実際に使った「上端・下端氷河row（基準）」を保存してUI表示を一致させる
+      if (payload && typeof payload.computedTopGlacierRows === 'number') {
+        if (!this.stats) this.stats = {};
+        this.stats.computedTopGlacierRows = payload.computedTopGlacierRows;
+      }
       // 1.2) 平面表示色（+2枠）を計算してポップアップ用に保持
       try {
-        const era = this.local && this.local.era ? this.local.era : (this.$store && this.$store.getters ? this.$store.getters.era : null);
+        const era = this.local && this.local.era ? this.local.era : this.storeEra;
         const eraColors = getEraTerrainColors(era);
         const displayColors = Array.isArray(payload.gridData)
           ? deriveDisplayColorsFromGridData(payload.gridData, this.gridWidth, this.gridHeight, undefined, eraColors, /*preferPalette*/ true)
@@ -590,18 +552,17 @@ export default {
       doc.write(html);
       doc.close();
     },
-    buildOutputHtml() {
-      const params = this.local;
-      const centers = this.mutableCenterParams || [];
-      const pre = (this.stats && this.stats.preGlacier) ? this.stats.preGlacier : null;
-      const escape = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-      const fmtPct = (num, den) => {
-        if (!den || den <= 0) return '0.00%';
-        return (num * 100 / den).toFixed(2) + '%';
-      };
-      const typeCounts = (this.stats && this.stats.gridTypeCounts) ? this.stats.gridTypeCounts : null;
-      const totalN = typeCounts ? (typeCounts.total || (this.gridWidth * this.gridHeight)) : (this.gridWidth * this.gridHeight);
-      const centersHtml = centers.map((p, i) => `
+    // HTML用エスケープ（popup出力の安全性確保）
+    _escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    },
+    _fmtPct(num, den) {
+      if (!den || den <= 0) return '0.00%';
+      return (num * 100 / den).toFixed(2) + '%';
+    },
+    _buildCentersHtml(centers) {
+      const escape = (v) => this._escapeHtml(v);
+      return (centers || []).map((p, i) => `
         <div style="margin-bottom:8px;padding:8px;border:1px solid #ddd;border-radius:4px;">
           <div style="font-weight:bold;margin-bottom:4px;">中心点 ${i + 1}:</div>
           <div>座標 (x, y): (${escape(p.x)}, ${escape(p.y)}) <span style="color:#666">（シード固定）</span></div>
@@ -628,6 +589,16 @@ export default {
           </ul>
         </div>
       `).join('');
+    },
+    buildOutputHtml() {
+      const params = this.local;
+      const centers = this.mutableCenterParams || [];
+      const pre = (this.stats && this.stats.preGlacier) ? this.stats.preGlacier : null;
+      const escape = (v) => this._escapeHtml(v);
+      const fmtPct = (num, den) => this._fmtPct(num, den);
+      const typeCounts = (this.stats && this.stats.gridTypeCounts) ? this.stats.gridTypeCounts : null;
+      const totalN = typeCounts ? (typeCounts.total || (this.gridWidth * this.gridHeight)) : (this.gridWidth * this.gridHeight);
+      const centersHtml = this._buildCentersHtml(centers);
       return `
 <!doctype html>
 <html>
@@ -655,7 +626,7 @@ export default {
     <div class="row"><label>低地・乾燥地間距離閾値:</label><span>${escape(params.baseLandDistanceThreshold)}</span></div>
     <div class="row"><label>上端・下端ツンドラ追加グリッド数:</label><span>${escape(params.tundraExtraRows)}</span></div>
     <div class="row"><label>上端・下端ツンドラ総グリッド数:</label><span>${escape(this.topTundraRowsComputed)}</span></div>
-    <div class="row"><label>上端・下端氷河グリッド数:</label><span>${escape(params.topGlacierRows)}</span></div>
+    <div class="row"><label>上端・下端氷河グリッド数:</label><span>${escape(this.topGlacierRowsDisplayed)}</span></div>
     <div class="row"><label>陸(低地・乾燥地・ツンドラ)の氷河追加グリッド数:</label><span>${escape(params.landGlacierExtraRows)}</span></div>
     <div class="row"><label>高地の氷河追加グリッド数:</label><span>${escape(params.highlandGlacierExtraRows)}</span></div>
     <div class="row"><label>高山の氷河追加グリッド数:</label><span>${escape(params.alpineGlacierExtraRows)}</span></div>
@@ -689,15 +660,27 @@ export default {
     },
     openOrUpdatePlanePopup() {
       // build plane and sphere HTML and embed them into two iframes within a single popup
-      const w = this.planePopupRef && !this.planePopupRef.closed ? this.planePopupRef : window.open('', 'PlaneSphereView', 'width=1400,height=900,scrollbars=yes');
-      this.planePopupRef = w;
+      const w = this._getOrOpenPlaneSpherePopup();
       if (!w) return;
       const doc = w.document;
+
+      // 1) 外枠（iframe2枚だけ）を先に描画
+      this._writeDoc(doc, this._buildPlaneSphereShellHtml());
+
+      // 2) iframeの中身を流し込む（srcdoc）
       const planeHtml = this.buildPlaneHtml();
-      const sphereHtml = (this.$refs && this.$refs.sphere && typeof this.$refs.sphere.buildHtml === 'function')
-        ? this.$refs.sphere.buildHtml()
-        : '<!doctype html><html><body><div>Sphere unavailable</div></body></html>';
-      const combined = `
+      const sphereHtml = this._getSphereHtmlForIframe();
+      this._setPlaneSphereIframes(doc, planeHtml, sphereHtml);
+    },
+    _getOrOpenPlaneSpherePopup() {
+      const w = (this.planePopupRef && !this.planePopupRef.closed)
+        ? this.planePopupRef
+        : window.open('', 'PlaneSphereView', 'width=1400,height=900,scrollbars=yes');
+      this.planePopupRef = w;
+      return w;
+    },
+    _buildPlaneSphereShellHtml() {
+      return `
 <!doctype html>
 <html>
   <head>
@@ -717,43 +700,44 @@ export default {
     </div>
   </body>
 </html>`;
+    },
+    _writeDoc(doc, html) {
+      if (!doc) return;
       doc.open();
-      doc.write(combined);
+      doc.write(html);
       doc.close();
-
+    },
+    _getSphereHtmlForIframe() {
+      const sph = (this.$refs && this.$refs.sphere) ? this.$refs.sphere : null;
+      if (sph && typeof sph.buildHtml === 'function') return sph.buildHtml();
+      return '<!doctype html><html><body><div>Sphere unavailable</div></body></html>';
+    },
+    _setPlaneSphereIframes(doc, planeHtml, sphereHtml) {
       // set iframe contents from parent so we can wire sphere canvas to component methods
       try {
         const pif = doc.getElementById('plane-iframe');
         const sif = doc.getElementById('sphere-iframe');
         if (pif) pif.srcdoc = planeHtml;
-        if (sif) {
-          sif.srcdoc = sphereHtml;
-          sif.onload = () => {
-            try {
-              const sw = sif.contentWindow;
-              const sdoc = sw.document;
-              const canvas = sdoc.getElementById('sphere-canvas');
-              if (!canvas) return;
-              if (this.$refs && this.$refs.sphere) {
-                const sph = this.$refs.sphere;
-                sph._sphereWin = sw;
-                sph._sphereCanvas = canvas;
-                // 初期回転速度を 10 grid/s に設定（1 grid/s = 1000 ms, 10 grid/s = 100 ms）
-                sph._rotationMsPerGrid = 100;
-                try { sph._useWebGL = sph.initWebGL(canvas); } catch (e) { sph._useWebGL = false; }
-                if (sph._useWebGL) sph.drawWebGL(); else sph.drawSphere(canvas);
-                const rotateBtn = sdoc.getElementById('rotate-btn');
-                if (rotateBtn) rotateBtn.addEventListener('click', () => { sph.toggleRotate(rotateBtn); });
-                const fasterBtn = sdoc.getElementById('faster-btn');
-                if (fasterBtn) fasterBtn.addEventListener('click', () => { sph.adjustSpeed(true); });
-                const slowerBtn = sdoc.getElementById('slower-btn');
-                if (slowerBtn) slowerBtn.addEventListener('click', () => { sph.adjustSpeed(false); });
-                sph.updateSpeedLabel();
-                sw.addEventListener('beforeunload', () => { sph.stopRotationLoop(); sph._isRotating = false; });
-              }
-            } catch (e) { void e; }
-          };
-        }
+        if (!sif) return;
+        sif.srcdoc = sphereHtml;
+        // iframe の DOM が出来てから canvas を拾って Sphere_Display 側に渡す
+        sif.onload = () => {
+          this._attachSphereToIframe(sif);
+        };
+      } catch (e) { void e; }
+    },
+    _attachSphereToIframe(sif) {
+      try {
+        const sw = sif.contentWindow;
+        if (!sw) return;
+        const sdoc = sw.document;
+        const canvas = sdoc.getElementById('sphere-canvas');
+        if (!canvas) return;
+        const sph = (this.$refs && this.$refs.sphere) ? this.$refs.sphere : null;
+        if (!sph) return;
+        // iframe内の球ビューは Sphere_Display 側でセットアップ（HTML生成とイベント配線を分離）
+        sph.attachToWindow(sw, canvas);
+        sw.addEventListener('beforeunload', () => { sph.cleanupSpherePopup(); });
       } catch (e) { void e; }
     },
     buildPlaneHtml() {
