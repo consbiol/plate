@@ -20,7 +20,8 @@
     </div>
     <div style="margin-bottom: 8px;">
       <label>中心間の排他距離 (グリッド): </label>
-      <input type="number" min="1" max="50" step="1" v-model.number="local.minCenterDistance" />
+      <input type="number" min="1" max="50" step="1" :value="computedMinCenterDistance" disabled />
+      <span style="margin-left:8px;color:#666">(自動計算)</span>
     </div>
     <div style="margin-bottom: 8px;">
       <label>浅瀬・深海間の距離閾値 (グリッド): </label>
@@ -33,7 +34,8 @@
     </div>
     <div style="margin-bottom: 8px;">
       <label>低地・乾燥地間の距離閾値 (グリッド): </label>
-      <input type="number" min="-60" max="60" step="1" v-model.number="local.baseLandDistanceThreshold" />
+      <input type="number" min="-60" max="60" step="1" :value="landDistanceThresholdAverage" disabled />
+      <span style="margin-left:8px;color:#666">（帯別平均）</span>
     </div>
     <details style="margin-bottom:8px;max-width:600px;margin-left:auto;margin-right:auto;">
       <summary style="cursor:pointer;font-weight:bold;margin-bottom:6px;">低地・乾燥地間の距離閾値（帯別）</summary>
@@ -187,11 +189,11 @@
       :gridHeight="gridHeight"
       :seaLandRatio="local.seaLandRatio"
       :centersY="local.centersY"
-      :minCenterDistance="local.minCenterDistance"
+      :minCenterDistance="computedMinCenterDistance"
       :noiseAmp="0.15"
       :kDecay="3.0"
       :baseSeaDistanceThreshold="local.baseSeaDistanceThreshold"
-      :baseLandDistanceThreshold="local.baseLandDistanceThreshold"
+      :baseLandDistanceThreshold="landDistanceThresholdAverage"
       :landDistanceThreshold1="local.landDistanceThreshold1"
       :landDistanceThreshold2="local.landDistanceThreshold2"
       :landDistanceThreshold3="local.landDistanceThreshold3"
@@ -402,6 +404,36 @@ export default {
       }
       const v = (this.local && typeof this.local.topGlacierRows === 'number') ? this.local.topGlacierRows : 0;
       return Math.round(v);
+    }
+    ,
+    // 低地・乾燥地間の帯別閾値の平均（帯1..帯10 の平均を返す）
+    landDistanceThresholdAverage() {
+      const keys = [1,2,3,4,5,6,7,8,9,10];
+      let sum = 0;
+      let cnt = 0;
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        const prop = this.local && typeof this.local[`landDistanceThreshold${k}`] !== 'undefined' ? this.local[`landDistanceThreshold${k}`] : null;
+        if (prop !== null && typeof prop === 'number' && isFinite(prop)) {
+          sum += Number(prop);
+          cnt += 1;
+        }
+      }
+      if (cnt === 0) {
+        // フォールバック: 明示的なbaseがあればそれを返す、なければ0
+        return (this.local && typeof this.local.baseLandDistanceThreshold === 'number') ? this.local.baseLandDistanceThreshold : 0;
+      }
+      // 小数は四捨五入して整数で表示
+      return Math.round(sum / cnt);
+    },
+    // 陸の割合 x に応じた中心間の排他距離（自動計算）
+    computedMinCenterDistance() {
+      // 元の実装に合わせる:
+      // seaLandRatio を 0.2..1.0 にクランプし、20..40 に線形補間して四捨五入する
+      const raw = (this.local && Number.isFinite(this.local.seaLandRatio)) ? Number(this.local.seaLandRatio) : Number(PARAM_DEFAULTS && PARAM_DEFAULTS.seaLandRatio);
+      const x = Math.max(0.2, Math.min(1.0, raw));
+      const minDistance = 20 + (x - 0.2) * 25; // 20..40
+      return Math.round(minDistance);
     }
   },
   methods: {
@@ -722,7 +754,7 @@ export default {
     <div class="row"><label>陸の割合 x:</label><span>${escape(params.seaLandRatio)}</span></div>
     <div class="row"><label>中心間の排他距離 (グリッド):</label><span>${escape(params.minCenterDistance)}</span></div>
     <div class="row"><label>浅瀬・深海間距離閾値:</label><span>${escape(params.baseSeaDistanceThreshold)}</span></div>
-    <div class="row"><label>低地・乾燥地間距離閾値:</label><span>${escape(params.baseLandDistanceThreshold)}</span></div>
+    <div class="row"><label>低地・乾燥地間距離閾値:</label><span>${escape(this.landDistanceThresholdAverage)}</span></div>
     <div class="row"><label>上端・下端ツンドラ追加グリッド数:</label><span>${escape(params.tundraExtraRows)}</span></div>
     <div class="row"><label>上端・下端ツンドラ総グリッド数:</label><span>${escape(this.topTundraRowsComputed)}</span></div>
     <div class="row"><label>上端・下端氷河グリッド数:</label><span>${escape(this.topGlacierRowsDisplayed)}</span></div>
