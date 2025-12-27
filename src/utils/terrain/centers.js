@@ -1,10 +1,12 @@
 // 大陸中心（center）関連の生成・スコア計算
 // - Grids_Calculation.vue から切り出し（機能不変）
 
-export function sampleLandCenters(vm, rng) {
+export function sampleLandCenters(vm, rng, minDistanceOverride) {
   const centers = [];
   const yCenters = Math.max(1, Math.min(10, Math.min(vm.gridHeight, vm.centersY)));
-  const minDistance = vm.minCenterDistance;
+  const minDistance = (typeof minDistanceOverride === 'number' && Number.isFinite(minDistanceOverride))
+    ? minDistanceOverride
+    : vm.minCenterDistance;
   const maxAttempts = 1000;
   const edgeMargin = 10; // 外縁から除外するグリッド数
 

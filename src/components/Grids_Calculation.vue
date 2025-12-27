@@ -201,6 +201,14 @@ export default {
         default: return Number(this.landDistanceThreshold10) + baseDelta;
       }
     },
+    // seaLandRatio に応じて中心間の最低距離を計算する
+    // マッピング: 0.2 -> 20, 0.6 -> 30, 1.0 -> 40（線形補間）。範囲外はクランプ。
+    _computeEffectiveMinCenterDistance() {
+      const raw = Number.isFinite(this.seaLandRatio) ? Number(this.seaLandRatio) : Number(PARAM_DEFAULTS && PARAM_DEFAULTS.seaLandRatio);
+      const x = Math.max(0.2, Math.min(1.0, raw));
+      const minDistance = 20 + (x - 0.2) * 25; // 20..40
+      return Math.round(minDistance);
+    },
     // ノイズ実装は `src/utils/noise.js` に集約（機能不変）。
     // 既存コード（features/centers等）が vm.noise2D / vm.fractalNoise2D を参照するため、ここは薄い委譲として残す。
     noise2D(x, y) {
@@ -290,7 +298,8 @@ export default {
       // - `deterministicSeed` が渡されている場合はシードに基づいて決定（generate 時の再現性確保）
       // - 未指定の場合は完全ランダム（従来の挙動）
       const seedStrictCenters = !!seededRng;
-      let centers = sampleLandCenters(this, seedStrictCenters ? seededRng : null);
+      const effectiveMinCenterDistance = this._computeEffectiveMinCenterDistance();
+      let centers = sampleLandCenters(this, seedStrictCenters ? seededRng : null, effectiveMinCenterDistance);
       // ノイズから中心パラメータを生成（propsは直接変更しない）
       let localCenterParameters = centers.map((c) => {
         if (seededRng) {
@@ -336,7 +345,7 @@ export default {
         if (anyCenterLand) {
           success = true;
         } else {
-          centers = sampleLandCenters(this, seedStrictCenters ? seededRng : null);
+          centers = sampleLandCenters(this, seedStrictCenters ? seededRng : null, effectiveMinCenterDistance);
         }
       }
       const landMask = new Array(N).fill(false);
@@ -576,9 +585,10 @@ export default {
       try {
         // centers はキャッシュ優先。無ければ通常サンプリングにフォールバック。
         const prevCenters = (this.hfCache && Array.isArray(this.hfCache.centers)) ? this.hfCache.centers : null;
+        const effectiveMinCenterDistance = this._computeEffectiveMinCenterDistance();
         const baseCenters = (prevCenters && prevCenters.length > 0)
           ? prevCenters
-          : sampleLandCenters(this, null);
+          : sampleLandCenters(this, null, effectiveMinCenterDistance);
 
         const dx = 10;
         const centers = baseCenters.map((c) => ({
