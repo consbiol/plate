@@ -26,7 +26,7 @@ import { buildCenterLandCells } from '../utils/terrain/centerCells.js';
 import { buildGridData, markCentersOnGridData } from '../utils/terrain/gridData.js';
 import { applySeededLogToCenterParameters } from '../utils/terrain/centerParams.js';
 import { computePreGlacierStats, buildGeneratedPayload } from '../utils/terrain/output.js';
-import { computeTopGlacierRowsFromAverageTemperature } from '../utils/terrain/glacierRows.js';
+import { computeTopGlacierRowsFromAverageTemperature, getSmoothedGlacierRows } from '../utils/terrain/glacierRows.js';
 import { noise2D as noise2DUtil, fractalNoise2D as fractalNoise2DUtil } from '../utils/noise.js';
 import { poissonSample } from '../utils/stats/poisson.js';
 import { PARAM_DEFAULTS } from '../utils/paramsDefaults.js';
@@ -188,17 +188,17 @@ export default {
       const baseNow = Number.isFinite(baseNowRaw) ? baseNowRaw : baseDefault;
       const baseDelta = (Number.isFinite(baseDefault) ? (baseNow - baseDefault) : 0);
       switch (b) {
-        case 1: return Math.max(0, Number(this.landDistanceThreshold1) + baseDelta);
-        case 2: return Math.max(0, Number(this.landDistanceThreshold2) + baseDelta);
-        case 3: return Math.max(0, Number(this.landDistanceThreshold3) + baseDelta);
-        case 4: return Math.max(0, Number(this.landDistanceThreshold4) + baseDelta);
-        case 5: return Math.max(0, Number(this.landDistanceThreshold5) + baseDelta);
-        case 6: return Math.max(0, Number(this.landDistanceThreshold6) + baseDelta);
-        case 7: return Math.max(0, Number(this.landDistanceThreshold7) + baseDelta);
-        case 8: return Math.max(0, Number(this.landDistanceThreshold8) + baseDelta);
-        case 9: return Math.max(0, Number(this.landDistanceThreshold9) + baseDelta);
-        case 10: return Math.max(0, Number(this.landDistanceThreshold10) + baseDelta);
-        default: return Math.max(0, Number(this.landDistanceThreshold10) + baseDelta);
+        case 1: return Number(this.landDistanceThreshold1) + baseDelta;
+        case 2: return Number(this.landDistanceThreshold2) + baseDelta;
+        case 3: return Number(this.landDistanceThreshold3) + baseDelta;
+        case 4: return Number(this.landDistanceThreshold4) + baseDelta;
+        case 5: return Number(this.landDistanceThreshold5) + baseDelta;
+        case 6: return Number(this.landDistanceThreshold6) + baseDelta;
+        case 7: return Number(this.landDistanceThreshold7) + baseDelta;
+        case 8: return Number(this.landDistanceThreshold8) + baseDelta;
+        case 9: return Number(this.landDistanceThreshold9) + baseDelta;
+        case 10: return Number(this.landDistanceThreshold10) + baseDelta;
+        default: return Number(this.landDistanceThreshold10) + baseDelta;
       }
     },
     // ノイズ実装は `src/utils/noise.js` に集約（機能不変）。
@@ -430,28 +430,47 @@ export default {
       this._generateAlpines(colors, highlandColor, lowlandColor, desertColor, alpineColor, directions);
       // Revise用に「ツンドラ/氷河適用前」の色を保存（湖/高地/高山の結果は保持）
       const preTundraColors = colors.slice();
+      // --- 先に氷河row（基準）を計算 ---
+      // ※ landMask/lakeMask にのみ依存するため、色の上書き（ツンドラ/氷河）より前に計算して問題ない
+      const preGlacierStats = computePreGlacierStats({ N, landMask, lakeMask });
+      const ratioOcean = preGlacierStats.seaCount / (preGlacierStats.total || 1);
+      // 海率の影響は「陸の氷河形成」にのみ適用し、海/湖は標準（0.7相当）で固定する
+      const computedTopGlacierRowsLand = computeTopGlacierRowsFromAverageTemperature(this, ratioOcean, 'land');
+      const computedTopGlacierRowsWater = computeTopGlacierRowsFromAverageTemperature(this, 0.7, 'water');
+      // glacier_alpha による平滑化後の内部値（小数）
+      const computedSmoothedTopGlacierRowsLand = getSmoothedGlacierRows(this, ratioOcean, 'land');
+      const computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
+
       // --- ツンドラの適用（上端・下端） ---
+      // 「上端・下端ツンドラグリッド追加数」は UI 上 (topTundraRows - topGlacierRows) で表現されているため、
+      // 追加分を取り出し、基準（氷河row）を smoothed 値に置き換えてから適用する。
+      const tundraExtraRows = Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
+      // ツンドラrowは「海グリッドに生成する氷河row」に追従させる（陸氷河は seaBoost 等で挙動が異なるため）
+      const computedTopTundraRows = Math.max(0, computedSmoothedTopGlacierRowsWater + tundraExtraRows);
       applyTundra(this, {
         colors,
         landNoiseAmplitude,
         lowlandColor,
         tundraColor,
+        computedTopTundraRows,
         tundraNoiseTableTop: tundraNoiseTopTable,
         tundraNoiseTableBottom: tundraNoiseBottomTable
       });
-      // --- 氷河の適用（上端） ---
-      const preGlacierStats = computePreGlacierStats({ N, landMask, lakeMask });
+
+      // --- 氷河の適用（上端/下端） ---
       // 上端/下端を氷河で上書き（ノイズ付き）
       // 海/湖: +0、低地・乾燥地・ツンドラ: +landGlacierExtraRows、高地: +highlandGlacierExtraRows
-      const computedTopGlacierRows = computeTopGlacierRowsFromAverageTemperature(
-        this,
-        preGlacierStats.seaCount / (preGlacierStats.total || 1)
-      );
+      // 既存UI/統計互換: computedTopGlacierRows は陸用の実効値を返す
+      const computedTopGlacierRows = computedTopGlacierRowsLand;
       applyGlaciers(this, {
         colors,
         glacierNoiseTable,
         landNoiseAmplitude,
         computedTopGlacierRows,
+        computedTopGlacierRowsLand,
+        computedTopGlacierRowsWater,
+        computedSmoothedTopGlacierRowsLand,
+        computedSmoothedTopGlacierRowsWater,
         shallowSeaColor,
         deepSeaColor,
         lowlandColor,
@@ -459,7 +478,9 @@ export default {
         desertColor,
         highlandColor,
         alpineColor,
-        glacierColor
+        glacierColor,
+        landMask,
+        lakeMask
       });
       // 追加: 文明要素（都市/耕作/苔類/汚染）＋海棲文明要素（浅瀬ベース）を生成
       // 実装は `src/utils/terrain/features.js` に分離（機能不変）
@@ -505,6 +526,7 @@ export default {
         centers,
         landMask,
         lakeMask,
+        lakesList: this._lastLakesList || [],
         noiseGrid,
         distanceToSea,
         distanceToLand,
@@ -726,25 +748,35 @@ export default {
 
         const preTundraColors = colors.slice();
 
+        const preGlacierStats = computePreGlacierStats({ N, landMask, lakeMask });
+        const ratioOcean = preGlacierStats.seaCount / (preGlacierStats.total || 1);
+        const computedTopGlacierRowsLand = computeTopGlacierRowsFromAverageTemperature(this, ratioOcean, 'land');
+        const computedTopGlacierRowsWater = computeTopGlacierRowsFromAverageTemperature(this, 0.7, 'water');
+        const computedSmoothedTopGlacierRowsLand = getSmoothedGlacierRows(this, ratioOcean, 'land');
+        const computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
+
+        const tundraExtraRows = Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
+        const computedTopTundraRows = Math.max(0, computedSmoothedTopGlacierRowsWater + tundraExtraRows);
         applyTundra(this, {
           colors,
           landNoiseAmplitude,
           lowlandColor,
           tundraColor,
+          computedTopTundraRows,
           tundraNoiseTableTop: tundraNoiseTopTable,
           tundraNoiseTableBottom: tundraNoiseBottomTable
         });
 
-        const preGlacierStats = computePreGlacierStats({ N, landMask, lakeMask });
-        const computedTopGlacierRows = computeTopGlacierRowsFromAverageTemperature(
-          this,
-          preGlacierStats.seaCount / (preGlacierStats.total || 1)
-        );
+        const computedTopGlacierRows = computedTopGlacierRowsLand;
         applyGlaciers(this, {
           colors,
           glacierNoiseTable,
           landNoiseAmplitude,
           computedTopGlacierRows,
+          computedTopGlacierRowsLand,
+          computedTopGlacierRowsWater,
+        computedSmoothedTopGlacierRowsLand,
+        computedSmoothedTopGlacierRowsWater,
           shallowSeaColor,
           deepSeaColor,
           lowlandColor,
@@ -752,7 +784,9 @@ export default {
           desertColor,
           highlandColor,
           alpineColor,
-          glacierColor
+          glacierColor,
+          landMask,
+          lakeMask
         });
 
         const {
@@ -799,6 +833,7 @@ export default {
           centers,
           landMask,
           lakeMask,
+        lakesList: this._lastLakesList || [],
           noiseGrid,
           distanceToSea,
           distanceToLand,
@@ -861,49 +896,92 @@ export default {
       }
 
       // --- 湖の周囲を低地に戻す（低頻度結果を維持） ---
-      const baseLandThr = (this.baseLandDistanceThresholdFixed != null)
-        ? this.baseLandDistanceThresholdFixed
-        : this.baseLandDistanceThreshold;
-      const lakeLowlandRadius = Math.max(1, Math.floor(Number(baseLandThr || 0) / 5));
-      if (c.lakeMask && lakeLowlandRadius > 0) {
-        for (let gy = 0; gy < this.gridHeight; gy++) {
-          for (let gx = 0; gx < this.gridWidth; gx++) {
-            const idx = gy * this.gridWidth + gx;
-            if (!c.lakeMask[idx]) continue;
-            for (let dy = -lakeLowlandRadius; dy <= lakeLowlandRadius; dy++) {
-              for (let dx = -lakeLowlandRadius; dx <= lakeLowlandRadius; dx++) {
+      // Prefer per-lake radii collected at generation time (c.lakesList).
+      // Fallback to previous global heuristic if per-lake data missing.
+      if (Array.isArray(c.lakesList) && c.lakesList.length > 0) {
+        for (const lake of c.lakesList) {
+          // Recompute per-lake radius from CURRENT band threshold (Revise is meant to reflect parameter updates)
+          let R = 0;
+          if (lake && typeof lake.startY === 'number' && typeof lake.startX === 'number') {
+            const bandThr = Number(this._getLandDistanceThresholdForRow(lake.startY, lake.startX)) || 0;
+            R = Math.ceil(bandThr / 3);
+          } else {
+            R = (lake && Number(lake.radius)) || 0;
+          }
+          if (!Number.isFinite(R) || R <= 0) continue;
+          for (const cellIdx of (lake.cells || [])) {
+            const gx = cellIdx % this.gridWidth;
+            const gy = Math.floor(cellIdx / this.gridWidth);
+            for (let dy = -R; dy <= R; dy++) {
+              for (let dx = -R; dx <= R; dx++) {
                 const wrapped = this.torusWrap(gx + dx, gy + dy);
                 if (!wrapped) continue;
                 const d = Math.hypot(dx, dy);
-                if (d > lakeLowlandRadius) continue;
+                if (d > R) continue;
                 const nIdx = wrapped.y * this.gridWidth + wrapped.x;
                 if (colors[nIdx] === c.desertColor) colors[nIdx] = c.lowlandColor;
               }
             }
           }
         }
+      } else {
+        const baseLandThr = (this.baseLandDistanceThresholdFixed != null)
+          ? this.baseLandDistanceThresholdFixed
+          : this.baseLandDistanceThreshold;
+        const lakeLowlandRadius = Math.floor(Number(baseLandThr || 0) / 5);
+        if (c.lakeMask && lakeLowlandRadius > 0) {
+          for (let gy = 0; gy < this.gridHeight; gy++) {
+            for (let gx = 0; gx < this.gridWidth; gx++) {
+              const idx = gy * this.gridWidth + gx;
+              if (!c.lakeMask[idx]) continue;
+              for (let dy = -lakeLowlandRadius; dy <= lakeLowlandRadius; dy++) {
+                for (let dx = -lakeLowlandRadius; dx <= lakeLowlandRadius; dx++) {
+                  const wrapped = this.torusWrap(gx + dx, gy + dy);
+                  if (!wrapped) continue;
+                  const d = Math.hypot(dx, dy);
+                  if (d > lakeLowlandRadius) continue;
+                  const nIdx = wrapped.y * this.gridWidth + wrapped.x;
+                  if (colors[nIdx] === c.desertColor) colors[nIdx] = c.lowlandColor;
+                }
+              }
+            }
+          }
+        }
       }
 
+      // --- 氷河行数の再計算（smoothed含む） ---
+      const ratioOcean = (c.preGlacierStats && c.preGlacierStats.total)
+        ? (c.preGlacierStats.seaCount / (c.preGlacierStats.total || 1))
+        : 0.7;
+      const computedTopGlacierRowsLand = computeTopGlacierRowsFromAverageTemperature(this, ratioOcean, 'land');
+      const computedTopGlacierRowsWater = computeTopGlacierRowsFromAverageTemperature(this, 0.7, 'water');
+      const computedSmoothedTopGlacierRowsLand = getSmoothedGlacierRows(this, ratioOcean, 'land');
+      const computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
+
       // --- ツンドラ再適用（固定ノイズ） ---
+      const tundraExtraRows = Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
+      const computedTopTundraRows = Math.max(0, computedSmoothedTopGlacierRowsWater + tundraExtraRows);
       applyTundra(this, {
         colors,
         landNoiseAmplitude: c.landNoiseAmplitude,
         lowlandColor: c.lowlandColor,
         tundraColor: c.tundraColor,
+        computedTopTundraRows,
         tundraNoiseTableTop: c.tundraNoiseTopTable,
         tundraNoiseTableBottom: c.tundraNoiseBottomTable
       });
 
-      // --- 氷河行数の再計算 + 氷河再適用 ---
-      const ratioOcean = (c.preGlacierStats && c.preGlacierStats.total)
-        ? (c.preGlacierStats.seaCount / (c.preGlacierStats.total || 1))
-        : 0.7;
-      const computedTopGlacierRows = computeTopGlacierRowsFromAverageTemperature(this, ratioOcean);
+      // --- 氷河再適用 ---
+      const computedTopGlacierRows = computedTopGlacierRowsLand;
       applyGlaciers(this, {
         colors,
         glacierNoiseTable: c.glacierNoiseTable,
         landNoiseAmplitude: c.landNoiseAmplitude,
-        computedTopGlacierRows,
+          computedTopGlacierRows,
+          computedTopGlacierRowsLand,
+          computedTopGlacierRowsWater,
+          computedSmoothedTopGlacierRowsLand,
+          computedSmoothedTopGlacierRowsWater,
         shallowSeaColor: c.shallowSeaColor,
         deepSeaColor: c.deepSeaColor,
         lowlandColor: c.lowlandColor,
@@ -911,7 +989,9 @@ export default {
         desertColor: c.desertColor,
         highlandColor: c.highlandColor,
         alpineColor: c.alpineColor,
-        glacierColor: c.glacierColor
+        glacierColor: c.glacierColor,
+        landMask: c.landMask,
+        lakeMask: c.lakeMask
       });
 
       // --- gridData を再構築（Plane更新用）。文明要素は不整合なら削除 ---

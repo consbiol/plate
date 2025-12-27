@@ -33,21 +33,21 @@
     </div>
     <div style="margin-bottom: 8px;">
       <label>低地・乾燥地間の距離閾値 (グリッド): </label>
-      <input type="number" min="1" max="30" step="1" v-model.number="local.baseLandDistanceThreshold" />
+      <input type="number" min="-60" max="60" step="1" v-model.number="local.baseLandDistanceThreshold" />
     </div>
     <details style="margin-bottom:8px;max-width:600px;margin-left:auto;margin-right:auto;">
       <summary style="cursor:pointer;font-weight:bold;margin-bottom:6px;">低地・乾燥地間の距離閾値（帯別）</summary>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
-        <div style="width:48%;"><label>帯01 (極): </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold1" /></div>
-        <div style="width:48%;"><label>帯02: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold2" /></div>
-        <div style="width:48%;"><label>帯03: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold3" /></div>
-        <div style="width:48%;"><label>帯04: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold4" /></div>
-        <div style="width:48%;"><label>帯05: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold5" /></div>
-        <div style="width:48%;"><label>帯06: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold6" /></div>
-        <div style="width:48%;"><label>帯07: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold7" /></div>
-        <div style="width:48%;"><label>帯08: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold8" /></div>
-        <div style="width:48%;"><label>帯09: </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold9" /></div>
-        <div style="width:48%;"><label>帯10 (赤道): </label><input type="number" min="0" max="60" step="1" v-model.number="local.landDistanceThreshold10" /></div>
+        <div style="width:48%;"><label>帯01 (極): </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold1" /></div>
+        <div style="width:48%;"><label>帯02: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold2" /></div>
+        <div style="width:48%;"><label>帯03: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold3" /></div>
+        <div style="width:48%;"><label>帯04: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold4" /></div>
+        <div style="width:48%;"><label>帯05: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold5" /></div>
+        <div style="width:48%;"><label>帯06: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold6" /></div>
+        <div style="width:48%;"><label>帯07: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold7" /></div>
+        <div style="width:48%;"><label>帯08: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold8" /></div>
+        <div style="width:48%;"><label>帯09: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold9" /></div>
+        <div style="width:48%;"><label>帯10 (赤道): </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold10" /></div>
       </div>
       <div style="width:100%;margin-top:8px;">
         <label>帯の縦揺らぎ（行数）: </label>
@@ -280,15 +280,15 @@ export default {
     landDistanceThreshold10: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold10 },
     // 帯の縦揺らぎ（行数）: 0で無効
     landBandVerticalWobbleRows: { type: Number, required: false, default: PARAM_DEFAULTS.landBandVerticalWobbleRows },
-    // 上端・下端ツンドラグリッド追加数（デフォルト: 7）: 上端・下端氷河グリッド数からの追加グリッド数
+    // 上端・下端ツンドラグリッド追加数（デフォルト: 5）: 上端・下端氷河グリッド数からの追加グリッド数
     tundraExtraRows: { type: Number, required: false, default: PARAM_DEFAULTS.tundraExtraRows },
     // 上端・下端氷河グリッド数（デフォルト: 5）: 上下端から何グリッド分を氷河に上書きするかの基準値（海/湖は追加なし）。
     topGlacierRows: { type: Number, required: false, default: PARAM_DEFAULTS.topGlacierRows },
-    // 陸(低地・乾燥地・ツンドラ)の氷河追加グリッド数（デフォルト: 5）: 陸地タイプに応じて氷河上書き範囲を追加するグリッド数。
+    // 陸(低地・乾燥地・ツンドラ)の氷河追加グリッド数（デフォルト: 3）: 陸地タイプに応じて氷河上書き範囲を追加するグリッド数。
     landGlacierExtraRows: { type: Number, required: false, default: PARAM_DEFAULTS.landGlacierExtraRows },
-    // 高地の氷河追加グリッド数（デフォルト: 15）: 高地タイプに応じて氷河上書き範囲を追加するグリッド数。
+    // 高地の氷河追加グリッド数（デフォルト: 7）: 高地タイプに応じて氷河上書き範囲を追加するグリッド数。
     highlandGlacierExtraRows: { type: Number, required: false, default: PARAM_DEFAULTS.highlandGlacierExtraRows },
-    // 高山の氷河追加グリッド数（デフォルト: 20）: 高山タイプに応じて氷河上書き範囲を追加するグリッド数。
+    // 高山の氷河追加グリッド数（デフォルト: 12）: 高山タイプに応じて氷河上書き範囲を追加するグリッド数。
     alpineGlacierExtraRows: { type: Number, required: false, default: PARAM_DEFAULTS.alpineGlacierExtraRows },
     // 湖の数（平均）（デフォルト: 1）: 各中心点あたりの平均的な湖の個数。ポアソン分布で決定されます。
     averageLakesPerCenter: { type: Number, required: false, default: PARAM_DEFAULTS.averageLakesPerCenter },

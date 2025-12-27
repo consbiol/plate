@@ -4,6 +4,7 @@
 export function generateLakes(vm, centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog) {
     const N = vm.gridWidth * vm.gridHeight;
     const lakeMask = new Array(N).fill(false);
+    const lakesList = []; // collect per-lake cells + radius
     const seedStrict = (vm.era === '文明時代' || vm.era === '海棲文明時代') && !!seededRng;
     for (let ci = 0; ci < centers.length; ci++) {
         const lambda = vm.averageLakesPerCenter;
@@ -61,23 +62,73 @@ export function generateLakes(vm, centers, centerLandCells, landMask, colors, sh
             for (const cellIdx of lakeCells) {
                 lakeMask[cellIdx] = true;
             }
+            // 湖の開始行の計算帯域閾値を算出し、半径を導出する：
+            // R = ceil(bandThreshold / 5). If <= 0, this lake will not form lowland.
+            let bandThreshold = 0;
+            if (typeof vm._getLandDistanceThresholdForRow === 'function' && start) {
+                try { bandThreshold = Number(vm._getLandDistanceThresholdForRow(start.y, start.x)) || 0; } catch (e) { bandThreshold = 0; }
+            }
+            const radiusForThisLake = Math.ceil(bandThreshold / 5);
+            lakesList.push({
+                // store start cell position so Revise can recompute radius from current band thresholds
+                startX: start.x,
+                startY: start.y,
+                startIdx: start.idx,
+                cells: lakeCells.slice(),
+                radius: radiusForThisLake
+            });
         }
     }
+    // set lake colors (per-lake radii already collected in lakesList)
     for (let i = 0; i < lakeMask.length; i++) {
         if (lakeMask[i]) colors[i] = shallowSeaColor;
     }
-    const lakeLowlandRadius = Math.max(1, Math.floor(vm.baseLandDistanceThreshold / 5));
-    if (lakeLowlandRadius > 0) {
-        for (let gy = 0; gy < vm.gridHeight; gy++) {
-            for (let gx = 0; gx < vm.gridWidth; gx++) {
-                const idx = gy * vm.gridWidth + gx;
-                if (!lakeMask[idx]) continue;
-                for (let dy = -lakeLowlandRadius; dy <= lakeLowlandRadius; dy++) {
-                    for (let dx = -lakeLowlandRadius; dx <= lakeLowlandRadius; dx++) {
+
+    // For each lake we generated earlier we didn't keep per-lake grouping.
+    // Re-scan centers to rebuild per-lake cell groups and compute radius per lake
+    // Alternatively, we collected lakeCells per lake during generation; to avoid
+    // excessive restructuring, we stored lakes during generation below.
+    // NOTE: during generation we will have pushed to lakesList; if not, fallback
+    // to single-radius behavior (but current code pushes entries).
+    // Apply lowland conversion per-lake using the lake's radius.
+    if (Array.isArray(lakesList) && lakesList.length === 0) {
+        // If lakesList is empty, we might not have captured lakes during generation.
+        // Fall back to previous global heuristic but without forcing min=1.
+        const lakeLowlandRadius = Math.floor(vm.baseLandDistanceThreshold / 5);
+        if (lakeLowlandRadius > 0) {
+            for (let gy = 0; gy < vm.gridHeight; gy++) {
+                for (let gx = 0; gx < vm.gridWidth; gx++) {
+                    const idx = gy * vm.gridWidth + gx;
+                    if (!lakeMask[idx]) continue;
+                    for (let dy = -lakeLowlandRadius; dy <= lakeLowlandRadius; dy++) {
+                        for (let dx = -lakeLowlandRadius; dx <= lakeLowlandRadius; dx++) {
+                            const wrapped = vm.torusWrap(gx + dx, gy + dy);
+                            if (!wrapped) continue;
+                            const d = Math.hypot(dx, dy);
+                            if (d > lakeLowlandRadius) continue;
+                            const nIdx = wrapped.y * vm.gridWidth + wrapped.x;
+                            if (colors[nIdx] === desertColor) {
+                                colors[nIdx] = lowlandColor;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Apply per-lake radii
+        for (const lake of lakesList) {
+            const R = lake.radius;
+            if (!Number.isFinite(R) || R <= 0) continue;
+            for (const cellIdx of lake.cells) {
+                const gx = cellIdx % vm.gridWidth;
+                const gy = Math.floor(cellIdx / vm.gridWidth);
+                for (let dy = -R; dy <= R; dy++) {
+                    for (let dx = -R; dx <= R; dx++) {
                         const wrapped = vm.torusWrap(gx + dx, gy + dy);
                         if (!wrapped) continue;
                         const d = Math.hypot(dx, dy);
-                        if (d > lakeLowlandRadius) continue;
+                        if (d > R) continue;
                         const nIdx = wrapped.y * vm.gridWidth + wrapped.x;
                         if (colors[nIdx] === desertColor) {
                             colors[nIdx] = lowlandColor;
@@ -87,6 +138,8 @@ export function generateLakes(vm, centers, centerLandCells, landMask, colors, sh
             }
         }
     }
+    // expose per-lake list to caller vm for high-frequency revise use
+    try { vm._lastLakesList = lakesList; } catch (e) { /* ignore */ }
     return lakeMask;
 }
 

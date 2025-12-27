@@ -11,6 +11,8 @@ export const GLACIER_TEMP_ANCHORS = [
     { t: 25, val: -8 }
 ];
 
+export const GLACIER_LAND_ANCHOR = { t: 15, val: 2 };
+
 // 線形補間＋外挿（外側は「1℃上がると row が1減る」＝傾き -1）
 export function computeGlacierBaseRowsFromTemperature(t) {
     const anchors = GLACIER_TEMP_ANCHORS;

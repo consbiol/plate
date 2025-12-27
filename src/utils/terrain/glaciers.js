@@ -23,7 +23,8 @@ function applyGlacierPass(vm, {
   colors,
   glacierNoiseTable,
   landNoiseAmplitude,
-  computedTopGlacierRows,
+  computedTopGlacierRowsLand,
+  computedTopGlacierRowsWater,
   shallowSeaColor,
   deepSeaColor,
   lowlandColor,
@@ -32,6 +33,8 @@ function applyGlacierPass(vm, {
   highlandColor,
   alpineColor,
   glacierColor,
+  landMask,
+  lakeMask,
   fromTop
 }) {
   for (let gy = 0; gy < vm.gridHeight; gy++) {
@@ -39,16 +42,28 @@ function applyGlacierPass(vm, {
       const idx = gy * vm.gridWidth + gx;
       const distance = fromTop ? gy : (vm.gridHeight - 1 - gy);
       const noise = glacierNoiseTable[idx] * landNoiseAmplitude;
-      const additionalGrids = getAdditionalGlacierRowsForCell(vm, colors[idx], {
-        shallowSeaColor,
-        deepSeaColor,
-        lowlandColor,
-        tundraColor,
-        desertColor,
-        highlandColor,
-        alpineColor
-      });
-      const base = computedTopGlacierRows + additionalGrids;
+
+      // Water detection:
+      // - Prefer masks (stable even after colors are overwritten by glacierColor)
+      // - Fallback to color-based check when masks aren't provided
+      const isWater = Array.isArray(landMask)
+        ? (!landMask[idx] || (Array.isArray(lakeMask) && lakeMask[idx]))
+        : (colors[idx] === shallowSeaColor || colors[idx] === deepSeaColor);
+
+      const additionalGrids = isWater
+        ? 0
+        : getAdditionalGlacierRowsForCell(vm, colors[idx], {
+          shallowSeaColor,
+          deepSeaColor,
+          lowlandColor,
+          tundraColor,
+          desertColor,
+          highlandColor,
+          alpineColor
+        });
+
+      const baseRows = isWater ? computedTopGlacierRowsWater : computedTopGlacierRowsLand;
+      const base = baseRows + additionalGrids;
       const threshold = base > 0 ? Math.max(0, base + noise) : 0;
       if (distance < threshold) {
         colors[idx] = glacierColor;
@@ -62,6 +77,10 @@ export function applyGlaciers(vm, {
   glacierNoiseTable,
   landNoiseAmplitude,
   computedTopGlacierRows,
+  computedTopGlacierRowsLand,
+  computedTopGlacierRowsWater,
+  computedSmoothedTopGlacierRowsLand,
+  computedSmoothedTopGlacierRowsWater,
   shallowSeaColor,
   deepSeaColor,
   lowlandColor,
@@ -69,14 +88,29 @@ export function applyGlaciers(vm, {
   desertColor,
   highlandColor,
   alpineColor,
-  glacierColor
+  glacierColor,
+  landMask,
+  lakeMask
 }) {
+  // 優先順: smoothed（glacier_alpha 適用後の内部値） > computedTopGlacierRows...（既存の戻り値）> computedTopGlacierRows（汎用）
+  const landRows = (typeof computedSmoothedTopGlacierRowsLand === 'number')
+    ? computedSmoothedTopGlacierRowsLand
+    : (typeof computedTopGlacierRowsLand === 'number'
+      ? computedTopGlacierRowsLand
+      : (typeof computedTopGlacierRows === 'number' ? computedTopGlacierRows : 0));
+  const waterRows = (typeof computedSmoothedTopGlacierRowsWater === 'number')
+    ? computedSmoothedTopGlacierRowsWater
+    : (typeof computedTopGlacierRowsWater === 'number'
+      ? computedTopGlacierRowsWater
+      : (typeof computedTopGlacierRows === 'number' ? computedTopGlacierRows : landRows));
+
   // --- 氷河の適用（上端） ---
   applyGlacierPass(vm, {
     colors,
     glacierNoiseTable,
     landNoiseAmplitude,
-    computedTopGlacierRows,
+    computedTopGlacierRowsLand: landRows,
+    computedTopGlacierRowsWater: waterRows,
     shallowSeaColor,
     deepSeaColor,
     lowlandColor,
@@ -85,6 +119,8 @@ export function applyGlaciers(vm, {
     highlandColor,
     alpineColor,
     glacierColor,
+    landMask,
+    lakeMask,
     fromTop: true
   });
 
@@ -93,7 +129,8 @@ export function applyGlaciers(vm, {
     colors,
     glacierNoiseTable,
     landNoiseAmplitude,
-    computedTopGlacierRows,
+    computedTopGlacierRowsLand: landRows,
+    computedTopGlacierRowsWater: waterRows,
     shallowSeaColor,
     deepSeaColor,
     lowlandColor,
@@ -102,6 +139,8 @@ export function applyGlaciers(vm, {
     highlandColor,
     alpineColor,
     glacierColor,
+    landMask,
+    lakeMask,
     fromTop: false
   });
 }

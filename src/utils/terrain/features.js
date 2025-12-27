@@ -75,9 +75,9 @@ export function generateFeatures(
                 const idx = gy * vm.gridWidth + gx;
                 // 最終色が低地のみ対象（ツンドラ/砂漠/高地/高山/氷河/海などは除外）
                 if (colors[idx] !== lowlandColor) continue;
-                // cultivated（先に生成）
+                // cultivated（先に生成）陸上の耕作地（cultivated）は海隣接時に baseCult * 10 
                 const baseCult = Math.max(0, vm.cultivatedGenerationProbability || 0);
-                const pcCult = isAdjacentToSea(gx, gy) ? clamp01(baseCult * 10) : baseCult;
+                const pcCult = isAdjacentToSea(gx, gy) ? clamp01(baseCult * 5) : baseCult;
                 // 開始セルの採択は座標由来のシードで決定（安定化）
                 const startCultRng = getStartRng(vm, 'cultivated-start', gx, gy, rCult);
                 if (!cultivatedMask[idx]) {
@@ -104,7 +104,7 @@ export function generateFeatures(
                         onFill: (nIdx) => { cultivatedMask[nIdx] = true; }
                     });
                 }
-                // city（cultivated の後で上書き）
+                // city（cultivated の後で上書き）陸上の都市（city）は adjacencyMultiplier:10 を渡しており、海隣接時に10倍扱い
                 if (cityMask[idx]) continue;
                 const baseCity = Math.max(0, vm.cityGenerationProbability || 0);
                 const pcCity = getBiasedCityProbability({
@@ -116,7 +116,7 @@ export function generateFeatures(
                     biasScale: cityBiasScale,
                     biasMin: cityBiasMin,
                     biasMax: cityBiasMax,
-                    adjacencyMultiplier: 10
+                    adjacencyMultiplier: 5
                 });
                 // 開始セルの採択は座標由来のシードで決定（安定化）
                 const startCityRng = getStartRng(vm, 'city-start', gx, gy, rCity);
@@ -183,9 +183,9 @@ export function generateFeatures(
                 const idx = gy * vm.gridWidth + gx;
                 // 最終色が浅瀬のみ対象
                 if (colors[idx] !== shallowSeaColor) continue;
-                // seaCultivated（先に生成）
+                // seaCultivated（先に生成）浅瀬の海耕作（seaCultivated）は陸隣接時に baseSeaCult * 10
                 const baseSeaCult = Math.max(0, vm.seaCultivatedGenerationProbability || 0);
-                const pcSeaCult = isAdjacentToLand(gx, gy) ? clamp01(baseSeaCult * 10) : baseSeaCult;
+                const pcSeaCult = isAdjacentToLand(gx, gy) ? clamp01(baseSeaCult * 5) : baseSeaCult;
                 // 開始セルの採択は座標由来のシードで決定（安定化）
                 const startSeaCultRng = getStartRng(vm, 'sea-cultivated-start', gx, gy, rSeaCult);
                 if (!seaCultivatedMask[idx]) {
@@ -212,7 +212,7 @@ export function generateFeatures(
                         onFill: (nIdx) => { seaCultivatedMask[nIdx] = true; }
                     });
                 }
-                // seaCity（seaCultivated の後で上書き）
+                // seaCity（seaCultivated の後で上書き）浅瀬の海都市（seaCity）も adjacencyMultiplier:10 を渡しており、陸隣接時に10倍扱い
                 if (seaCityMask[idx]) continue;
                 const baseSeaCity = Math.max(0, vm.seaCityGenerationProbability || 0);
                 const pcSeaCity = getBiasedCityProbability({
@@ -224,7 +224,7 @@ export function generateFeatures(
                     biasScale: cityBiasScale,
                     biasMin: cityBiasMin,
                     biasMax: cityBiasMax,
-                    adjacencyMultiplier: 10
+                    adjacencyMultiplier: 5
                 });
                 // 開始セルの採択は座標由来のシードで決定（安定化）
                 const startSeaCityRng = getStartRng(vm, 'sea-city-start', gx, gy, rSeaCity);
