@@ -2,12 +2,14 @@ import { createStore } from 'vuex';
 import { safeLoadPersistedState, safePersistState } from './persist.js';
 import { createUiSlice } from './slices/ui.js';
 import { createGeneratorSlice } from './slices/generator.js';
+import { createRenderSlice } from './slices/render.js';
 import { createWorldSlice } from './slices/world.js';
 
 const PERSISTED = safeLoadPersistedState();
 
 const UI = createUiSlice({ persisted: PERSISTED });
 const GENERATOR = createGeneratorSlice({ persisted: PERSISTED });
+const RENDER = createRenderSlice({ persisted: PERSISTED });
 const WORLD = createWorldSlice({ persisted: PERSISTED });
 
 export default createStore({
@@ -15,6 +17,7 @@ export default createStore({
     state: {
         ...UI.state,
         ...GENERATOR.state,
+        ...RENDER.state,
         ...WORLD.state,
         // -------------------------------------------------------------------
         // 予約（現状未使用）:
@@ -24,16 +27,19 @@ export default createStore({
     getters: {
         ...UI.getters,
         ...GENERATOR.getters,
+        ...RENDER.getters,
         ...WORLD.getters
     },
     mutations: {
         ...UI.mutations,
         ...GENERATOR.mutations,
+        ...RENDER.mutations,
         ...WORLD.mutations
     },
     actions: {
         ...UI.actions,
         ...GENERATOR.actions,
+        ...RENDER.actions,
         ...WORLD.actions
     },
     plugins: [

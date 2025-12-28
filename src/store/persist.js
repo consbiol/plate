@@ -12,7 +12,8 @@ export function safeLoadPersistedState() {
             averageTemperature: obj.averageTemperature,
             planeGridCellPx: obj.planeGridCellPx,
             era: obj.era,
-            generatorParams: obj.generatorParams
+            generatorParams: obj.generatorParams,
+            renderSettings: obj.renderSettings
         };
     } catch (e) {
         return null;
@@ -30,7 +31,8 @@ export function safePersistState(state) {
             averageTemperature: state.averageTemperature,
             planeGridCellPx: state.planeGridCellPx,
             era: state.era,
-            generatorParams: state.generatorParams
+            generatorParams: state.generatorParams,
+            renderSettings: state.renderSettings
         };
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (e) {

@@ -12,6 +12,12 @@ Vueコンポーネント（`src/components/*`）から呼ばれても、でき�
 ### サブディレクトリ
 
 - `popup/`: popup/iframe の `srcdoc` や popup 用HTMLを生成する関数群
+- `sphere/`: Sphere（球体ビュー）関連のロジック（CPU/WebGLレンダラ、ノイズ、補助関数など）
 - `stats/`: gridData の集計・統計算出などの関数群
+
+### 入口（まずここを読む）
+
+- `popup/README.md`: popup/iframe 向けHTML生成の責務と一覧
+- `sphere/README.md`: Sphere（CPU/WebGL）の構成、更新フロー、vm契約
 
 

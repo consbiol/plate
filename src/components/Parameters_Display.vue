@@ -9,6 +9,9 @@
     <button @click="onClickDrift" style="margin-bottom: 12px; margin-left: 8px;">
       Drift 大陸中心点 + ノイズ再抽選
     </button>
+    <button @click="onClickUpdateSphere" style="margin-bottom: 12px; margin-left: 8px;">
+      Sphere 更新
+    </button>
     
     <div style="margin-bottom: 8px;">
       <label>陸の中心点の数 y: </label>
@@ -369,6 +372,20 @@ export default {
     storeGeneratorParams() {
       return this.$store?.getters?.generatorParams ?? null;
     },
+    storeRenderSettings: {
+      get() {
+        return this.$store?.getters?.renderSettings ?? null;
+      },
+      set(val) {
+        try {
+          if (this.$store && val && typeof val === 'object') {
+            this.$store.dispatch('updateRenderSettings', val);
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    },
     averageTemperature: {
       get() {
         const v = this.$store?.getters?.averageTemperature;
@@ -456,16 +473,45 @@ export default {
         this._syncLocalFromStoreGeneratorParams();
       }
     },
+    storeRenderSettings: {
+      deep: true,
+      handler() {
+        this._syncLocalFromStoreRenderSettings();
+      }
+    },
     // local の入力変更を store に反映（v-model での変更を自動で拾う）
     local: {
       deep: true,
       handler() {
         if (this.isSyncingLocalFromStore) return;
-        this.$store?.dispatch?.('updateGeneratorParams', this.local);
+        this._syncStoreFromLocal();
       }
     }
   },
   methods: {
+    _syncStoreFromLocal() {
+      // generatorParams と renderSettings に分配して store に反映する
+      const local = this.local || {};
+      // f_cloud は renderSettings に移管（generatorParams からは除外）
+      const generatorAllowed = new Set([
+        ...Object.keys(PARAM_DEFAULTS).filter((k) => k !== 'f_cloud'),
+        'deterministicSeed',
+        'minCenterDistance'
+      ]);
+      const renderAllowed = new Set([
+        'f_cloud'
+      ]);
+      const genPatch = {};
+      const renderPatch = {};
+      for (const k of Object.keys(local)) {
+        if (generatorAllowed.has(k)) genPatch[k] = local[k];
+        if (renderAllowed.has(k)) renderPatch[k] = local[k];
+      }
+      try {
+        if (Object.keys(genPatch).length > 0) this.$store?.dispatch?.('updateGeneratorParams', genPatch);
+        if (Object.keys(renderPatch).length > 0) this.$store?.dispatch?.('updateRenderSettings', renderPatch);
+      } catch (e) { /* ignore */ }
+    },
     _syncLocalFromStoreGeneratorParams() {
       const gp = this.storeGeneratorParams;
       if (!gp || typeof gp !== 'object') return;
@@ -477,6 +523,19 @@ export default {
           if (Object.prototype.hasOwnProperty.call(this.local, k)) {
             this.local[k] = gp[k];
           }
+        }
+      } finally {
+        this.isSyncingLocalFromStore = false;
+      }
+    },
+    _syncLocalFromStoreRenderSettings() {
+      const rs = this.storeRenderSettings;
+      if (!rs || typeof rs !== 'object') return;
+      this.isSyncingLocalFromStore = true;
+      try {
+        // 現状 UI で扱っているのは f_cloud のみ
+        if (Object.prototype.hasOwnProperty.call(this.local, 'f_cloud') && typeof rs.f_cloud !== 'undefined') {
+          this.local.f_cloud = rs.f_cloud;
         }
       } finally {
         this.isSyncingLocalFromStore = false;
@@ -514,6 +573,13 @@ export default {
       this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
       this.driftSignal += 1;
     },
+    onClickUpdateSphere() {
+      // 手動で Sphere を更新（popup があれば iframe 側に差分更新を要求する）
+      try {
+        this.updatePlaneAndSphereIframes();
+      } catch (e) { /* ignore */ }
+    },
+    
     
     onGenerated(payload) {
       // 1) パラメータの出力HTMLをポップアップ表示・更新
