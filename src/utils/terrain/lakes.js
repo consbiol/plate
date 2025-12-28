@@ -63,7 +63,8 @@ export function generateLakes(vm, centers, centerLandCells, landMask, colors, sh
                 lakeMask[cellIdx] = true;
             }
             // 湖の開始行の計算帯域閾値を算出し、半径を導出する：
-            // R = ceil(bandThreshold / 5). If <= 0, this lake will not form lowland.
+            // Revise 側のアルゴリズムに合わせる: R = ceil(bandThreshold / 5).
+            // If <= 0, this lake will not form lowland.
             let bandThreshold = 0;
             if (typeof vm._getLandDistanceThresholdForRow === 'function' && start) {
                 try { bandThreshold = Number(vm._getLandDistanceThresholdForRow(start.y, start.x)) || 0; } catch (e) { bandThreshold = 0; }
@@ -84,18 +85,39 @@ export function generateLakes(vm, centers, centerLandCells, landMask, colors, sh
         if (lakeMask[i]) colors[i] = shallowSeaColor;
     }
 
-    // For each lake we generated earlier we didn't keep per-lake grouping.
-    // Re-scan centers to rebuild per-lake cell groups and compute radius per lake
-    // Alternatively, we collected lakeCells per lake during generation; to avoid
-    // excessive restructuring, we stored lakes during generation below.
-    // NOTE: during generation we will have pushed to lakesList; if not, fallback
-    // to single-radius behavior (but current code pushes entries).
-    // Apply lowland conversion per-lake using the lake's radius.
+    // Apply lowland conversion using helper (exposed for reuse by Revise)
+    try {
+        applyLowlandAroundLakes(vm, {
+            colors,
+            lakesList,
+            lakeMask,
+            baseLandThr: vm.baseLandDistanceThreshold,
+            desertColor,
+            lowlandColor
+        });
+    } catch (e) { /* ignore */ }
+
+    // expose per-lake list to caller vm for high-frequency revise use
+    try { vm._lastLakesList = lakesList; } catch (e) { /* ignore */ }
+    return lakeMask;
+}
+
+/**
+ * Apply lowland conversion around lakes.
+ * - vm: component instance (provides torusWrap, gridWidth, gridHeight)
+ * - options: { colors, lakesList, lakeMask, baseLandThr, desertColor, lowlandColor }
+ */
+export function applyLowlandAroundLakes(vm, options) {
+    const colors = options.colors;
+    const lakesList = options.lakesList;
+    const lakeMask = options.lakeMask;
+    const baseLandThr = options.baseLandThr || 0;
+    const desertColor = options.desertColor;
+    const lowlandColor = options.lowlandColor;
+
     if (Array.isArray(lakesList) && lakesList.length === 0) {
-        // If lakesList is empty, we might not have captured lakes during generation.
-        // Fall back to previous global heuristic but without forcing min=1.
-        const lakeLowlandRadius = Math.floor(vm.baseLandDistanceThreshold / 5);
-        if (lakeLowlandRadius > 0) {
+        const lakeLowlandRadius = Math.floor(Number(baseLandThr || 0) / 5);
+        if (lakeLowlandRadius > 0 && lakeMask) {
             for (let gy = 0; gy < vm.gridHeight; gy++) {
                 for (let gx = 0; gx < vm.gridWidth; gx++) {
                     const idx = gy * vm.gridWidth + gx;
@@ -116,11 +138,10 @@ export function generateLakes(vm, centers, centerLandCells, landMask, colors, sh
             }
         }
     } else {
-        // Apply per-lake radii
-        for (const lake of lakesList) {
+        for (const lake of (lakesList || [])) {
             const R = lake.radius;
             if (!Number.isFinite(R) || R <= 0) continue;
-            for (const cellIdx of lake.cells) {
+            for (const cellIdx of (lake.cells || [])) {
                 const gx = cellIdx % vm.gridWidth;
                 const gy = Math.floor(cellIdx / vm.gridWidth);
                 for (let dy = -R; dy <= R; dy++) {
@@ -138,9 +159,5 @@ export function generateLakes(vm, centers, centerLandCells, landMask, colors, sh
             }
         }
     }
-    // expose per-lake list to caller vm for high-frequency revise use
-    try { vm._lastLakesList = lakesList; } catch (e) { /* ignore */ }
-    return lakeMask;
 }
-
 

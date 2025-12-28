@@ -10,7 +10,7 @@ import {
   torusDirection as torusDirectionUtil,
   torusWrap as torusWrapUtil
 } from '../utils/torus.js';
-import { generateLakes } from '../utils/terrain/lakes.js';
+import { generateLakes, applyLowlandAroundLakes } from '../utils/terrain/lakes.js';
 import { generateHighlands } from '../utils/terrain/highlands.js';
 import { generateAlpines } from '../utils/terrain/alpines.js';
 import { generateFeatures } from '../utils/terrain/features.js';
@@ -462,7 +462,7 @@ export default {
       // 追加分を取り出し、基準（氷河row）を smoothed 値に置き換えてから適用する。
       const tundraExtraRows = Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
       // ツンドラrowは「海グリッドに生成する氷河row」に追従させる（陸氷河は seaBoost 等で挙動が異なるため）
-      const computedTopTundraRows = Math.max(0, computedSmoothedTopGlacierRowsWater + tundraExtraRows);
+      const computedTopTundraRows = Math.max(0, computedTopGlacierRowsWater + tundraExtraRows);
       applyTundra(this, {
         colors,
         landNoiseAmplitude,
@@ -588,7 +588,8 @@ export default {
     // - すべてのノイズをランダムに再抽選（deterministicSeed由来の派生RNGも無効化）
     runDrift() {
       const N = this.gridWidth * this.gridHeight;
-      const seededRng = null; // Driftでは決定論RNGは使わない（全ノイズをランダム化）
+      // ドリフト内の「ランダム移動」はシード固定化する
+      const seededRng = this._getSeededRng();
 
       // Drift中は deterministicSeed 由来の派生RNG（shape-profile等）を無効化
       const prevForce = this.forceRandomDerivedRng;
@@ -708,6 +709,8 @@ export default {
           { dx: 1, dy: 1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }, { dx: -1, dy: -1 }
         ];
 
+        const rngForMoves = (typeof seededRng === 'function') ? seededRng : Math.random;
+
         // --- 1ターン分の移動 ---
         const center = computeCenter();
         const sign = isApproach ? 1 : -1;
@@ -737,7 +740,7 @@ export default {
 
           // 3) ランダム移動 x2
           for (let k = 0; k < 2; k++) {
-            const r = randDirs8[(Math.random() * randDirs8.length) | 0];
+            const r = randDirs8[(rngForMoves() * randDirs8.length) | 0];
             move(p, r.dx, r.dy);
           }
 
@@ -954,7 +957,7 @@ export default {
         const computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
 
         const tundraExtraRows = Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
-        const computedTopTundraRows = Math.max(0, computedSmoothedTopGlacierRowsWater + tundraExtraRows);
+        const computedTopTundraRows = Math.max(0, computedTopGlacierRowsWater + tundraExtraRows);
         applyTundra(this, {
           colors,
           landNoiseAmplitude,
@@ -1095,58 +1098,19 @@ export default {
       }
 
       // --- 湖の周囲を低地に戻す（低頻度結果を維持） ---
-      // Prefer per-lake radii collected at generation time (c.lakesList).
-      // Fallback to previous global heuristic if per-lake data missing.
-      if (Array.isArray(c.lakesList) && c.lakesList.length > 0) {
-        for (const lake of c.lakesList) {
-          // Recompute per-lake radius from CURRENT band threshold (Revise is meant to reflect parameter updates)
-          let R = 0;
-          if (lake && typeof lake.startY === 'number' && typeof lake.startX === 'number') {
-            const bandThr = Number(this._getLandDistanceThresholdForRow(lake.startY, lake.startX)) || 0;
-            R = Math.ceil(bandThr / 3);
-          } else {
-            R = (lake && Number(lake.radius)) || 0;
-          }
-          if (!Number.isFinite(R) || R <= 0) continue;
-          for (const cellIdx of (lake.cells || [])) {
-            const gx = cellIdx % this.gridWidth;
-            const gy = Math.floor(cellIdx / this.gridWidth);
-            for (let dy = -R; dy <= R; dy++) {
-              for (let dx = -R; dx <= R; dx++) {
-                const wrapped = this.torusWrap(gx + dx, gy + dy);
-                if (!wrapped) continue;
-                const d = Math.hypot(dx, dy);
-                if (d > R) continue;
-                const nIdx = wrapped.y * this.gridWidth + wrapped.x;
-                if (colors[nIdx] === c.desertColor) colors[nIdx] = c.lowlandColor;
-              }
-            }
-          }
-        }
-      } else {
+      try {
         const baseLandThr = (this.baseLandDistanceThresholdFixed != null)
           ? this.baseLandDistanceThresholdFixed
           : this.baseLandDistanceThreshold;
-        const lakeLowlandRadius = Math.floor(Number(baseLandThr || 0) / 5);
-        if (c.lakeMask && lakeLowlandRadius > 0) {
-          for (let gy = 0; gy < this.gridHeight; gy++) {
-            for (let gx = 0; gx < this.gridWidth; gx++) {
-              const idx = gy * this.gridWidth + gx;
-              if (!c.lakeMask[idx]) continue;
-              for (let dy = -lakeLowlandRadius; dy <= lakeLowlandRadius; dy++) {
-                for (let dx = -lakeLowlandRadius; dx <= lakeLowlandRadius; dx++) {
-                  const wrapped = this.torusWrap(gx + dx, gy + dy);
-                  if (!wrapped) continue;
-                  const d = Math.hypot(dx, dy);
-                  if (d > lakeLowlandRadius) continue;
-                  const nIdx = wrapped.y * this.gridWidth + wrapped.x;
-                  if (colors[nIdx] === c.desertColor) colors[nIdx] = c.lowlandColor;
-                }
-              }
-            }
-          }
-        }
-      }
+        applyLowlandAroundLakes(this, {
+          colors,
+          lakesList: c.lakesList || [],
+          lakeMask: c.lakeMask,
+          baseLandThr,
+          desertColor: c.desertColor,
+          lowlandColor: c.lowlandColor
+        });
+      } catch (e) { /* ignore */ }
 
       // --- 氷河行数の再計算（smoothed含む） ---
       const ratioOcean = (c.preGlacierStats && c.preGlacierStats.total)
@@ -1159,7 +1123,7 @@ export default {
 
       // --- ツンドラ再適用（固定ノイズ） ---
       const tundraExtraRows = Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
-      const computedTopTundraRows = Math.max(0, computedSmoothedTopGlacierRowsWater + tundraExtraRows);
+      const computedTopTundraRows = Math.max(0, computedTopGlacierRowsWater + tundraExtraRows);
       applyTundra(this, {
         colors,
         landNoiseAmplitude: c.landNoiseAmplitude,
