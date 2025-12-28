@@ -141,6 +141,8 @@ export default {
       this.runGenerate();
     },
     updateSignal() {
+      // Update は中心座標を維持するが、ドリフト状態（superPloom_calc/superPloom/phase）は
+      // 初期化せずにそのまま保持する（generate と挙動を分ける）。
       this.runGenerate({ preserveCenterCoordinates: true });
     },
     reviseSignal() {
@@ -271,12 +273,15 @@ export default {
     runGenerate({ preserveCenterCoordinates = false } = {}) {
       const N = this.gridWidth * this.gridHeight;
       const seededRng = this._getSeededRng();
-      // Initialize superPloom / drift phase when a full generate is started
+      // Initialize superPloom / drift phase only for full generate.
+      // If preserveCenterCoordinates is true (Update), DO NOT modify superPloom_* nor drift phase/turn.
       try {
-        this.superPloom_calc = 0;
-        this.superPloom_history = [];
-        this.driftTurn = 0;
-        this.driftIsApproach = true; // start with Approach phase
+        if (!preserveCenterCoordinates) {
+          this.superPloom_calc = 0;
+          this.superPloom_history = [];
+          this.driftTurn = 0;
+          this.driftIsApproach = true; // start with Approach phase
+        }
       } catch (e) { /* ignore */ }
       const seededLog = Array.from({ length: (this.centersY || 0) * 1 || 1 }, () => ({
         highlandsCount: 0,
@@ -905,8 +910,8 @@ export default {
           ? this.superPloom_history[this.superPloom_history.length - 6]
           : 0;
 
-        // フェーズ切替: 接近側で superPloom > 40 -> 反発へ。反発で superPloom == 0 -> 接近へ。
-        if (isApproach && superPloom > 40) {
+        // フェーズ切替: 接近側で superPloom > 30 -> 反発へ。反発で superPloom == 0 -> 接近へ。
+        if (isApproach && superPloom > 20) {
           this.driftIsApproach = false;
         } else if (!isApproach && superPloom === 0) {
           this.driftIsApproach = true;
