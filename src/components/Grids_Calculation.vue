@@ -71,6 +71,9 @@ export default {
     landDistanceThreshold8: { type: Number, required: false, default: 4 },
     landDistanceThreshold9: { type: Number, required: false, default: 8 },
     landDistanceThreshold10: { type: Number, required: false, default: 15 },
+    // 上端・下端ツンドラ追加グリッド数（UI設定値そのもの）
+    // ※ topTundraRows は負値をクランプする都合で差分復元すると膨張するため、こちらを優先して使う
+    tundraExtraRows: { type: Number, required: false, default: 0 },
     topTundraRows: { type: Number, required: true },
     topGlacierRows: { type: Number, required: true },
     landGlacierExtraRows: { type: Number, required: true },
@@ -123,6 +126,8 @@ export default {
 
       // --- Drift の「ターン」状態（driftSignal 1回 = 1ターン） ---
       driftTurn: 0,
+      // 現在のフェーズ（true=接近, false=反発）
+      driftIsApproach: true,
       superPloom_calc: 0,
       superPloom_history: [],
       // Parameters Output に出す用（直近ターンの値）
@@ -460,7 +465,9 @@ export default {
       // --- ツンドラの適用（上端・下端） ---
       // 「上端・下端ツンドラグリッド追加数」は UI 上 (topTundraRows - topGlacierRows) で表現されているため、
       // 追加分を取り出し、基準（氷河row）を smoothed 値に置き換えてから適用する。
-      const tundraExtraRows = Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
+      const tundraExtraRows = Number.isFinite(Number(this.tundraExtraRows))
+        ? Math.max(0, Number(this.tundraExtraRows))
+        : Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
       // ツンドラrowは「海グリッドに生成する氷河row」に追従させる（陸氷河は seaBoost 等で挙動が異なるため）
       const computedTopTundraRows = Math.max(0, computedTopGlacierRowsWater + tundraExtraRows);
       applyTundra(this, {
@@ -588,8 +595,12 @@ export default {
     // - すべてのノイズをランダムに再抽選（deterministicSeed由来の派生RNGも無効化）
     runDrift() {
       const N = this.gridWidth * this.gridHeight;
-      // ドリフト内の「ランダム移動」はシード固定化する
-      const seededRng = this._getSeededRng();
+      // Driftでは決定論RNGは原則無効（ノイズはランダム化）だが、いくつかの処理は seededRng 引数を取るため null を用いる
+      const seededRng = null;
+      // ドリフト内の「ランダム移動」はシード固定化する（ただし毎ターン同じ方向に固定されないように turn/点index を混ぜる）
+      // NOTE: this._getSeededRng() を毎回作ると乱数列が毎ターン先頭から同じになり「永遠に同じ2方向を引き続ける」ため、
+      //       衝突判定で弾かれたケースで停止しやすい。createDerivedRng を直接使って turn を混ぜる。
+      const deterministicSeedForMoves = this.deterministicSeed;
 
       // Drift中は deterministicSeed 由来の派生RNG（shape-profile等）を無効化
       const prevForce = this.forceRandomDerivedRng;
@@ -623,9 +634,9 @@ export default {
           y: Math.max(0, Math.min(HEIGHT - 1, Math.floor(c.y)))
         }));
 
-        // フェーズ判定: 50ターン単位で Approach / Repel を交互
+        // フェーズ判定: 動的に切り替える（this.driftIsApproach により管理）
         const turn0 = Number.isFinite(this.driftTurn) ? (this.driftTurn | 0) : 0;
-        const isApproach = (Math.floor(turn0 / 50) % 2) === 0;
+        const isApproach = (typeof this.driftIsApproach === 'boolean') ? this.driftIsApproach : true;
         const phaseName = isApproach ? 'Approach' : 'Repel';
         // 距離計算: xは常にトーラス、yは Repel のみトーラス
         const useYtorus = !isApproach;
@@ -666,12 +677,20 @@ export default {
         };
 
         // 移動処理の核: 1グリッド移動を試行し、衝突（最小距離違反）ならキャンセル
+        // NOTE:
+        // - 反発フェーズでは「距離計算」は上下トーラスを使うが、
+        //   実際の座標は上下を越えられない（クランプ）ため、
+        //   最小距離維持（衝突判定）まで上下トーラスにすると「端同士」が近接扱いになり
+        //   端から離脱できず張り付く原因になる。
+        // - そのため衝突判定は「xのみトーラス」「yは通常差分（非トーラス）」で行う。
         const move = (p, dx, dy) => {
           const nx = wrapX(p.x + dx);
           const ny = clampY(p.y + dy);
+          // クランプ等で座標が変わらないなら「移動できなかった」とみなす（張り付き/空振り対策）
+          if (nx === p.x && ny === p.y) return false;
           const collision = points.some((other) => {
             if (other === p) return false;
-            return getDist({ x: nx, y: ny }, other, useYtorus).d < MIN_DIST;
+            return getDist({ x: nx, y: ny }, other, /*yTorus*/ false).d < MIN_DIST;
           });
           if (!collision) {
             p.x = nx;
@@ -709,46 +728,109 @@ export default {
           { dx: 1, dy: 1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }, { dx: -1, dy: -1 }
         ];
 
-        const rngForMoves = (typeof seededRng === 'function') ? seededRng : Math.random;
+        // 重心法/最近点法の「意図した1歩」が端クランプ等で無効になった時のフォールバック
+        const movePrimary = (p, dx, dy, rng) => {
+          if (move(p, dx, dy)) return true;
+          // y方向が端でクランプされる（＝動けない）なら、横へ逃がす
+          if (dy !== 0 && clampY(p.y + dy) === p.y) {
+            const dxAlt = (rng() < 0.5) ? -1 : 1;
+            if (move(p, dxAlt, 0)) return true;
+          }
+          return false;
+        };
 
         // --- 1ターン分の移動 ---
         const center = computeCenter();
-        const sign = isApproach ? 1 : -1;
-        points.forEach((p) => {
-          // 1) 重心法
-          const dG = getDist(p, center, useYtorus);
-          const stG = stepFromVector(dG.dx, dG.dy);
-          move(p, stG.dx * sign, stG.dy * sign);
+        points.forEach((p, pi) => {
+          // 点ごとの乱数源（turn0 と点index を混ぜる）
+          const rngForMoves = (typeof deterministicSeedForMoves !== 'undefined' && deterministicSeedForMoves !== null)
+            ? (createDerivedRng(deterministicSeedForMoves, 'drift-move', turn0, pi) || Math.random)
+            : Math.random;
 
-          // 2) 最短点法
-          let nearest = null;
-          let minD = Infinity;
-          for (let i = 0; i < points.length; i++) {
-            const other = points[i];
-            if (other === p) continue;
-            const d = getDist(p, other, useYtorus).d;
-            if (d < minD) {
-              minD = d;
-              nearest = other;
+          if (isApproach) {
+            // Approach: centroid -> nearest -> random x2
+            const dG = getDist(p, center, useYtorus);
+            const stG = stepFromVector(dG.dx, dG.dy);
+            movePrimary(p, stG.dx * 1, stG.dy * 1, rngForMoves);
+
+            // nearest approach
+            let nearest = null;
+            let minD = Infinity;
+            for (let i = 0; i < points.length; i++) {
+              const other = points[i];
+              if (other === p) continue;
+              const d = getDist(p, other, useYtorus).d;
+              if (d < minD) {
+                minD = d;
+                nearest = other;
+              }
             }
-          }
-          if (nearest) {
-            const dN = getDist(p, nearest, useYtorus);
-            const stN = stepFromVector(dN.dx, dN.dy);
-            move(p, stN.dx * sign, stN.dy * sign);
-          }
+            if (nearest) {
+              const dN = getDist(p, nearest, useYtorus);
+              const stN = stepFromVector(dN.dx, dN.dy);
+              movePrimary(p, stN.dx * 1, stN.dy * 1, rngForMoves);
+            }
 
-          // 3) ランダム移動 x2
-          for (let k = 0; k < 2; k++) {
-            const r = randDirs8[(rngForMoves() * randDirs8.length) | 0];
-            move(p, r.dx, r.dy);
-          }
+            for (let k = 0; k < 2; k++) {
+              const r = randDirs8[(rngForMoves() * randDirs8.length) | 0];
+              move(p, r.dx, r.dy);
+            }
+          } else {
+            // Repel: 3-turn cycle
+            const cycle = turn0 % 3;
+            // 1) centroid repel
+            const dG = getDist(p, center, useYtorus);
+            const stG = stepFromVector(dG.dx, dG.dy);
+            movePrimary(p, stG.dx * -1, stG.dy * -1, rngForMoves);
 
-          // 4) Repel 特有: 上下端5グリッド以内なら赤道へ 1
-          if (!isApproach && (p.y <= 5 || p.y >= (HEIGHT - 5))) {
-            const eq = (HEIGHT - 1) / 2;
-            const dyToEq = (p.y < eq) ? 1 : -1;
-            move(p, 0, dyToEq);
+            // 2) nearest repel (and also find second nearest)
+            let nearest = null, second = null;
+            let minD = Infinity, secondD = Infinity;
+            for (let i = 0; i < points.length; i++) {
+              const other = points[i];
+              if (other === p) continue;
+              const d = getDist(p, other, useYtorus).d;
+              if (d < minD) { secondD = minD; second = nearest; minD = d; nearest = other; }
+              else if (d < secondD) { secondD = d; second = other; }
+            }
+            if (nearest) {
+              const dN = getDist(p, nearest, useYtorus);
+              const stN = stepFromVector(dN.dx, dN.dy);
+              movePrimary(p, stN.dx * -1, stN.dy * -1, rngForMoves);
+            }
+
+            if (cycle === 2) {
+              // third turn: random once + approach to second-nearest
+              const r = randDirs8[(rngForMoves() * randDirs8.length) | 0];
+              move(p, r.dx, r.dy);
+              if (second) {
+                const d2 = getDist(p, second, useYtorus);
+                const st2 = stepFromVector(d2.dx, d2.dy);
+                movePrimary(p, st2.dx * 1, st2.dy * 1, rngForMoves);
+              }
+            } else {
+              // first two turns: random x2
+              for (let k = 0; k < 2; k++) {
+                const r = randDirs8[(rngForMoves() * randDirs8.length) | 0];
+                move(p, r.dx, r.dy);
+              }
+            }
+
+            // repel特有: 上下端5グリッド以内なら赤道へ 1
+            if (p.y <= 5 || p.y >= (HEIGHT - 5)) {
+              const eq = (HEIGHT - 1) / 2;
+              const dyToEq = (p.y < eq) ? 1 : -1;
+              // まず直進、ダメなら斜め/横を試して「張り付き」を避ける
+              if (!move(p, 0, dyToEq)) {
+                if (!move(p, 1, dyToEq)) {
+                  if (!move(p, -1, dyToEq)) {
+                    // 最後の保険: 横に1（トーラス）だけでも動けるなら動かす
+                    const dxAlt = (rngForMoves() < 0.5) ? -1 : 1;
+                    move(p, dxAlt, 0);
+                  }
+                }
+              }
+            }
           }
         });
 
@@ -764,17 +846,35 @@ export default {
           }
         }
         const avgDist = cnt > 0 ? (sum / cnt) : 0;
+        // --- superPloom 更新（7点間平均距離） ---
         let spc = Number.isFinite(this.superPloom_calc) ? this.superPloom_calc : 0;
-        if (avgDist < 50) spc += 1;
-        else if (avgDist <= 60) spc -= 1;
-        else spc -= 2;
+        // 既定値は minCenterDistance に依存
+        const minCD = Number.isFinite(Number(this.minCenterDistance)) ? Number(this.minCenterDistance) : 20;
+        let baseDefault = 50 + (((minCD - 20) / 5) * 2);
+        baseDefault = Math.min(baseDefault, 58);
+        if (avgDist < baseDefault) {
+          spc += 1;
+        } else if (avgDist >= 58 && avgDist <= 62) {
+          spc -= 4;
+        } else if (avgDist > 62 && avgDist <= 65) {
+          spc -= 2;
+        } else if (avgDist > 65) {
+          spc -= 1;
+        }
         spc = Math.max(spc, 0);
         this.superPloom_calc = spc;
         if (!Array.isArray(this.superPloom_history)) this.superPloom_history = [];
         this.superPloom_history.push(spc);
-        const superPloom = (this.superPloom_history.length > 20)
-          ? this.superPloom_history[this.superPloom_history.length - 21]
+        const superPloom = (this.superPloom_history.length > 5)
+          ? this.superPloom_history[this.superPloom_history.length - 6]
           : 0;
+
+        // フェーズ切替: 接近側で superPloom > 40 -> 反発へ。反発で superPloom == 0 -> 接近へ。
+        if (isApproach && superPloom > 40) {
+          this.driftIsApproach = false;
+        } else if (!isApproach && superPloom === 0) {
+          this.driftIsApproach = true;
+        }
 
         // ターンを進める（driftSignal 1回 = 1ターン）
         this.driftTurn = turn0 + 1;
@@ -956,7 +1056,9 @@ export default {
         const computedSmoothedTopGlacierRowsLand = getSmoothedGlacierRows(this, ratioOcean, 'land');
         const computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
 
-        const tundraExtraRows = Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
+        const tundraExtraRows = Number.isFinite(Number(this.tundraExtraRows))
+          ? Math.max(0, Number(this.tundraExtraRows))
+          : Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
         const computedTopTundraRows = Math.max(0, computedTopGlacierRowsWater + tundraExtraRows);
         applyTundra(this, {
           colors,
@@ -1122,7 +1224,9 @@ export default {
       const computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
 
       // --- ツンドラ再適用（固定ノイズ） ---
-      const tundraExtraRows = Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
+      const tundraExtraRows = Number.isFinite(Number(this.tundraExtraRows))
+        ? Math.max(0, Number(this.tundraExtraRows))
+        : Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
       const computedTopTundraRows = Math.max(0, computedTopGlacierRowsWater + tundraExtraRows);
       applyTundra(this, {
         colors,

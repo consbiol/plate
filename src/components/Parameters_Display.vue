@@ -194,6 +194,7 @@
       :kDecay="3.0"
       :baseSeaDistanceThreshold="local.baseSeaDistanceThreshold"
       :baseLandDistanceThreshold="landDistanceThresholdAverage"
+      :tundraExtraRows="local.tundraExtraRows"
       :landDistanceThreshold1="local.landDistanceThreshold1"
       :landDistanceThreshold2="local.landDistanceThreshold2"
       :landDistanceThreshold3="local.landDistanceThreshold3"
