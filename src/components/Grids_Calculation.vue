@@ -119,7 +119,14 @@ export default {
       // 低頻度タスク側の baseLandDistanceThreshold を固定（Revise では固定値を使う）
       baseLandDistanceThresholdFixed: null,
       // Drift中は deterministicSeed 由来の派生RNG（shape-profile等）を無効化して「全ノイズをランダム」にする
-      forceRandomDerivedRng: false
+      forceRandomDerivedRng: false,
+
+      // --- Drift の「ターン」状態（driftSignal 1回 = 1ターン） ---
+      driftTurn: 0,
+      superPloom_calc: 0,
+      superPloom_history: [],
+      // Parameters Output に出す用（直近ターンの値）
+      driftMetrics: null
     };
   },
   watch: {
@@ -573,7 +580,11 @@ export default {
     },
     // Drift:
     // - 前回Generateの中心点（hfCache.centers）をキャッシュとして使用
-    // - 暫定アルゴリズム: 全中心点を右に10グリッド移動（xをラップ）
+    // - 新アルゴリズム:
+    //   - 50ターンごとに Approach / Repel を交互
+    //   - 各ターンで「重心法 1」「最短点法 1」「ランダム 1 x2」を順に試行
+    //   - Repel では上下端5グリッド以内なら赤道方向へ 1 追加
+    //   - 常に minCenterDistance（中心間の排他距離）を衝突判定で維持
     // - すべてのノイズをランダムに再抽選（deterministicSeed由来の派生RNGも無効化）
     runDrift() {
       const N = this.gridWidth * this.gridHeight;
@@ -585,16 +596,193 @@ export default {
       try {
         // centers はキャッシュ優先。無ければ通常サンプリングにフォールバック。
         const prevCenters = (this.hfCache && Array.isArray(this.hfCache.centers)) ? this.hfCache.centers : null;
-        const effectiveMinCenterDistance = this._computeEffectiveMinCenterDistance();
+        // 「中心間の排他距離 (グリッド)」は既存設定（prop）を優先して使用
+        const effectiveMinCenterDistance = Number.isFinite(Number(this.minCenterDistance))
+          ? Number(this.minCenterDistance)
+          : this._computeEffectiveMinCenterDistance();
         const baseCenters = (prevCenters && prevCenters.length > 0)
           ? prevCenters
           : sampleLandCenters(this, null, effectiveMinCenterDistance);
 
-        const dx = 10;
-        const centers = baseCenters.map((c) => ({
-          x: ((Math.floor(c.x) + dx) % this.gridWidth + this.gridWidth) % this.gridWidth,
-          y: Math.max(0, Math.min(this.gridHeight - 1, Math.floor(c.y)))
+        // 初回（Generateを経ずにDriftした等）はドリフト状態をリセット
+        if (!prevCenters || prevCenters.length <= 0) {
+          this.driftTurn = 0;
+          this.superPloom_calc = 0;
+          this.superPloom_history = [];
+          this.driftMetrics = null;
+        }
+
+        const WIDTH = this.gridWidth;
+        const HEIGHT = this.gridHeight;
+        const MIN_DIST = Number(effectiveMinCenterDistance) || 1;
+
+        // 点配列（整数格子上で動かす）
+        const points = baseCenters.map((c) => ({
+          x: ((Math.floor(c.x) % WIDTH) + WIDTH) % WIDTH,
+          y: Math.max(0, Math.min(HEIGHT - 1, Math.floor(c.y)))
         }));
+
+        // フェーズ判定: 50ターン単位で Approach / Repel を交互
+        const turn0 = Number.isFinite(this.driftTurn) ? (this.driftTurn | 0) : 0;
+        const isApproach = (Math.floor(turn0 / 50) % 2) === 0;
+        const phaseName = isApproach ? 'Approach' : 'Repel';
+        // 距離計算: xは常にトーラス、yは Repel のみトーラス
+        const useYtorus = !isApproach;
+
+        const clampY = (y) => {
+          if (y < 0) return 0;
+          if (y > HEIGHT - 1) return HEIGHT - 1;
+          return y;
+        };
+        // xはトーラス
+        const wrapX = (x) => ((x % WIDTH) + WIDTH) % WIDTH;
+
+        // getDist: 最短距離（dx,dy）を返す。xは常にトーラス。yは useYtorus=true の場合のみトーラス。
+        const getDist = (a, b, yTorus) => {
+          let dx = (b.x - a.x);
+          if (dx > WIDTH / 2) dx -= WIDTH;
+          if (dx < -WIDTH / 2) dx += WIDTH;
+          let dy = (b.y - a.y);
+          if (yTorus) {
+            if (dy > HEIGHT / 2) dy -= HEIGHT;
+            if (dy < -HEIGHT / 2) dy += HEIGHT;
+          }
+          const d = Math.hypot(dx, dy);
+          return { dx, dy, d };
+        };
+
+        const stepFromVector = (dx, dy) => {
+          if (!Number.isFinite(dx) || !Number.isFinite(dy)) return { dx: 0, dy: 0 };
+          if (dx === 0 && dy === 0) return { dx: 0, dy: 0 };
+          const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+          const sy = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+          const ax = Math.abs(dx);
+          const ay = Math.abs(dy);
+          // 斜めを優先しつつ、極端に片方が大きい場合は直進
+          if (ax > ay * 1.5) return { dx: sx, dy: 0 };
+          if (ay > ax * 1.5) return { dx: 0, dy: sy };
+          return { dx: sx, dy: sy };
+        };
+
+        // 移動処理の核: 1グリッド移動を試行し、衝突（最小距離違反）ならキャンセル
+        const move = (p, dx, dy) => {
+          const nx = wrapX(p.x + dx);
+          const ny = clampY(p.y + dy);
+          const collision = points.some((other) => {
+            if (other === p) return false;
+            return getDist({ x: nx, y: ny }, other, useYtorus).d < MIN_DIST;
+          });
+          if (!collision) {
+            p.x = nx;
+            p.y = ny;
+            return true;
+          }
+          return false;
+        };
+
+        // トーラス対応重心（xは常に円平均、yは Repel のみ円平均）
+        const torusMean1D = (vals, mod) => {
+          const n = vals.length || 1;
+          let s = 0, c = 0;
+          for (let i = 0; i < vals.length; i++) {
+            const ang = (vals[i] / mod) * (Math.PI * 2);
+            s += Math.sin(ang);
+            c += Math.cos(ang);
+          }
+          let meanAng = Math.atan2(s / n, c / n);
+          if (meanAng < 0) meanAng += Math.PI * 2;
+          return (meanAng / (Math.PI * 2)) * mod;
+        };
+        const computeCenter = () => {
+          const xs = points.map(p => p.x);
+          const ys = points.map(p => p.y);
+          const cx = torusMean1D(xs, WIDTH);
+          const cy = useYtorus
+            ? torusMean1D(ys, HEIGHT)
+            : (ys.reduce((acc, v) => acc + v, 0) / (ys.length || 1));
+          return { x: cx, y: cy };
+        };
+
+        const randDirs8 = [
+          { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
+          { dx: 1, dy: 1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }, { dx: -1, dy: -1 }
+        ];
+
+        // --- 1ターン分の移動 ---
+        const center = computeCenter();
+        const sign = isApproach ? 1 : -1;
+        points.forEach((p) => {
+          // 1) 重心法
+          const dG = getDist(p, center, useYtorus);
+          const stG = stepFromVector(dG.dx, dG.dy);
+          move(p, stG.dx * sign, stG.dy * sign);
+
+          // 2) 最短点法
+          let nearest = null;
+          let minD = Infinity;
+          for (let i = 0; i < points.length; i++) {
+            const other = points[i];
+            if (other === p) continue;
+            const d = getDist(p, other, useYtorus).d;
+            if (d < minD) {
+              minD = d;
+              nearest = other;
+            }
+          }
+          if (nearest) {
+            const dN = getDist(p, nearest, useYtorus);
+            const stN = stepFromVector(dN.dx, dN.dy);
+            move(p, stN.dx * sign, stN.dy * sign);
+          }
+
+          // 3) ランダム移動 x2
+          for (let k = 0; k < 2; k++) {
+            const r = randDirs8[(Math.random() * randDirs8.length) | 0];
+            move(p, r.dx, r.dy);
+          }
+
+          // 4) Repel 特有: 上下端5グリッド以内なら赤道へ 1
+          if (!isApproach && (p.y <= 5 || p.y >= (HEIGHT - 5))) {
+            const eq = (HEIGHT - 1) / 2;
+            const dyToEq = (p.y < eq) ? 1 : -1;
+            move(p, 0, dyToEq);
+          }
+        });
+
+        const centers = points.map((p) => ({ x: p.x, y: p.y }));
+
+        // --- superPloom 更新（7点間平均距離） ---
+        let sum = 0;
+        let cnt = 0;
+        for (let i = 0; i < points.length; i++) {
+          for (let j = i + 1; j < points.length; j++) {
+            sum += getDist(points[i], points[j], useYtorus).d;
+            cnt += 1;
+          }
+        }
+        const avgDist = cnt > 0 ? (sum / cnt) : 0;
+        let spc = Number.isFinite(this.superPloom_calc) ? this.superPloom_calc : 0;
+        if (avgDist < 50) spc += 1;
+        else if (avgDist <= 60) spc -= 1;
+        else spc -= 2;
+        spc = Math.max(spc, 0);
+        this.superPloom_calc = spc;
+        if (!Array.isArray(this.superPloom_history)) this.superPloom_history = [];
+        this.superPloom_history.push(spc);
+        const superPloom = (this.superPloom_history.length > 20)
+          ? this.superPloom_history[this.superPloom_history.length - 21]
+          : 0;
+
+        // ターンを進める（driftSignal 1回 = 1ターン）
+        this.driftTurn = turn0 + 1;
+
+        // 出力用メトリクス（Parameters Output で表示）
+        this.driftMetrics = {
+          superPloom_calc: spc,
+          superPloom,
+          phase: phaseName,
+          avgDist
+        };
 
         const seededLog = Array.from({ length: centers.length }, () => ({
           highlandsCount: 0,
@@ -870,7 +1058,8 @@ export default {
           gridData,
           deterministicSeed: this.deterministicSeed,
           preGlacierStats,
-          computedTopGlacierRows
+          computedTopGlacierRows,
+          driftMetrics: this.driftMetrics
         }));
       } finally {
         this.forceRandomDerivedRng = prevForce;

@@ -24,7 +24,9 @@ export function buildGeneratedPayload({
     gridData,
     deterministicSeed,
     preGlacierStats,
-    computedTopGlacierRows
+    computedTopGlacierRows,
+    // 任意: Drift用の付加情報（Parameters Outputに表示）
+    driftMetrics
 }) {
     // 結果をemit（平面グリッド用に displayColors も明示的に渡す）
     return {
@@ -33,7 +35,8 @@ export function buildGeneratedPayload({
         deterministicSeed,
         preGlacierStats, // 氷河上書き前の比率情報を追加
         // 氷河rowは「平均気温 + 海率(氷河上書き前)」で計算した実効値。UI表示と一致させるため返す。
-        computedTopGlacierRows
+        computedTopGlacierRows,
+        driftMetrics
     };
 }
 

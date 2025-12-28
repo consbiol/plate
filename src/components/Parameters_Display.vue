@@ -515,6 +515,12 @@ export default {
       if (payload.lowlandDistanceToSeaStats) {
         this.stats.lowlandDistanceToSea = payload.lowlandDistanceToSeaStats;
       }
+      if (payload && payload.driftMetrics) {
+        this.stats.driftMetrics = payload.driftMetrics;
+      } else {
+        // Drift以外（Generate/Revise）では古い表示が残らないようクリア
+        this.stats.driftMetrics = null;
+      }
       // 3.1) グリッド種類のカウント（合計 N）
       const gridData = Array.isArray(payload.gridData) ? payload.gridData : [];
       const N = gridData.length || (this.gridWidth * this.gridHeight);
@@ -727,6 +733,7 @@ export default {
       const pre = (this.stats && this.stats.preGlacier) ? this.stats.preGlacier : null;
       const escape = (v) => this._escapeHtml(v);
       const fmtPct = (num, den) => this._fmtPct(num, den);
+      const drift = (this.stats && this.stats.driftMetrics) ? this.stats.driftMetrics : null;
       const typeCounts = (this.stats && this.stats.gridTypeCounts) ? this.stats.gridTypeCounts : null;
       const totalN = typeCounts ? (typeCounts.total || (this.gridWidth * this.gridHeight)) : (this.gridWidth * this.gridHeight);
       const centersHtml = this._buildCentersHtml(centers);
@@ -767,6 +774,10 @@ export default {
              <div class="row"><label>氷河上書き前 - 海:</label><span>${escape(pre.seaCount)} (${escape((100 - (pre.landRatio*100)).toFixed(2))}% )</span></div>` : ''
     }
     <div class="row"><label>湖の数（平均）:</label><span>${escape(params.averageLakesPerCenter)}</span></div>
+    <div class="row"><label>superPloom_calc:</label><span>${drift ? escape(drift.superPloom_calc) : '-'}</span></div>
+    <div class="row"><label>superPloom:</label><span>${drift ? escape(drift.superPloom) : '-'}</span></div>
+    <div class="row"><label>フェーズ:</label><span>${drift ? escape(drift.phase) : '-'}</span></div>
+    <div class="row"><label>平均距離:</label><span>${drift ? escape(Number(drift.avgDist).toFixed(2)) : '-'}</span></div>
     <div class="section-title">グリッド種類の内訳（合計 ${escape(totalN)}）</div>
     <div class="row"><label>深海:</label><span>${typeCounts ? escape(typeCounts.deepSea) : '-'} (${typeCounts ? fmtPct(typeCounts.deepSea, totalN) : '-'})</span></div>
     <div class="row"><label>浅瀬:</label><span>${typeCounts ? escape(typeCounts.shallowSea) : '-'} (${typeCounts ? fmtPct(typeCounts.shallowSea, totalN) : '-'})</span></div>
