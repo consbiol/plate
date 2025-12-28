@@ -3,14 +3,14 @@
     <button @click="onClickGenerate" style="margin-bottom: 12px; margin-left: 8px;">
       Generate (Popup + Render)
     </button>
+    <button @click="onClickUpdate" style="margin-bottom: 12px; margin-left: 8px;">
+      Update (中心座標維持)
+    </button>
     <button @click="onClickReviseHighFrequency" style="margin-bottom: 12px; margin-left: 8px;">
       Revise 氷河・乾燥地
     </button>
     <button @click="onClickDrift" style="margin-bottom: 12px; margin-left: 8px;">
       Drift 大陸中心点 + ノイズ再抽選
-    </button>
-    <button @click="onClickUpdateSphere" style="margin-bottom: 12px; margin-left: 8px;">
-      Sphere 更新
     </button>
     
     <div style="margin-bottom: 8px;">
@@ -219,6 +219,7 @@
       :averageHighlandsPerCenter="computedAverageHighlandsPerCenter"
       :centerParameters="mutableCenterParams"
       :generateSignal="generateSignal"
+      :updateSignal="updateSignal"
       :reviseSignal="reviseSignal"
       :driftSignal="driftSignal"
         :deterministicSeed="local.deterministicSeed"
@@ -351,6 +352,7 @@ export default {
       // 中心点のパラメータはdeepコピーして編集可能にする
       mutableCenterParams: JSON.parse(JSON.stringify(this.centerParameters || [])),
       generateSignal: 0,
+      updateSignal: 0,
       reviseSignal: 0,
       driftSignal: 0,
       // plane iframe のビルドバージョン（構造変化時はインクリメント）
@@ -508,8 +510,23 @@ export default {
         if (renderAllowed.has(k)) renderPatch[k] = local[k];
       }
       try {
-        if (Object.keys(genPatch).length > 0) this.$store?.dispatch?.('updateGeneratorParams', genPatch);
-        if (Object.keys(renderPatch).length > 0) this.$store?.dispatch?.('updateRenderSettings', renderPatch);
+        // Avoid dispatching if values match current store (prevents reactive loops)
+        if (Object.keys(genPatch).length > 0) {
+          const curGen = this.storeGeneratorParams || {};
+          let needGen = false;
+          for (const k of Object.keys(genPatch)) {
+            if (curGen[k] !== genPatch[k]) { needGen = true; break; }
+          }
+          if (needGen) this.$store?.dispatch?.('updateGeneratorParams', genPatch);
+        }
+        if (Object.keys(renderPatch).length > 0) {
+          const curRender = this.storeRenderSettings || {};
+          let needRender = false;
+          for (const k of Object.keys(renderPatch)) {
+            if (curRender[k] !== renderPatch[k]) { needRender = true; break; }
+          }
+          if (needRender) this.$store?.dispatch?.('updateRenderSettings', renderPatch);
+        }
       } catch (e) { /* ignore */ }
     },
     _syncLocalFromStoreGeneratorParams() {
@@ -564,6 +581,11 @@ export default {
       this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
       this.generateSignal += 1;
     },
+    onClickUpdate() {
+      // Generate と同等のフル再生成だが、中心点の座標(x,y)は「現在の値」を維持する。
+      this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
+      this.updateSignal += 1;
+    },
     onClickReviseHighFrequency() {
       // Generate後のキャッシュを前提とした高頻度更新
       this.reviseSignal += 1;
@@ -572,12 +594,6 @@ export default {
       // 中心点をドリフトさせてフル再生成（ノイズは全てランダム）
       this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
       this.driftSignal += 1;
-    },
-    onClickUpdateSphere() {
-      // 手動で Sphere を更新（popup があれば iframe 側に差分更新を要求する）
-      try {
-        this.updatePlaneAndSphereIframes();
-      } catch (e) { /* ignore */ }
     },
     
     
@@ -785,7 +801,7 @@ export default {
       // Plane 更新
       this.updatePlaneIframeOnly();
 
-      // Sphere 更新（Generate時はSphereも更新する。Reviseでは呼ばれない設計）
+      // Sphere iframe 更新（Generate時はSphereも更新する。Reviseでは呼ばれない設計）
       try {
         const w = (this.planePopupRef && !this.planePopupRef.closed) ? this.planePopupRef : null;
         if (!w) return;

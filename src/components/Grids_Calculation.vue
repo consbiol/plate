@@ -83,6 +83,8 @@ export default {
     averageHighlandsPerCenter: { type: Number, required: true },
     centerParameters: { type: Array, required: true },
     generateSignal: { type: Number, required: true },
+    // Update（Generateと同等だが中心点座標を維持）用シグナル
+    updateSignal: { type: Number, required: false, default: 0 },
     // 高頻度生成タスク（氷河・乾燥地の再計算）用シグナル
     reviseSignal: { type: Number, required: false, default: 0 },
     // Drift（大陸中心点の移動 + 全ノイズ再抽選）用シグナル
@@ -137,6 +139,9 @@ export default {
   watch: {
     generateSignal() {
       this.runGenerate();
+    },
+    updateSignal() {
+      this.runGenerate({ preserveCenterCoordinates: true });
     },
     reviseSignal() {
       this.runReviseHighFrequency();
@@ -263,9 +268,16 @@ export default {
       // 実装は `src/utils/terrain/alpines.js` に分離（機能不変）
       return generateAlpines(this, colors, highlandColor, lowlandColor, desertColor, alpineColor, directions);
     },
-    runGenerate() {
+    runGenerate({ preserveCenterCoordinates = false } = {}) {
       const N = this.gridWidth * this.gridHeight;
       const seededRng = this._getSeededRng();
+      // Initialize superPloom / drift phase when a full generate is started
+      try {
+        this.superPloom_calc = 0;
+        this.superPloom_history = [];
+        this.driftTurn = 0;
+        this.driftIsApproach = true; // start with Approach phase
+      } catch (e) { /* ignore */ }
       const seededLog = Array.from({ length: (this.centersY || 0) * 1 || 1 }, () => ({
         highlandsCount: 0,
         highlandClusters: [],
@@ -311,9 +323,27 @@ export default {
       // - 未指定の場合は完全ランダム（従来の挙動）
       const seedStrictCenters = !!seededRng;
       const effectiveMinCenterDistance = this._computeEffectiveMinCenterDistance();
-      let centers = sampleLandCenters(this, seedStrictCenters ? seededRng : null, effectiveMinCenterDistance);
-      // ノイズから中心パラメータを生成（propsは直接変更しない）
-      let localCenterParameters = centers.map((c) => {
+
+      // Update: 中心点座標を維持（現在の centerParameters の x/y をそのまま使う）
+      let centers;
+      let localCenterParameters;
+      if (preserveCenterCoordinates && Array.isArray(this.centerParameters) && this.centerParameters.length > 0) {
+        const clampX = (v) => Math.max(0, Math.min(this.gridWidth - 1, Math.round(Number(v))));
+        const clampY = (v) => Math.max(0, Math.min(this.gridHeight - 1, Math.round(Number(v))));
+        centers = this.centerParameters.map((p) => ({
+          x: clampX(p && p.x),
+          y: clampY(p && p.y)
+        }));
+        // 既存の中心パラメータ（influence/kDecay/directionなど）を維持し、座標だけクランプした値で統一
+        localCenterParameters = this.centerParameters.map((p, i) => ({
+          ...(p || {}),
+          x: centers[i].x,
+          y: centers[i].y
+        }));
+      } else {
+        centers = sampleLandCenters(this, seedStrictCenters ? seededRng : null, effectiveMinCenterDistance);
+        // ノイズから中心パラメータを生成（propsは直接変更しない）
+        localCenterParameters = centers.map((c) => {
         if (seededRng) {
           const u1 = seededRng() * 2 - 1; // [-1,1)
           const u2 = seededRng();         // [0,1)
@@ -337,7 +367,8 @@ export default {
             directionAngle: n2 * Math.PI * 2 * 1.5
           };
         }
-      });
+        });
+      }
       let scores, threshold;
       let success = false;
       for (let attempt = 0; attempt < 5 && !success; attempt++) {
@@ -357,7 +388,12 @@ export default {
         if (anyCenterLand) {
           success = true;
         } else {
-          centers = sampleLandCenters(this, seedStrictCenters ? seededRng : null, effectiveMinCenterDistance);
+          // Update（座標固定）の場合は再サンプリングしない
+          if (preserveCenterCoordinates) {
+            success = true;
+          } else {
+            centers = sampleLandCenters(this, seedStrictCenters ? seededRng : null, effectiveMinCenterDistance);
+          }
         }
       }
       const landMask = new Array(N).fill(false);
