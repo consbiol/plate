@@ -12,26 +12,63 @@ import {
 import { fractalNoise2D as fractalNoise2DUtil } from '../utils/noise.js';
 export default {
   name: 'Sphere_Display',
-  props: {
-    gridWidth: { type: Number, required: true },
-    gridHeight: { type: Number, required: true },
-    gridData: { type: Array, required: false, default: () => [] },
-    polarBufferRows: { type: Number, required: false, default: 50 },
-    polarAvgRows: { type: Number, required: false, default: 3 },
-    polarBlendRows: { type: Number, required: false, default: 12 },
-    polarNoiseStrength: { type: Number, required: false, default: 0.3 },
-    polarNoiseScale: { type: Number, required: false, default: 0.01 },
-    // 陸（氷河除く）に事後的に適用する色変更トーン
-    landTintColor: { type: String, required: false, default: null },
-    landTintStrength: { type: Number, required: false, default: 0.35 },
-    // 時代（色プリセット切替の将来拡張用）
-    era: { type: String, required: false, default: null },
-    // 雲量（0..1）: 被覆度に強く、濃さ（不透明度）に弱く効かせる
-    f_cloud: { type: Number, required: false, default: 0.67 },
-    // 雲ノイズのトーラス周期（uv空間上の反復数）
-    cloudPeriod: { type: Number, required: false, default: 16 },
-    // 極周辺での雲生成ブースト強度（0..1）。0で無効、1で強ブースト
-    polarCloudBoost: { type: Number, required: false, default: 1.0 }
+  // props を廃止し store に完全依存する（必要な設定は store または既定値から取得）
+  computed: {
+    gridWidth() {
+      return this.$store?.getters?.gridWidth ?? 200;
+    },
+    gridHeight() {
+      return this.$store?.getters?.gridHeight ?? 100;
+    },
+    gridData() {
+      return this.$store?.getters?.gridData ?? [];
+    },
+    polarBufferRows() {
+      return (this.$store?.getters?.generatorParams?.polarBufferRows != null)
+        ? this.$store.getters.generatorParams.polarBufferRows
+        : 50;
+    },
+    polarAvgRows() {
+      return (this.$store?.getters?.generatorParams?.polarAvgRows != null)
+        ? this.$store.getters.generatorParams.polarAvgRows
+        : 3;
+    },
+    polarBlendRows() {
+      return (this.$store?.getters?.generatorParams?.polarBlendRows != null)
+        ? this.$store.getters.generatorParams.polarBlendRows
+        : 12;
+    },
+    polarNoiseStrength() {
+      return (this.$store?.getters?.generatorParams?.polarNoiseStrength != null)
+        ? this.$store.getters.generatorParams.polarNoiseStrength
+        : 0.3;
+    },
+    polarNoiseScale() {
+      return (this.$store?.getters?.generatorParams?.polarNoiseScale != null)
+        ? this.$store.getters.generatorParams.polarNoiseScale
+        : 0.01;
+    },
+    landTintColor() {
+      return this.$store?.getters?.generatorParams?.landTintColor ?? null;
+    },
+    landTintStrength() {
+      return this.$store?.getters?.generatorParams?.landTintStrength ?? 0.35;
+    },
+    era() {
+      return this.$store?.getters?.era ?? null;
+    },
+    f_cloud() {
+      return this.$store?.getters?.f_cloud ?? 0.67;
+    },
+    cloudPeriod() {
+      return this.$store?.getters?.generatorParams?.cloudPeriod ?? 16;
+    },
+    polarCloudBoost() {
+      return this.$store?.getters?.generatorParams?.polarCloudBoost ?? 1.0;
+    },
+    planeGridCellPx() {
+      return this.$store?.getters?.planeGridCellPx ?? 3;
+    }
   },
   // 破棄時にポップアップ/回転ループを確実に止める（メモリリーク・背景回転防止）
   beforeUnmount() {

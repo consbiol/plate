@@ -256,6 +256,10 @@ import Sphere_Display from './Sphere_Display.vue';
 import { deriveDisplayColorsFromGridData, getEraTerrainColors } from '../utils/colors.js';
 import { ERAS, GRID_DEFAULTS, PARAM_DEFAULTS, createLocalParams } from '../utils/paramsDefaults.js';
 import { computeGlacierBaseRowsFromTemperature } from '../utils/terrain/glacierAnchors.js';
+import { computeGridTypeCounts } from '../features/stats/gridTypeCounts.js';
+import { buildParametersOutputHtml } from '../features/popup/parametersOutputHtml.js';
+import { buildPlaneSphereShellHtml } from '../features/popup/planeSphereShellHtml.js';
+import { buildPlaneHtml as buildPlaneHtmlUtil } from '../features/popup/planeHtml.js';
 export default {
   name: 'Parameters_Display',
   components: { Grids_Calculation, Sphere_Display },
@@ -325,6 +329,8 @@ export default {
     this.updateAverageTemperature();
     // store の era をローカル初期値に同期（なければ一覧の先頭）
     this.local.era = this.storeEra || '大森林時代';
+    // store の generatorParams を local に同期（入力値の永続化＆複数コンポーネント間共有）
+    this._syncLocalFromStoreGeneratorParams();
   },
   data() {
     return {
@@ -350,13 +356,18 @@ export default {
       sphereUpdateCount: 0,
       sphereMaxUpdates: 200,
       popupRef: null,
-      stats: null
+      stats: null,
+      // store<->local 同期のループ防止フラグ
+      isSyncingLocalFromStore: false
     };
   },
   computed: {
     // store ガードを各所に散らさないための共通アクセサ
     storeEra() {
       return this.$store?.getters?.era ?? null;
+    },
+    storeGeneratorParams() {
+      return this.$store?.getters?.generatorParams ?? null;
     },
     averageTemperature: {
       get() {
@@ -437,7 +448,40 @@ export default {
       return Math.round(minDistance);
     }
   },
+  watch: {
+    // store 側が外部から変更された場合（将来のプリセット/復元など）に local を追従させる
+    storeGeneratorParams: {
+      deep: true,
+      handler() {
+        this._syncLocalFromStoreGeneratorParams();
+      }
+    },
+    // local の入力変更を store に反映（v-model での変更を自動で拾う）
+    local: {
+      deep: true,
+      handler() {
+        if (this.isSyncingLocalFromStore) return;
+        this.$store?.dispatch?.('updateGeneratorParams', this.local);
+      }
+    }
+  },
   methods: {
+    _syncLocalFromStoreGeneratorParams() {
+      const gp = this.storeGeneratorParams;
+      if (!gp || typeof gp !== 'object') return;
+      // local -> store の watcher と衝突しないようにガード
+      this.isSyncingLocalFromStore = true;
+      try {
+        // local に存在するキーだけ上書き（local.era 等は store別管理のため触らない）
+        for (const k of Object.keys(gp)) {
+          if (Object.prototype.hasOwnProperty.call(this.local, k)) {
+            this.local[k] = gp[k];
+          }
+        }
+      } finally {
+        this.isSyncingLocalFromStore = false;
+      }
+    },
     onEraChange() {
       this.$store?.dispatch?.('updateEra', this.local.era);
     },
@@ -511,6 +555,12 @@ export default {
       });
       // 2.5) Sphere 用にローカルにも保持
       this.gridDataLocal = Array.isArray(payload.gridData) ? payload.gridData : [];
+      // 2.6) store にもグリッド結果を保存（Terrain_Display / Sphere_Display が store 依存になるため）
+      try {
+        this.$store?.dispatch?.('updateGridWidth', Number(this.gridWidth) || this.$store.getters.gridWidth);
+        this.$store?.dispatch?.('updateGridHeight', Number(this.gridHeight) || this.$store.getters.gridHeight);
+        this.$store?.dispatch?.('updateGridData', Array.isArray(payload.gridData) ? payload.gridData : []);
+      } catch (e) { /* ignore */ }
       // 3) UI表示用の統計を保存
       if (!this.stats) this.stats = {};
       if (payload.lowlandDistanceToSeaStats) {
@@ -524,66 +574,11 @@ export default {
       }
       // 3.1) グリッド種類のカウント（合計 N）
       const gridData = Array.isArray(payload.gridData) ? payload.gridData : [];
-      const N = gridData.length || (this.gridWidth * this.gridHeight);
-      const counts = {
-        deepSea: 0,
-        shallowSea: 0,
-        glacier: 0,
-        lowland: 0,
-        desert: 0,
-        highland: 0,
-        alpine: 0,
-        lake: 0,
-        tundra: 0,
-        bryophyte: 0,
-        city: 0,
-        cultivated: 0,
-        polluted: 0,
-        seaCity: 0,
-        seaCultivated: 0,
-        seaPolluted: 0,
-        total: N
-      };
-      for (let i = 0; i < N; i++) {
-        const cell = gridData[i];
-        let cat = null;
-        // 海棲グリッドの優先順位: seaPolluted > seaCity > seaCultivated
-        if (cell && cell.seaPolluted) {
-          cat = 'seaPolluted';
-        } else if (cell && cell.seaCity) {
-          cat = 'seaCity';
-        } else if (cell && cell.seaCultivated) {
-          cat = 'seaCultivated';
-        } else if (cell && cell.polluted) {
-          cat = 'polluted';
-        } else if (cell && cell.city) {
-          cat = 'city';
-        } else if (cell && cell.bryophyte) {
-          cat = 'bryophyte';
-        } else if (cell && cell.cultivated) {
-          cat = 'cultivated';
-        } else if (cell && cell.terrain && cell.terrain.type === 'sea') {
-          const sea = cell.terrain.sea;
-          if (sea === 'deep') cat = 'deepSea';
-          else if (sea === 'glacier') cat = 'glacier';
-          else cat = 'shallowSea';
-        } else if (cell && cell.terrain && cell.terrain.type === 'land') {
-          const l = cell.terrain.land;
-          if (l === 'lowland') cat = 'lowland';
-          else if (l === 'desert') cat = 'desert';
-          else if (l === 'highland') cat = 'highland';
-          else if (l === 'alpine') cat = 'alpine';
-          else if (l === 'tundra') cat = 'tundra';
-          else if (l === 'lake') cat = 'lake';
-          else if (l === 'glacier') cat = 'glacier';
-          else cat = 'lowland';
-        } else {
-          // フォールバック
-          cat = 'lowland';
-        }
-        counts[cat] += 1;
-      }
-      this.stats.gridTypeCounts = counts;
+      this.stats.gridTypeCounts = computeGridTypeCounts({
+        gridData,
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight
+      });
       // 最後にポップアップを更新
       this.openOrUpdatePopup();
     },
@@ -617,68 +612,12 @@ export default {
     },
 
     _updateGridTypeCountsFromGridData(gridData) {
-      const N = (Array.isArray(gridData) && gridData.length) ? gridData.length : (this.gridWidth * this.gridHeight);
-      const counts = {
-        deepSea: 0,
-        shallowSea: 0,
-        glacier: 0,
-        lowland: 0,
-        desert: 0,
-        highland: 0,
-        alpine: 0,
-        lake: 0,
-        tundra: 0,
-        bryophyte: 0,
-        city: 0,
-        cultivated: 0,
-        polluted: 0,
-        seaCity: 0,
-        seaCultivated: 0,
-        seaPolluted: 0,
-        total: N
-      };
-      if (Array.isArray(gridData) && gridData.length === N) {
-        for (let i = 0; i < N; i++) {
-          const cell = gridData[i];
-          let cat = null;
-          // 海棲グリッドの優先順位: seaPolluted > seaCity > seaCultivated
-          if (cell && cell.seaPolluted) {
-            cat = 'seaPolluted';
-          } else if (cell && cell.seaCity) {
-            cat = 'seaCity';
-          } else if (cell && cell.seaCultivated) {
-            cat = 'seaCultivated';
-          } else if (cell && cell.polluted) {
-            cat = 'polluted';
-          } else if (cell && cell.city) {
-            cat = 'city';
-          } else if (cell && cell.bryophyte) {
-            cat = 'bryophyte';
-          } else if (cell && cell.cultivated) {
-            cat = 'cultivated';
-          } else if (cell && cell.terrain && cell.terrain.type === 'sea') {
-            const sea = cell.terrain.sea;
-            if (sea === 'deep') cat = 'deepSea';
-            else if (sea === 'glacier') cat = 'glacier';
-            else cat = 'shallowSea';
-          } else if (cell && cell.terrain && cell.terrain.type === 'land') {
-            const l = cell.terrain.land;
-            if (l === 'lowland') cat = 'lowland';
-            else if (l === 'desert') cat = 'desert';
-            else if (l === 'highland') cat = 'highland';
-            else if (l === 'alpine') cat = 'alpine';
-            else if (l === 'tundra') cat = 'tundra';
-            else if (l === 'lake') cat = 'lake';
-            else if (l === 'glacier') cat = 'glacier';
-            else cat = 'lowland';
-          } else {
-            cat = 'lowland';
-          }
-          counts[cat] += 1;
-        }
-      }
       if (!this.stats) this.stats = {};
-      this.stats.gridTypeCounts = counts;
+      this.stats.gridTypeCounts = computeGridTypeCounts({
+        gridData,
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight
+      });
     },
     openOrUpdatePopup() {
       const w = this.popupRef && !this.popupRef.closed ? this.popupRef : window.open('', 'ParametersOutput', 'width=520,height=700');
@@ -690,116 +629,17 @@ export default {
       doc.write(html);
       doc.close();
     },
-    // HTML用エスケープ（popup出力の安全性確保）
-    _escapeHtml(s) {
-      return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    },
-    _fmtPct(num, den) {
-      if (!den || den <= 0) return '0.00%';
-      return (num * 100 / den).toFixed(2) + '%';
-    },
-    _buildCentersHtml(centers) {
-      const escape = (v) => this._escapeHtml(v);
-      return (centers || []).map((p, i) => `
-        <div style="margin-bottom:8px;padding:8px;border:1px solid #ddd;border-radius:4px;">
-          <div style="font-weight:bold;margin-bottom:4px;">中心点 ${i + 1}:</div>
-          <div>座標 (x, y): (${escape(p.x)}, ${escape(p.y)}) <span style="color:#666">（シード固定）</span></div>
-          <div>影響係数: ${escape(p.influenceMultiplier)} <span style="color:#666">（シード固定）</span></div>
-          <div>減衰率 kDecay: ${escape(p.kDecayVariation)} <span style="color:#666">（シード固定）</span></div>
-          <div>方向角度 (deg): ${Math.round(((p.directionAngle || 0) * 180) / Math.PI) % 360} <span style="color:#666">（シード固定）</span></div>
-          <div style="margin-top:6px;font-weight:bold;">[シードで決定される項目]</div>
-          <div>高地の個数（シード）: ${escape((p.seededHighlandsCount != null ? p.seededHighlandsCount : 0))}</div>
-          <div>高地クラスター（開始セル/サイズ）:</div>
-          <ul style="margin:4px 0 6px 16px;">
-            ${
-              (Array.isArray(p.seededHighlandClusters) && p.seededHighlandClusters.length > 0)
-                ? p.seededHighlandClusters.map(c => `<li>start=(${escape(c.x)}, ${escape(c.y)}), size=${escape(c.size)}</li>`).join('')
-                : '<li>(なし)</li>'
-            }
-          </ul>
-          <div>湖の開始セル（シード）:</div>
-          <ul style="margin:4px 0 0 16px;">
-            ${
-              (Array.isArray(p.seededLakeStarts) && p.seededLakeStarts.length > 0)
-                ? p.seededLakeStarts.map(c => `<li>(${escape(c.x)}, ${escape(c.y)})</li>`).join('')
-                : '<li>(なし)</li>'
-            }
-          </ul>
-        </div>
-      `).join('');
-    },
     buildOutputHtml() {
-      const params = this.local;
-      const centers = this.mutableCenterParams || [];
-      const pre = (this.stats && this.stats.preGlacier) ? this.stats.preGlacier : null;
-      const escape = (v) => this._escapeHtml(v);
-      const fmtPct = (num, den) => this._fmtPct(num, den);
-      const drift = (this.stats && this.stats.driftMetrics) ? this.stats.driftMetrics : null;
-      const typeCounts = (this.stats && this.stats.gridTypeCounts) ? this.stats.gridTypeCounts : null;
-      const totalN = typeCounts ? (typeCounts.total || (this.gridWidth * this.gridHeight)) : (this.gridWidth * this.gridHeight);
-      const centersHtml = this._buildCentersHtml(centers);
-      return `
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Parameters Output</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      body{font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;line-height:1.5;padding:16px}
-      h1{font-size:18px;margin:0 0 12px}
-      .row{margin-bottom:6px}
-      label{display:inline-block;min-width:220px;color:#333}
-      .section-title{font-weight:bold;margin-top:16px;margin-bottom:8px}
-      .canvas-wrap{margin-top:12px}
-      canvas{border:1px solid #ccc;border-radius:4px;display:block;margin:8px auto}
-    </style>
-  </head>
-  <body>
-    <h1>Parameters</h1>
-        <div class="row"><label>シード:</label><span>${escape(params.deterministicSeed || '(未指定)')}</span></div>
-    <div class="row"><label>陸の中心点の数 y:</label><span>${escape(params.centersY)}</span></div>
-    <div class="row"><label>陸の割合 x:</label><span>${escape(params.seaLandRatio)}</span></div>
-    <div class="row"><label>中心間の排他距離 (グリッド):</label><span>${escape(params.minCenterDistance)}</span></div>
-    <div class="row"><label>浅瀬・深海間距離閾値:</label><span>${escape(params.baseSeaDistanceThreshold)}</span></div>
-    <div class="row"><label>低地・乾燥地間距離閾値:</label><span>${escape(this.landDistanceThresholdAverage)}</span></div>
-    <div class="row"><label>上端・下端ツンドラ追加グリッド数:</label><span>${escape(params.tundraExtraRows)}</span></div>
-    <div class="row"><label>上端・下端ツンドラ総グリッド数:</label><span>${escape(this.topTundraRowsComputed)}</span></div>
-    <div class="row"><label>上端・下端氷河グリッド数:</label><span>${escape(this.topGlacierRowsDisplayed)}</span></div>
-    <div class="row"><label>陸(低地・乾燥地・ツンドラ)の氷河追加グリッド数:</label><span>${escape(params.landGlacierExtraRows)}</span></div>
-    <div class="row"><label>高地の氷河追加グリッド数:</label><span>${escape(params.highlandGlacierExtraRows)}</span></div>
-    <div class="row"><label>高山の氷河追加グリッド数:</label><span>${escape(params.alpineGlacierExtraRows)}</span></div>
-    <div class="row"><label>グリッド幅×高さ:</label><span>${escape(this.gridWidth)} × ${escape(this.gridHeight)}</span></div>
-    ${
-      pre ? `<div class="row"><label>氷河上書き前 - 陸:</label><span>${escape(pre.landCount)} (${escape((pre.landRatio*100).toFixed(2))}% )</span></div>
-             <div class="row"><label>氷河上書き前 - 海:</label><span>${escape(pre.seaCount)} (${escape((100 - (pre.landRatio*100)).toFixed(2))}% )</span></div>` : ''
-    }
-    <div class="row"><label>湖の数（平均）:</label><span>${escape(params.averageLakesPerCenter)}</span></div>
-    <div class="row"><label>superPloom_calc:</label><span>${drift ? escape(drift.superPloom_calc) : '-'}</span></div>
-    <div class="row"><label>superPloom:</label><span>${drift ? escape(drift.superPloom) : '-'}</span></div>
-    <div class="row"><label>フェーズ:</label><span>${drift ? escape(drift.phase) : '-'}</span></div>
-    <div class="row"><label>平均距離:</label><span>${drift ? escape(Number(drift.avgDist).toFixed(2)) : '-'}</span></div>
-    <div class="section-title">グリッド種類の内訳（合計 ${escape(totalN)}）</div>
-    <div class="row"><label>深海:</label><span>${typeCounts ? escape(typeCounts.deepSea) : '-'} (${typeCounts ? fmtPct(typeCounts.deepSea, totalN) : '-'})</span></div>
-    <div class="row"><label>浅瀬:</label><span>${typeCounts ? escape(typeCounts.shallowSea) : '-'} (${typeCounts ? fmtPct(typeCounts.shallowSea, totalN) : '-'})</span></div>
-    <div class="row"><label>氷河:</label><span>${typeCounts ? escape(typeCounts.glacier) : '-'} (${typeCounts ? fmtPct(typeCounts.glacier, totalN) : '-'})</span></div>
-    <div class="row"><label>低地:</label><span>${typeCounts ? escape(typeCounts.lowland) : '-'} (${typeCounts ? fmtPct(typeCounts.lowland, totalN) : '-'})</span></div>
-    <div class="row"><label>乾燥地:</label><span>${typeCounts ? escape(typeCounts.desert) : '-'} (${typeCounts ? fmtPct(typeCounts.desert, totalN) : '-'})</span></div>
-    <div class="row"><label>高地:</label><span>${typeCounts ? escape(typeCounts.highland) : '-'} (${typeCounts ? fmtPct(typeCounts.highland, totalN) : '-'})</span></div>
-    <div class="row"><label>高山:</label><span>${typeCounts ? escape(typeCounts.alpine) : '-'} (${typeCounts ? fmtPct(typeCounts.alpine, totalN) : '-'})</span></div>
-    <div class="row"><label>ツンドラ:</label><span>${typeCounts ? escape(typeCounts.tundra) : '-'} (${typeCounts ? fmtPct(typeCounts.tundra, totalN) : '-'})</span></div>
-    <div class="row"><label>湖:</label><span>${typeCounts ? escape(typeCounts.lake) : '-'} (${typeCounts ? fmtPct(typeCounts.lake, totalN) : '-'})</span></div>
-    <div class="row"><label>都市:</label><span>${typeCounts ? escape(typeCounts.city) : '-'} (${typeCounts ? fmtPct(typeCounts.city, totalN) : '-'})</span></div>
-    <div class="row"><label>農地:</label><span>${typeCounts ? escape(typeCounts.cultivated) : '-'} (${typeCounts ? fmtPct(typeCounts.cultivated, totalN) : '-'})</span></div>
-    <div class="row"><label>苔類進出地:</label><span>${typeCounts ? escape(typeCounts.bryophyte) : '-'} (${typeCounts ? fmtPct(typeCounts.bryophyte, totalN) : '-'})</span></div>
-    <div class="row"><label>汚染地:</label><span>${typeCounts ? escape(typeCounts.polluted) : '-'} (${typeCounts ? fmtPct(typeCounts.polluted, totalN) : '-'})</span></div>
-    <div class="row"><label>海棲都市:</label><span>${typeCounts ? escape(typeCounts.seaCity) : '-'} (${typeCounts ? fmtPct(typeCounts.seaCity, totalN) : '-'})</span></div>
-    <div class="row"><label>海棲農地:</label><span>${typeCounts ? escape(typeCounts.seaCultivated) : '-'} (${typeCounts ? fmtPct(typeCounts.seaCultivated, totalN) : '-'})</span></div>
-    <div class="row"><label>海棲汚染地:</label><span>${typeCounts ? escape(typeCounts.seaPolluted) : '-'} (${typeCounts ? fmtPct(typeCounts.seaPolluted, totalN) : '-'})</span></div>
-    <div class="section-title">各中心点のパラメーター:</div>
-    ${centersHtml}
-  </body>
-</html>`;
+      return buildParametersOutputHtml({
+        localParams: this.local,
+        centerParams: this.mutableCenterParams || [],
+        stats: this.stats,
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        landDistanceThresholdAverage: this.landDistanceThresholdAverage,
+        topTundraRowsComputed: this.topTundraRowsComputed,
+        topGlacierRowsDisplayed: this.topGlacierRowsDisplayed
+      });
     },
     openOrUpdatePlanePopup() {
       // build plane and sphere HTML and embed them into two iframes within a single popup
@@ -808,7 +648,7 @@ export default {
       const doc = w.document;
 
       // 1) 外枠（iframe2枚だけ）を先に描画
-      this._writeDoc(doc, this._buildPlaneSphereShellHtml());
+      this._writeDoc(doc, buildPlaneSphereShellHtml());
 
       // 2) iframeの中身を流し込む（srcdoc）
       const planeHtml = this.buildPlaneHtml();
@@ -925,28 +765,6 @@ export default {
       this.planePopupRef = w;
       return w;
     },
-    _buildPlaneSphereShellHtml() {
-      return `
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Plane & Sphere View</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      html,body{height:100%;margin:0}
-      .wrap{display:flex;gap:8px;height:100vh;padding:8px;box-sizing:border-box;background:#000;color:#fff}
-      iframe{flex:1;border:1px solid #444;border-radius:6px;background:#000}
-    </style>
-  </head>
-  <body>
-    <div class="wrap">
-      <iframe id="plane-iframe" title="Plane Map"></iframe>
-      <iframe id="sphere-iframe" title="Sphere View"></iframe>
-    </div>
-  </body>
-</html>`;
-    },
     _writeDoc(doc, html) {
       if (!doc) return;
       doc.open();
@@ -993,142 +811,13 @@ export default {
       const displayW = this.gridWidth + 2;
       const displayH = this.gridHeight + 2;
       const buildVersion = this.planeBuildVersion || 0;
-      return `
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Plane Map</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      body{margin:0;padding:12px;font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;background:#000;color:#fff}
-      h1{margin:0 0 8px;font-size:16px}
-      canvas{border:1px solid #666;border-radius:4px;display:block;margin:8px auto;background:#000}
-      .row{margin:4px 0;text-align:center}
-    </style>
-  </head>
-  <body>
-    <h1>Plane Map</h1>
-    <div class="row">${displayW} x ${displayH} cells, ${cell}px each</div>
-    <canvas id="plane-canvas"></canvas>
-    <script>
-      (function(){
-        try {
-          var cvs = document.getElementById('plane-canvas');
-          if (!cvs) return;
-          var ctx = cvs.getContext('2d');
-          if (!ctx) return;
-
-          // ダブルバッファ（ちらつき防止）
-          var back = document.createElement('canvas');
-          var bctx = back.getContext('2d');
-
-          function draw(colors, w, h, cell) {
-            try {
-              w = Math.max(1, w|0);
-              h = Math.max(1, h|0);
-              cell = Math.max(1, cell|0);
-              cvs.width = w * cell;
-              cvs.height = h * cell;
-              back.width = cvs.width;
-              back.height = cvs.height;
-              var i = 0;
-              for (var y = 0; y < h; y++) {
-                for (var x = 0; x < w; x++) {
-                  var col = (colors && colors[i]) ? colors[i] : '#000000';
-                  i++;
-                  bctx.fillStyle = col;
-                  bctx.fillRect(x * cell, y * cell, cell, cell);
-                }
-              }
-              ctx.clearRect(0, 0, cvs.width, cvs.height);
-              ctx.drawImage(back, 0, 0);
-            } catch (e) { /* ignore draw errors */ }
-          }
-
-          // バージョン情報（親が比較して差し替え判断する）
-          window.__planeVersion = ${buildVersion};
-          // update 回数カウンタ（再生成閾値に達したら親が再作成する）
-          window.__planeUpdateCount = 0;
-          // 内部で持つ一時RAFハンドル
-          window.__planeRAF = null;
-          window.__pendingPlane = null;
-
-          // cleanup API（親が呼べる）。タイマーやWebGLコンテキスト等があればここで解放する。
-          window.__cleanupPlane = function() {
-            try {
-              // Stop RAF / timers
-              try { if (window.__planeRAF) { cancelAnimationFrame(window.__planeRAF); window.__planeRAF = null; } } catch(e){}
-              try { if (window.__planeTimer) { clearInterval(window.__planeTimer); window.__planeTimer = null; } } catch(e){}
-              // Remove pending draw
-              window.__pendingPlane = null;
-
-              // Remove known event handlers if present
-              try { if (window.__planeOnResize) window.removeEventListener('resize', window.__planeOnResize); } catch(e){}
-
-              // WebGL resource cleanup (if any)
-              try {
-                var cvs = document.getElementById('plane-canvas');
-                if (cvs) {
-                  var gl = cvs.getContext('webgl2') || cvs.getContext('webgl') || cvs.getContext('experimental-webgl');
-                  if (gl) {
-                    try {
-                      // Delete tracked resources if arrays exist
-                      if (Array.isArray(window.__planeTextures)) {
-                        window.__planeTextures.forEach(function(t){ try { gl.deleteTexture(t); } catch(e){} });
-                      }
-                      if (Array.isArray(window.__planeBuffers)) {
-                        window.__planeBuffers.forEach(function(b){ try { gl.deleteBuffer(b); } catch(e){} });
-                      }
-                      if (Array.isArray(window.__planePrograms)) {
-                        window.__planePrograms.forEach(function(p){ try { gl.deleteProgram(p); } catch(e){} });
-                      }
-                      if (Array.isArray(window.__planeShaders)) {
-                        window.__planeShaders.forEach(function(s){ try { gl.deleteShader(s); } catch(e){} });
-                      }
-                    } catch(e) { /* ignore gl resource deletion errors */ }
-                    // Try to lose context to free GPU resources
-                    try {
-                      var loseExt = gl.getExtension && (gl.getExtension('WEBGL_lose_context') || gl.getExtension('MOZ_WEBGL_lose_context') || gl.getExtension('WEBKIT_WEBGL_lose_context'));
-                      if (loseExt && typeof loseExt.loseContext === 'function') {
-                        try { loseExt.loseContext(); } catch(e) {}
-                      }
-                    } catch(e) { /* ignore getExtension errors */ }
-                  }
-                }
-              } catch(e) { /* ignore overall WebGL cleanup errors */ }
-
-              // Clear references to help GC
-              try { window.__planeTextures = null; } catch(e){}
-              try { window.__planeBuffers = null; } catch(e){}
-              try { window.__planePrograms = null; } catch(e){}
-              try { window.__planeShaders = null; } catch(e){}
-              try { window.__planeOnResize = null; } catch(e){}
-            } catch (e) { /* ignore cleanup wrapper errors */ }
-          };
-
-          // 親から呼べる更新関数（iframeリロード不要）
-          window.__updatePlane = function(colors, w, h, cell) {
-            // rAFでまとめて描画（連打時のちらつき軽減）
-            window.__pendingPlane = { colors: colors, w: w, h: h, cell: cell };
-            if (window.__planeRAF) return;
-            window.__planeRAF = requestAnimationFrame(function(){
-              window.__planeRAF = null;
-              var p = window.__pendingPlane;
-              window.__pendingPlane = null;
-              if (!p) return;
-              draw(p.colors, p.w, p.h, p.cell);
-              window.__planeUpdateCount = (window.__planeUpdateCount || 0) + 1;
-            });
-          };
-
-          // 初期描画
-          window.__updatePlane(${JSON.stringify(displayColors)}, ${displayW}, ${displayH}, ${cell});
-          } catch (e) { /* ignore init errors */ }
-      })();
-    </scr${''}ipt>
-  </body>
-</html>`;
+      return buildPlaneHtmlUtil({
+        displayColors,
+        cell,
+        displayW,
+        displayH,
+        buildVersion
+      });
     }
   }
 }
