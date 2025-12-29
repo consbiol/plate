@@ -4,7 +4,7 @@
       Generate (Popup + Render)
     </button>
     <button @click="onClickUpdate" style="margin-bottom: 12px; margin-left: 8px;">
-      Update (中心座標維持)
+      Update (中心点を保持して再生成)
     </button>
     <button @click="onClickReviseHighFrequency" style="margin-bottom: 12px; margin-left: 8px;">
       Revise 氷河・乾燥地
@@ -198,6 +198,7 @@
       :baseSeaDistanceThreshold="local.baseSeaDistanceThreshold"
       :baseLandDistanceThreshold="landDistanceThresholdAverage"
       :tundraExtraRows="local.tundraExtraRows"
+      :updateSignal="updateSignal"
       :landDistanceThreshold1="local.landDistanceThreshold1"
       :landDistanceThreshold2="local.landDistanceThreshold2"
       :landDistanceThreshold3="local.landDistanceThreshold3"
@@ -219,7 +220,6 @@
       :averageHighlandsPerCenter="computedAverageHighlandsPerCenter"
       :centerParameters="mutableCenterParams"
       :generateSignal="generateSignal"
-      :updateSignal="updateSignal"
       :reviseSignal="reviseSignal"
       :driftSignal="driftSignal"
         :deterministicSeed="local.deterministicSeed"
@@ -374,19 +374,8 @@ export default {
     storeGeneratorParams() {
       return this.$store?.getters?.generatorParams ?? null;
     },
-    storeRenderSettings: {
-      get() {
-        return this.$store?.getters?.renderSettings ?? null;
-      },
-      set(val) {
-        try {
-          if (this.$store && val && typeof val === 'object') {
-            this.$store.dispatch('updateRenderSettings', val);
-          }
-        } catch (e) {
-          // ignore
-        }
-      }
+    storeRenderSettings() {
+      return this.$store?.getters?.renderSettings ?? null;
     },
     averageTemperature: {
       get() {
@@ -491,51 +480,6 @@ export default {
     }
   },
   methods: {
-    // ---------------------------
-    // small safe helpers (for popup/iframe update paths)
-    // ---------------------------
-    _safeCall(fn, ...args) {
-      try {
-        if (typeof fn !== 'function') return { ok: false, value: undefined };
-        const value = fn(...args);
-        // IMPORTANT: even if value is undefined, call itself succeeded (no flicker fallback)
-        return { ok: true, value };
-      } catch (e) {
-        return { ok: false, value: undefined };
-      }
-    },
-    _safeGet(obj, getter) {
-      try {
-        if (typeof getter !== 'function') return null;
-        return getter(obj);
-      } catch (e) {
-        return null;
-      }
-    },
-    _safeSetSrcdoc(iframeEl, html) {
-      try {
-        if (!iframeEl) return false;
-        iframeEl.srcdoc = html;
-        return true;
-      } catch (e) {
-        return false;
-      }
-    },
-    _getOpenPlaneSpherePopup() {
-      return (this.planePopupRef && !this.planePopupRef.closed) ? this.planePopupRef : null;
-    },
-    _getPlaneSphereDoc() {
-      const w = this._getOpenPlaneSpherePopup();
-      return w ? w.document : null;
-    },
-    _getIframeById(doc, id) {
-      try {
-        if (!doc) return null;
-        return doc.getElementById(id);
-      } catch (e) {
-        return null;
-      }
-    },
     _syncStoreFromLocal() {
       // generatorParams と renderSettings に分配して store に反映する
       const local = this.local || {};
@@ -555,23 +499,8 @@ export default {
         if (renderAllowed.has(k)) renderPatch[k] = local[k];
       }
       try {
-        // Avoid dispatching if values match current store (prevents reactive loops)
-        if (Object.keys(genPatch).length > 0) {
-          const curGen = this.storeGeneratorParams || {};
-          let needGen = false;
-          for (const k of Object.keys(genPatch)) {
-            if (curGen[k] !== genPatch[k]) { needGen = true; break; }
-          }
-          if (needGen) this.$store?.dispatch?.('updateGeneratorParams', genPatch);
-        }
-        if (Object.keys(renderPatch).length > 0) {
-          const curRender = this.storeRenderSettings || {};
-          let needRender = false;
-          for (const k of Object.keys(renderPatch)) {
-            if (curRender[k] !== renderPatch[k]) { needRender = true; break; }
-          }
-          if (needRender) this.$store?.dispatch?.('updateRenderSettings', renderPatch);
-        }
+        if (Object.keys(genPatch).length > 0) this.$store?.dispatch?.('updateGeneratorParams', genPatch);
+        if (Object.keys(renderPatch).length > 0) this.$store?.dispatch?.('updateRenderSettings', renderPatch);
       } catch (e) { /* ignore */ }
     },
     _syncLocalFromStoreGeneratorParams() {
@@ -627,8 +556,7 @@ export default {
       this.generateSignal += 1;
     },
     onClickUpdate() {
-      // Generate と同等のフル再生成だが、中心点の座標(x,y)は「現在の値」を維持する。
-      this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
+      // 中心点座標を保持して再生成（iframeの完全差し替えは行わない）
       this.updateSignal += 1;
     },
     onClickReviseHighFrequency() {
@@ -640,7 +568,6 @@ export default {
       this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
       this.driftSignal += 1;
     },
-    
     
     onGenerated(payload) {
       // 1) パラメータの出力HTMLをポップアップ表示・更新
@@ -785,101 +712,105 @@ export default {
     updatePlaneIframeOnly() {
       // 既存の Plane&Sphere popup があれば、Plane iframe だけ更新する。
       // srcdoc差し替えは iframe をリロードしてちらつくため、可能なら iframe 内の関数で canvas だけ再描画する。
-      const doc = this._getPlaneSphereDoc();
-      if (!doc) {
+      const w = (this.planePopupRef && !this.planePopupRef.closed) ? this.planePopupRef : null;
+      if (!w) {
         // 無ければ従来通り作成（この場合は sphere iframe も初期化される）
         this.openOrUpdatePlanePopup();
         return;
       }
-      const pif = this._getIframeById(doc, 'plane-iframe');
-      if (!pif) {
-        this.openOrUpdatePlanePopup();
-        return;
-      }
-
-      // 1) まずは「リロードなし更新」を試す
-      const pw = pif.contentWindow;
-      const fn = pw && typeof pw.__updatePlane === 'function' ? pw.__updatePlane : null;
-      const pv = (pw && typeof pw.__planeVersion !== 'undefined') ? pw.__planeVersion : null;
-      const displayColors = Array.isArray(this.planeDisplayColors) ? this.planeDisplayColors : [];
-      const cell = Number(this.planeGridCellPx) || 3;
-      const displayW = this.gridWidth + 2;
-      const displayH = this.gridHeight + 2;
-
-      // バージョンが異なれば iframe を完全差し替えして内部スクリプトを更新する
-      if (pv !== null && pv !== this.planeBuildVersion) {
-        this._safeSetSrcdoc(pif, this.buildPlaneHtml());
-        return;
-      }
-
-      if (fn) {
-        // updateCount が一定回数を越えていれば内部で cleanup させ、srcdoc で再作成する
-        const updateCount = (pw && typeof pw.__planeUpdateCount === 'number') ? pw.__planeUpdateCount : (pw ? (pw.__planeUpdateCount || 0) : 0);
-        const MAX_UPDATES = 200;
-        if (updateCount >= MAX_UPDATES && pw && typeof pw.__cleanupPlane === 'function') {
-          this._safeCall(pw.__cleanupPlane);
-          this._safeSetSrcdoc(pif, this.buildPlaneHtml());
+      try {
+        const doc = w.document;
+        const pif = doc.getElementById('plane-iframe');
+        if (!pif) {
+          this.openOrUpdatePlanePopup();
           return;
         }
-        const res = this._safeCall(fn, displayColors, displayW, displayH, cell);
-        if (res && res.ok) {
-          // count
-          if (pw) {
+        // 1) まずは「リロードなし更新」を試す
+        const pw = pif.contentWindow;
+        const fn = pw && typeof pw.__updatePlane === 'function' ? pw.__updatePlane : null;
+        const pv = pw && typeof pw.__planeVersion !== 'undefined' ? pw.__planeVersion : null;
+        const displayColors = Array.isArray(this.planeDisplayColors) ? this.planeDisplayColors : [];
+        const cell = Number(this.planeGridCellPx) || 3;
+        const displayW = this.gridWidth + 2;
+        const displayH = this.gridHeight + 2;
+        // バージョンが異なれば iframe を完全差し替えして内部スクリプトを更新する
+        if (pv !== null && pv !== this.planeBuildVersion) {
+          const planeHtml = this.buildPlaneHtml();
+          pif.srcdoc = planeHtml;
+          return;
+        }
+        if (fn) {
+          try {
+            // updateCount が一定回数を越えていれば内部で cleanup させ、srcdoc で再作成する
+            const updateCount = pw.__planeUpdateCount || 0;
+            const MAX_UPDATES = 200;
+            if (updateCount >= MAX_UPDATES && typeof pw.__cleanupPlane === 'function') {
+              try { pw.__cleanupPlane(); } catch (e) { /* ignore cleanup errors */ }
+              const planeHtml = this.buildPlaneHtml();
+              pif.srcdoc = planeHtml;
+              return;
+            }
+            fn(displayColors, displayW, displayH, cell);
             if (typeof pw.__planeUpdateCount === 'number') pw.__planeUpdateCount++;
             else pw.__planeUpdateCount = 1;
+            return;
+          } catch (e) {
+            // フォールバックして再描画
+            const planeHtml = this.buildPlaneHtml();
+            pif.srcdoc = planeHtml;
+            return;
           }
-          return;
         }
-        // フォールバックして再描画
-        this._safeSetSrcdoc(pif, this.buildPlaneHtml());
-        return;
+        // 2) 初回/互換: srcdoc差し替え（ちらつきやすい）
+        const planeHtml = this.buildPlaneHtml();
+        pif.srcdoc = planeHtml;
+      } catch (e) {
+        this.openOrUpdatePlanePopup();
       }
-
-      // 2) 初回/互換: srcdoc差し替え（ちらつきやすい）
-      this._safeSetSrcdoc(pif, this.buildPlaneHtml());
     },
-
-    _updateSphereIframeOnly() {
-      // Sphere iframe 更新（Generate時はSphereも更新する。Reviseでは呼ばれない設計）
-      const doc = this._getPlaneSphereDoc();
-      if (!doc) return;
-      const sif = this._getIframeById(doc, 'sphere-iframe');
-      if (!sif) return;
-
-      const sphComp = (this.$refs && this.$refs.sphere) ? this.$refs.sphere : null;
-      // NOTE: 既存挙動維持（_sphereWin が Parameters_Display 側に無い場合は常に srcdoc 差し替えに落ちる）
-      const hasLiveSphere = !!(sphComp && this._sphereWin);
-
-      if (hasLiveSphere) {
-        if ((this.sphereUpdateCount || 0) >= (this.sphereMaxUpdates || 200)) {
-          this._safeCall(sphComp.cleanupSpherePopup);
-          this._safeSetSrcdoc(sif, this._getSphereHtmlForIframe());
-          this.sphereUpdateCount = 0;
-          return;
-        }
-        const res = this._safeCall(sphComp.requestRedraw);
-        if (res && res.ok) {
-          this.sphereUpdateCount = (this.sphereUpdateCount || 0) + 1;
-          return;
-        }
-        // fallback: replace srcdoc
-        this._safeSetSrcdoc(sif, this._getSphereHtmlForIframe());
-        this.sphereUpdateCount = 0;
-        return;
-      }
-
-      // not attached yet: replace srcdoc so onload attaches
-      this._safeSetSrcdoc(sif, this._getSphereHtmlForIframe());
-      this.sphereUpdateCount = 0;
-    },
-
     // 更新: Plane と Sphere を非リロードで可能なら差分更新する（Generate/Revise 共通で使える）
     updatePlaneAndSphereIframes() {
       // Plane 更新
       this.updatePlaneIframeOnly();
 
-      // Sphere 更新
-      this._updateSphereIframeOnly();
+      // Sphere 更新（Generate時はSphereも更新する。Reviseでは呼ばれない設計）
+      try {
+        const w = (this.planePopupRef && !this.planePopupRef.closed) ? this.planePopupRef : null;
+        if (!w) return;
+        const doc = w.document;
+        const sif = doc.getElementById('sphere-iframe');
+        if (!sif) return;
+        // If sphere iframe already attached and parent sphere component has initialized, request redraw
+        const sphComp = (this.$refs && this.$refs.sphere) ? this.$refs.sphere : null;
+        if (sphComp && this._sphereWin) {
+          // Use update count to avoid indefinite non-reload updates (resource leakage)
+          if ((this.sphereUpdateCount || 0) >= (this.sphereMaxUpdates || 200)) {
+            try { sphComp.cleanupSpherePopup(); } catch (e) { /* ignore cleanup errors */ }
+            // re-create iframe content
+            const sphereHtml = this._getSphereHtmlForIframe();
+            try { sif.srcdoc = sphereHtml; } catch (e) { /* ignore srcdoc set errors */ }
+            this.sphereUpdateCount = 0;
+            return;
+          }
+          try {
+            sphComp.requestRedraw();
+            this.sphereUpdateCount = (this.sphereUpdateCount || 0) + 1;
+            return;
+          } catch (e) {
+            // fallback: replace srcdoc
+            const sphereHtml = this._getSphereHtmlForIframe();
+            try { sif.srcdoc = sphereHtml; } catch (e) { /* ignore srcdoc set errors */ }
+            this.sphereUpdateCount = 0;
+            return;
+          }
+        } else {
+          // not attached yet: replace srcdoc so onload attaches
+          const sphereHtml = this._getSphereHtmlForIframe();
+          try { sif.srcdoc = sphereHtml; } catch (e) { /* ignore srcdoc set errors */ }
+          this.sphereUpdateCount = 0;
+          return;
+        }
+        } catch (e) { /* ignore overall update errors */ }
     },
     _getOrOpenPlaneSpherePopup() {
       const w = (this.planePopupRef && !this.planePopupRef.closed)
@@ -901,32 +832,32 @@ export default {
     },
     _setPlaneSphereIframes(doc, planeHtml, sphereHtml) {
       // set iframe contents from parent so we can wire sphere canvas to component methods
-      const pif = this._getIframeById(doc, 'plane-iframe');
-      const sif = this._getIframeById(doc, 'sphere-iframe');
-      if (pif) this._safeSetSrcdoc(pif, planeHtml);
-      if (!sif) return;
-      // Sphere は可能なら再利用してリロードを避ける（ちらつき防止）
-      // 初回は srcdoc を流し込み、onload で親側に canvas を渡す
-      this._safeSetSrcdoc(sif, sphereHtml);
       try {
+        const pif = doc.getElementById('plane-iframe');
+        const sif = doc.getElementById('sphere-iframe');
+        if (pif) pif.srcdoc = planeHtml;
+        if (!sif) return;
+        // Sphere は可能なら再利用してリロードを避ける（ちらつき防止）
+        // 初回は srcdoc を流し込み、onload で親側に canvas を渡す
+        sif.srcdoc = sphereHtml;
         sif.onload = () => {
           this._attachSphereToIframe(sif);
         };
-      } catch (e) { /* ignore */ }
+      } catch (e) { void e; }
     },
     _attachSphereToIframe(sif) {
-      const sw = this._safeGet(sif, (x) => x.contentWindow);
-      if (!sw) return;
-      const sdoc = this._safeGet(sw, (x) => x.document);
-      const canvas = this._getIframeById(sdoc, 'sphere-canvas');
-      if (!canvas) return;
-      const sph = (this.$refs && this.$refs.sphere) ? this.$refs.sphere : null;
-      if (!sph) return;
-      // iframe内の球ビューは Sphere_Display 側でセットアップ（HTML生成とイベント配線を分離）
-      this._safeCall(sph.attachToWindow, sw, canvas);
       try {
-        sw.addEventListener('beforeunload', () => { this._safeCall(sph.cleanupSpherePopup); });
-      } catch (e) { /* ignore */ }
+        const sw = sif.contentWindow;
+        if (!sw) return;
+        const sdoc = sw.document;
+        const canvas = sdoc.getElementById('sphere-canvas');
+        if (!canvas) return;
+        const sph = (this.$refs && this.$refs.sphere) ? this.$refs.sphere : null;
+        if (!sph) return;
+        // iframe内の球ビューは Sphere_Display 側でセットアップ（HTML生成とイベント配線を分離）
+        sph.attachToWindow(sw, canvas);
+        sw.addEventListener('beforeunload', () => { sph.cleanupSpherePopup(); });
+      } catch (e) { void e; }
     },
     buildPlaneHtml() {
       const displayColors = Array.isArray(this.planeDisplayColors) ? this.planeDisplayColors : [];
