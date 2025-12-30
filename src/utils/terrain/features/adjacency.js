@@ -2,12 +2,12 @@
 
 import { DIRS4, DIRS8 } from './constants';
 
-export function makeIsAdjacent(vm, landMask, wantLand) {
+export function makeIsAdjacent(ctx, landMask, wantLand) {
     return (gx, gy) => {
         for (const d of DIRS4) {
-            const w = vm.torusWrap(gx + d.dx, gy + d.dy);
+            const w = ctx.torusWrap(gx + d.dx, gy + d.dy);
             if (!w) continue;
-            const nIdx = w.y * vm.gridWidth + w.x;
+            const nIdx = w.y * ctx.gridWidth + w.x;
             const isLand = !!landMask[nIdx];
             if (wantLand ? isLand : !isLand) return true;
         }
@@ -16,13 +16,13 @@ export function makeIsAdjacent(vm, landMask, wantLand) {
 }
 
 // 1グリッド島（周囲8近傍に陸が存在しない）なら city 開始セルにしない
-export function isOneCellIsland(vm, landMask, gx, gy) {
-    const idx0 = gy * vm.gridWidth + gx;
+export function isOneCellIsland(ctx, landMask, gx, gy) {
+    const idx0 = gy * ctx.gridWidth + gx;
     if (!landMask[idx0]) return false; // 陸でなければ対象外
     for (const d of DIRS8) {
-        const w = vm.torusWrap(gx + d.dx, gy + d.dy);
+        const w = ctx.torusWrap(gx + d.dx, gy + d.dy);
         if (!w) continue;
-        const nIdx = w.y * vm.gridWidth + w.x;
+        const nIdx = w.y * ctx.gridWidth + w.x;
         if (landMask[nIdx]) return false; // 近傍に陸があれば1セル島ではない
     }
     return true;

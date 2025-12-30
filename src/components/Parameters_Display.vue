@@ -278,6 +278,8 @@ import { computeGridTypeCounts } from '../features/stats/gridTypeCounts.js';
 import { buildParametersOutputHtml } from '../features/popup/parametersOutputHtml.js';
 import { buildPlaneSphereShellHtml } from '../features/popup/planeSphereShellHtml.js';
 import { buildPlaneHtml as buildPlaneHtmlUtil } from '../features/popup/planeHtml.js';
+import { buildStorePatchesFromLocal, applyGeneratorParamsToLocal, applyRenderSettingsToLocal } from '../utils/storeSync.js';
+import { deepClone } from '../utils/clone.js';
 export default {
   name: 'Parameters_Display',
   components: { Grids_Calculation, Sphere_Display },
@@ -370,7 +372,7 @@ export default {
       // UI で選べる時代一覧（store.era と対応）
       eras: ERAS,
       // 中心点のパラメータはdeepコピーして編集可能にする
-      mutableCenterParams: JSON.parse(JSON.stringify(this.centerParameters || [])),
+      mutableCenterParams: deepClone(this.centerParameters || []),
       generateSignal: 0,
       updateSignal: 0,
       reviseSignal: 0,
@@ -546,26 +548,7 @@ export default {
     },
     _syncStoreFromLocal() {
       // generatorParams と renderSettings に分配して store に反映する
-      const local = this.local || {};
-      // f_cloud は renderSettings に移管（generatorParams からは除外）
-      const generatorAllowed = new Set([
-        ...Object.keys(PARAM_DEFAULTS).filter((k) => k !== 'f_cloud'),
-        'deterministicSeed',
-        'minCenterDistance'
-      ]);
-      const renderAllowed = new Set([
-        'f_cloud'
-      ]);
-      const genPatch = {};
-      const renderPatch = {};
-      for (const k of Object.keys(local)) {
-        if (generatorAllowed.has(k)) genPatch[k] = local[k];
-        if (renderAllowed.has(k)) {
-          const v = local[k];
-          // f_cloud は数値でない値で上書きしない（undefined や非数で既定値に戻る問題を防止）
-          if (typeof v === 'number' && isFinite(v)) renderPatch[k] = v;
-        }
-      }
+      const { genPatch, renderPatch } = buildStorePatchesFromLocal(this.local, PARAM_DEFAULTS);
       try {
         if (Object.keys(genPatch).length > 0) this.$store?.dispatch?.('updateGeneratorParams', genPatch);
         if (Object.keys(renderPatch).length > 0) this.$store?.dispatch?.('updateRenderSettings', renderPatch);
@@ -577,15 +560,7 @@ export default {
       // local -> store の watcher と衝突しないようにガード
       this.isSyncingLocalFromStore = true;
       try {
-        // local に存在するキーだけ上書き（local.era 等は store別管理のため触らない）
-        for (const k of Object.keys(gp)) {
-          // 互換: 旧generatorParamsに混入している可能性があるが、f_cloudはrenderSettings側が正なので同期しない
-          if (k === 'f_cloud') continue;
-          if (Object.prototype.hasOwnProperty.call(this.local, k)) {
-            // 差分があるときだけ代入（循環＆無駄な更新を防ぐ）
-            if (this.local[k] !== gp[k]) this.local[k] = gp[k];
-          }
-        }
+        applyGeneratorParamsToLocal(this.local, gp);
       } finally {
         this.isSyncingLocalFromStore = false;
       }
@@ -595,10 +570,7 @@ export default {
       if (!rs || typeof rs !== 'object') return;
       this.isSyncingLocalFromStore = true;
       try {
-        // 現状 UI で扱っているのは f_cloud のみ
-        if (Object.prototype.hasOwnProperty.call(this.local, 'f_cloud') && typeof rs.f_cloud !== 'undefined') {
-          if (this.local.f_cloud !== rs.f_cloud) this.local.f_cloud = rs.f_cloud;
-        }
+        applyRenderSettingsToLocal(this.local, rs);
       } finally {
         this.isSyncingLocalFromStore = false;
       }
@@ -642,7 +614,7 @@ export default {
     
     onGenerated(payload) {
       // 1) パラメータの出力HTMLをポップアップ表示・更新
-      this.mutableCenterParams = JSON.parse(JSON.stringify(payload.centerParameters || []));
+      this.mutableCenterParams = deepClone(payload.centerParameters || []);
       if (payload && typeof payload.deterministicSeed !== 'undefined') {
         this.local.deterministicSeed = payload.deterministicSeed || '';
       }

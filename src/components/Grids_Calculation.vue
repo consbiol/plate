@@ -153,6 +153,60 @@ export default {
     }
   },
   methods: {
+    // --- ctx builders: ctx 化のために依存を明示する（挙動は変えない） ---
+    _buildLakesCtx() {
+      return {
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        era: this.era,
+        averageLakesPerCenter: this.averageLakesPerCenter,
+        baseLandDistanceThreshold: this.baseLandDistanceThreshold,
+        torusWrap: (...args) => this.torusWrap(...args),
+        _poissonSample: (...args) => this._poissonSample(...args),
+        _getDerivedRng: (...args) => this._getDerivedRng(...args),
+        _getLandDistanceThresholdForRow: (...args) => this._getLandDistanceThresholdForRow(...args),
+        // 結果の持ち帰り（従来互換）
+        _lastLakesList: null
+      };
+    },
+    _buildHighlandsCtx() {
+      return {
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        era: this.era,
+        seaLandRatio: this.seaLandRatio,
+        torusWrap: (...args) => this.torusWrap(...args),
+        _poissonSample: (...args) => this._poissonSample(...args),
+        _getDerivedRng: (...args) => this._getDerivedRng(...args)
+      };
+    },
+    _buildFeaturesCtx() {
+      return {
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        era: this.era,
+        torusWrap: (...args) => this.torusWrap(...args),
+        _getDerivedRng: (...args) => this._getDerivedRng(...args),
+        _poissonSample: (...args) => this._poissonSample(...args),
+        fractalNoise2D: (...args) => this.fractalNoise2D(...args),
+        // probabilities / counts
+        cityGenerationProbability: this.cityGenerationProbability,
+        cultivatedGenerationProbability: this.cultivatedGenerationProbability,
+        bryophyteGenerationProbability: this.bryophyteGenerationProbability,
+        pollutedAreasCount: this.pollutedAreasCount,
+        seaCityGenerationProbability: this.seaCityGenerationProbability,
+        seaCultivatedGenerationProbability: this.seaCultivatedGenerationProbability,
+        seaPollutedAreasCount: this.seaPollutedAreasCount
+      };
+    },
+    _buildLakeLowlandCtx() {
+      return {
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        torusWrap: (...args) => this.torusWrap(...args),
+        _getLandDistanceThresholdForRow: (...args) => this._getLandDistanceThresholdForRow(...args)
+      };
+    },
     // サブRNG（サブストリーム）生成: ベースの deterministicSeed にラベルを連結して独立RNGを作る
     _getDerivedRng(...labels) {
       if (this.forceRandomDerivedRng) return null;
@@ -258,21 +312,34 @@ export default {
     // 湖の生成（各中心ごと）＋周囲低地化（縁取り）
     _generateLakes(centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog) {
       // 実装は `src/utils/terrain/lakes.js` に分離（機能不変）
-      return generateLakes(this, centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog);
+      // ctx を作って依存を明示（挙動不変）
+      const ctx = this._buildLakesCtx();
+      const lakeMask = generateLakes(ctx, centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog);
+      // 高頻度Revise用に従来の場所へ反映（挙動不変）
+      this._lastLakesList = ctx._lastLakesList;
+      return lakeMask;
     },
     // 高地生成（各中心ごと）
     _generateHighlands(centers, centerLandCellsPre, preLandMask, lakeMask, colors, highlandColor, seededRng, seededLog) {
       // 実装は `src/utils/terrain/highlands.js` に分離（機能不変）
-      return generateHighlands(this, centers, centerLandCellsPre, preLandMask, lakeMask, colors, highlandColor, seededRng, seededLog);
+      // ctx を作って依存を明示（挙動不変）
+      const ctx = this._buildHighlandsCtx();
+      return generateHighlands(ctx, centers, centerLandCellsPre, preLandMask, lakeMask, colors, highlandColor, seededRng, seededLog);
     },
     // 高山生成（高地に隣接しない高地セル）
     _generateAlpines(colors, highlandColor, lowlandColor, desertColor, alpineColor, directions) {
       // 実装は `src/utils/terrain/alpines.js` に分離（機能不変）
       return generateAlpines(this, colors, highlandColor, lowlandColor, desertColor, alpineColor, directions);
     },
-    runGenerate({ preserveCenterCoordinates = false } = {}) {
-      const N = this.gridWidth * this.gridHeight;
-      const seededRng = this._getSeededRng();
+    // --- Generate helpers（パイプラインを段階に分けて読みやすくする。挙動/乱数消費順は維持） ---
+    _buildSeededLog(count) {
+      return Array.from({ length: (count || 0) * 1 || 1 }, () => ({
+        highlandsCount: 0,
+        highlandClusters: [],
+        lakeStarts: []
+      }));
+    },
+    _resetDriftStateForGenerate({ preserveCenterCoordinates }) {
       // Initialize superPloom / drift phase only for full generate.
       // If preserveCenterCoordinates is true (Update), DO NOT modify superPloom_* nor drift phase/turn.
       try {
@@ -283,11 +350,8 @@ export default {
           this.driftIsApproach = true; // start with Approach phase
         }
       } catch (e) { /* ignore */ }
-      const seededLog = Array.from({ length: (this.centersY || 0) * 1 || 1 }, () => ({
-        highlandsCount: 0,
-        highlandClusters: [],
-        lakeStarts: []
-      }));
+    },
+    _precomputeGenerateFixedTables({ N, seededRng }) {
       // 帯の縦揺らぎ（列ごと）の事前生成（Generate時に固定。Reviseでは固定値を使う）
       const wobbleRows = Math.max(0, Math.floor(this.landBandVerticalWobbleRows || 0));
       this.wobbleRowsFixed = wobbleRows;
@@ -303,6 +367,8 @@ export default {
       }
       // 低頻度パラメータを固定（Reviseではこの固定値を使う）
       this.baseLandDistanceThresholdFixed = this.baseLandDistanceThreshold;
+
+      // 固定ノイズ（Generate時に固定）
       const glacierNoiseTable = new Array(N);
       {
         const seedStrictGl = (this.era === '文明時代' || this.era === '海棲文明時代') && !!seededRng;
@@ -323,6 +389,9 @@ export default {
           tundraNoiseBottomTable[i] = (rBot() * 2 - 1);
         }
       }
+      return { glacierNoiseTable, tundraNoiseTopTable, tundraNoiseBottomTable };
+    },
+    _computeCentersAndParamsForGenerate({ preserveCenterCoordinates, seededRng }) {
       // 大陸中心座標の決定:
       // - `deterministicSeed` が渡されている場合はシードに基づいて決定（generate 時の再現性確保）
       // - 未指定の場合は完全ランダム（従来の挙動）
@@ -349,35 +418,47 @@ export default {
         centers = sampleLandCenters(this, seedStrictCenters ? seededRng : null, effectiveMinCenterDistance);
         // ノイズから中心パラメータを生成（propsは直接変更しない）
         localCenterParameters = centers.map((c) => {
-        if (seededRng) {
-          const u1 = seededRng() * 2 - 1; // [-1,1)
-          const u2 = seededRng();         // [0,1)
-          return {
-            x: c.x,
-            y: c.y,
-            // さらにばらつきを縮小（影響は狭いレンジ、減衰は強め）
-            influenceMultiplier: 0.9 + u1 * 0.05, // [0.85, 0.95]
-            kDecayVariation: this.kDecay * (1.3 + u1 * 0.1), // [1.2, 1.4] × kDecay
-            directionAngle: (u2 * 2 * Math.PI * 1.5)
-          };
-        } else {
-          const n1 = this.noise2D(c.x * 0.1, c.y * 0.1);
-          const n2 = this.noise2D(c.x * 0.15, c.y * 0.15);
-          return {
-            x: c.x,
-            y: c.y,
-            // さらにばらつきを縮小（影響は狭いレンジ、減衰は強め）
-            influenceMultiplier: 0.9 + n1 * 0.05,
-            kDecayVariation: this.kDecay * (1.3 + n1 * 0.1),
-            directionAngle: n2 * Math.PI * 2 * 1.5
-          };
-        }
+          if (seededRng) {
+            const u1 = seededRng() * 2 - 1; // [-1,1)
+            const u2 = seededRng();         // [0,1)
+            return {
+              x: c.x,
+              y: c.y,
+              // さらにばらつきを縮小（影響は狭いレンジ、減衰は強め）
+              influenceMultiplier: 0.9 + u1 * 0.05, // [0.85, 0.95]
+              kDecayVariation: this.kDecay * (1.3 + u1 * 0.1), // [1.2, 1.4] × kDecay
+              directionAngle: (u2 * 2 * Math.PI * 1.5)
+            };
+          } else {
+            const n1 = this.noise2D(c.x * 0.1, c.y * 0.1);
+            const n2 = this.noise2D(c.x * 0.15, c.y * 0.15);
+            return {
+              x: c.x,
+              y: c.y,
+              // さらにばらつきを縮小（影響は狭いレンジ、減衰は強め）
+              influenceMultiplier: 0.9 + n1 * 0.05,
+              kDecayVariation: this.kDecay * (1.3 + n1 * 0.1),
+              directionAngle: n2 * Math.PI * 2 * 1.5
+            };
+          }
         });
       }
+      return { centers, localCenterParameters, seedStrictCenters, effectiveMinCenterDistance };
+    },
+    _computeScoresThresholdAndLandMaskForGenerate({
+      N,
+      centers,
+      localCenterParameters,
+      preserveCenterCoordinates,
+      seedStrictCenters,
+      seededRng,
+      effectiveMinCenterDistance
+    }) {
       let scores, threshold;
       let success = false;
+      let nextCenters = centers;
       for (let attempt = 0; attempt < 5 && !success; attempt++) {
-        const res = computeScoresForCenters(this, centers, localCenterParameters);
+        const res = computeScoresForCenters(this, nextCenters, localCenterParameters);
         scores = res.scores;
         const sorted = scores.slice().sort((a, b) => a - b);
         // UI の seaLandRatio を内部の生成用比率へスムーズにマッピング（アンカー: 0.3->0.07, 0.9->0.7）
@@ -385,8 +466,8 @@ export default {
         const k = Math.floor((1 - effectiveSeaLandRatio) * N);
         threshold = sorted[Math.max(0, Math.min(sorted.length - 1, k))];
         let anyCenterLand = false;
-        for (let i = 0; i < centers.length; i++) {
-          const c = centers[i];
+        for (let i = 0; i < nextCenters.length; i++) {
+          const c = nextCenters[i];
           const sc = scores[c.y * this.gridWidth + c.x];
           if (sc >= threshold) { anyCenterLand = true; break; }
         }
@@ -397,12 +478,33 @@ export default {
           if (preserveCenterCoordinates) {
             success = true;
           } else {
-            centers = sampleLandCenters(this, seedStrictCenters ? seededRng : null, effectiveMinCenterDistance);
+            nextCenters = sampleLandCenters(this, seedStrictCenters ? seededRng : null, effectiveMinCenterDistance);
           }
         }
       }
       const landMask = new Array(N).fill(false);
       for (let i = 0; i < N; i++) landMask[i] = scores[i] >= threshold;
+      return { centers: nextCenters, scores, threshold, landMask };
+    },
+    _buildWorldAndEmit({
+      emitEvent,
+      N,
+      centers,
+      localCenterParameters,
+      landMask,
+      scores,
+      threshold,
+      seededRng,
+      seededLog,
+      glacierNoiseTable,
+      tundraNoiseTopTable,
+      tundraNoiseBottomTable,
+      // Drift only:
+      driftMetrics = null,
+      // Drift only: 高地生成だけ deterministicSeed を有効化する場合に使用
+      highlandsSeededRng = null,
+      enableDerivedRngDuringHighlands = false
+    }) {
       // 前計算: 各セルのノイズ（後段の複数ループで再利用）
       const noiseGrid = buildVisualNoiseGrid(this, { N, seededRng });
       // 前計算: 各セルの最寄り中心インデックス（湖/高地生成の所属チェック高速化）
@@ -462,7 +564,7 @@ export default {
         wrap,
         distance: distFn
       });
-      
+
       const colors = classifyBaseColors(this, {
         N,
         landMask,
@@ -486,14 +588,29 @@ export default {
       });
       // 湖生成と適用（ジッター後のマスクに基づく）
       const lakeMask = this._generateLakes(centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog);
-      // 高地生成と適用（文明時代・海棲文明時代の決定性向上のため、海岸線ジッター前のマスクを使用）
-      this._generateHighlands(centers, centerLandCellsPre, preJitterLandMask, lakeMask, colors, highlandColor, seededRng, seededLog);
+
+      // 高地生成と適用
+      // - Generate: seededRng をそのまま渡す
+      // - Drift: 高地だけ deterministicSeed を有効化する場合は highlandsSeededRng を渡す
+      if (highlandsSeededRng && enableDerivedRngDuringHighlands) {
+        const prevForceHighlands = this.forceRandomDerivedRng;
+        this.forceRandomDerivedRng = false;
+        try {
+          this._generateHighlands(centers, centerLandCellsPre, preJitterLandMask, lakeMask, colors, highlandColor, highlandsSeededRng, seededLog);
+        } finally {
+          this.forceRandomDerivedRng = prevForceHighlands;
+        }
+      } else {
+        this._generateHighlands(centers, centerLandCellsPre, preJitterLandMask, lakeMask, colors, highlandColor, (highlandsSeededRng || seededRng), seededLog);
+      }
+
       // 高山生成と適用
       this._generateAlpines(colors, highlandColor, lowlandColor, desertColor, alpineColor, directions);
+
       // Revise用に「ツンドラ/氷河適用前」の色を保存（湖/高地/高山の結果は保持）
       const preTundraColors = colors.slice();
+
       // --- 先に氷河row（基準）を計算 ---
-      // ※ landMask/lakeMask にのみ依存するため、色の上書き（ツンドラ/氷河）より前に計算して問題ない
       const preGlacierStats = computePreGlacierStats({ N, landMask, lakeMask });
       const ratioOcean = preGlacierStats.seaCount / (preGlacierStats.total || 1);
       // 海率の影響は「陸の氷河形成」にのみ適用し、海/湖は標準（0.7相当）で固定する
@@ -504,12 +621,9 @@ export default {
       const computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
 
       // --- ツンドラの適用（上端・下端） ---
-      // 「上端・下端ツンドラグリッド追加数」は UI 上 (topTundraRows - topGlacierRows) で表現されているため、
-      // 追加分を取り出し、基準（氷河row）を smoothed 値に置き換えてから適用する。
       const tundraExtraRows = Number.isFinite(Number(this.tundraExtraRows))
         ? Math.max(0, Number(this.tundraExtraRows))
         : Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
-      // ツンドラrowは「海グリッドに生成する氷河row」に追従させる（陸氷河は seaBoost 等で挙動が異なるため）
       const computedTopTundraRows = Math.max(0, computedTopGlacierRowsWater + tundraExtraRows);
       applyTundra(this, {
         colors,
@@ -522,9 +636,6 @@ export default {
       });
 
       // --- 氷河の適用（上端/下端） ---
-      // 上端/下端を氷河で上書き（ノイズ付き）
-      // 海/湖: +0、低地・乾燥地・ツンドラ: +landGlacierExtraRows、高地: +highlandGlacierExtraRows
-      // 既存UI/統計互換: computedTopGlacierRows は陸用の実効値を返す
       const computedTopGlacierRows = computedTopGlacierRowsLand;
       applyGlaciers(this, {
         colors,
@@ -546,8 +657,8 @@ export default {
         landMask,
         lakeMask
       });
-      // 追加: 文明要素（都市/耕作/苔類/汚染）＋海棲文明要素（浅瀬ベース）を生成
-      // 実装は `src/utils/terrain/features.js` に分離（機能不変）
+
+      // 文明要素（都市/耕作/苔類/汚染）＋海棲文明要素（浅瀬ベース）
       const {
         cityMask,
         cultivatedMask,
@@ -556,8 +667,9 @@ export default {
         seaCityMask,
         seaCultivatedMask,
         seaPollutedMask
-      } = generateFeatures(this, { N, landMask, colors, lowlandColor, shallowSeaColor, seededRng });
-      // 追加: 各グリッドのプロパティ構造を作成
+      } = generateFeatures(this._buildFeaturesCtx(), { N, landMask, colors, lowlandColor, shallowSeaColor, seededRng });
+
+      // 各グリッドのプロパティ構造を作成
       const gridData = buildGridData(this, {
         N,
         colors,
@@ -584,6 +696,7 @@ export default {
         seededLog
       });
       markCentersOnGridData(this, { gridData, centers });
+
       // 高頻度更新に必要なデータをキャッシュ
       this.hfCache = {
         N,
@@ -594,7 +707,6 @@ export default {
         noiseGrid,
         distanceToSea,
         distanceToLand,
-        // 低頻度の結果（湖/高地/高山は保持、ツンドラ/氷河/乾燥地はReviseで再適用）
         preTundraColors,
         // 固定ノイズ
         glacierNoiseTable,
@@ -617,14 +729,113 @@ export default {
         // featuresを「不整合なら消す」ためのベース
         gridDataBase: gridData
       };
-      // 結果をemit（平面グリッド用に displayColors も明示的に渡す）
-      this.$emit('generated', buildGeneratedPayload({
+
+      const payload = buildGeneratedPayload({
         centerParameters: localCenterParameters,
         gridData,
         deterministicSeed: this.deterministicSeed,
         preGlacierStats,
-        computedTopGlacierRows
-      }));
+        computedTopGlacierRows,
+        ...(driftMetrics ? { driftMetrics } : null)
+      });
+      this.$emit(emitEvent, payload);
+    },
+    // --- Drift helpers（中心点移動と、Drift用の前計算/再生成を分離） ---
+    _precomputeDriftFixedTables({ N }) {
+      // 帯の縦揺らぎ（列ごと）の事前生成（Drift時も固定。Reviseでは固定値を使う）
+      const wobbleRows = Math.max(0, Math.floor(this.landBandVerticalWobbleRows || 0));
+      this.wobbleRowsFixed = wobbleRows;
+      if (wobbleRows > 0) {
+        this._wobbleShiftByX = new Array(this.gridWidth);
+        for (let x = 0; x < this.gridWidth; x++) {
+          this._wobbleShiftByX[x] = Math.round((Math.random() * 2 - 1) * wobbleRows);
+        }
+      } else {
+        this._wobbleShiftByX = null;
+      }
+      // 低頻度パラメータを固定（Reviseではこの固定値を使う）
+      this.baseLandDistanceThresholdFixed = this.baseLandDistanceThreshold;
+
+      // 固定ノイズ（Driftでは毎回ランダムに作り直す）
+      const glacierNoiseTable = new Array(N);
+      for (let i = 0; i < N; i++) glacierNoiseTable[i] = (Math.random() * 2 - 1);
+      const tundraNoiseTopTable = new Array(N);
+      const tundraNoiseBottomTable = new Array(N);
+      for (let i = 0; i < N; i++) {
+        tundraNoiseTopTable[i] = (Math.random() * 2 - 1);
+        tundraNoiseBottomTable[i] = (Math.random() * 2 - 1);
+      }
+      return { glacierNoiseTable, tundraNoiseTopTable, tundraNoiseBottomTable };
+    },
+    _computeCenterParametersForDrift({ centers }) {
+      // centerParameters は「既存の影響パラメータを保持しつつ座標だけ更新」を優先
+      if (Array.isArray(this.centerParameters) && this.centerParameters.length === centers.length) {
+        return this.centerParameters.map((p, i) => ({
+          ...p,
+          x: centers[i].x,
+          y: centers[i].y
+        }));
+      }
+      return centers.map((c) => {
+        const u1 = Math.random() * 2 - 1;
+        const u2 = Math.random();
+        return {
+          x: c.x,
+          y: c.y,
+          influenceMultiplier: 0.9 + u1 * 0.05,
+          kDecayVariation: this.kDecay * (1.3 + u1 * 0.1),
+          directionAngle: (u2 * 2 * Math.PI * 1.5)
+        };
+      });
+    },
+    _computeScoresThresholdAndLandMaskForDrift({ N, centers, localCenterParameters }) {
+      // スコアと閾値計算（中心点は固定）。中心点が陸にならないケースでも resample はしない。
+      const res = computeScoresForCenters(this, centers, localCenterParameters);
+      const scores = res.scores;
+      const sorted = scores.slice().sort((a, b) => a - b);
+      const effectiveSeaLandRatio = Math.min(0.999, Math.max(0.0, mapSeaLandRatio(this.seaLandRatio)));
+      const k = Math.floor((1 - effectiveSeaLandRatio) * N);
+      const threshold = sorted[Math.max(0, Math.min(sorted.length - 1, k))];
+      const landMask = new Array(N).fill(false);
+      for (let i = 0; i < N; i++) landMask[i] = scores[i] >= threshold;
+      return { scores, threshold, landMask };
+    },
+    runGenerate({ preserveCenterCoordinates = false } = {}) {
+      const N = this.gridWidth * this.gridHeight;
+      const seededRng = this._getSeededRng();
+      this._resetDriftStateForGenerate({ preserveCenterCoordinates });
+      const seededLog = this._buildSeededLog(this.centersY);
+      const { glacierNoiseTable, tundraNoiseTopTable, tundraNoiseBottomTable } =
+        this._precomputeGenerateFixedTables({ N, seededRng });
+      const {
+        centers: centers0,
+        localCenterParameters,
+        seedStrictCenters,
+        effectiveMinCenterDistance
+      } = this._computeCentersAndParamsForGenerate({ preserveCenterCoordinates, seededRng });
+      const { centers, scores, threshold, landMask } = this._computeScoresThresholdAndLandMaskForGenerate({
+        N,
+        centers: centers0,
+        localCenterParameters,
+        preserveCenterCoordinates,
+        seedStrictCenters,
+        seededRng,
+        effectiveMinCenterDistance
+      });
+      this._buildWorldAndEmit({
+        emitEvent: 'generated',
+        N,
+        centers,
+        localCenterParameters,
+        landMask,
+        scores,
+        threshold,
+        seededRng,
+        seededLog,
+        glacierNoiseTable,
+        tundraNoiseTopTable,
+        tundraNoiseBottomTable
+      });
     },
     // Drift:
     // - 前回Generateの中心点（hfCache.centers）をキャッシュとして使用
@@ -927,304 +1138,39 @@ export default {
           phase: phaseName,
           avgDist
         };
-
-        const seededLog = Array.from({ length: centers.length }, () => ({
-          highlandsCount: 0,
-          highlandClusters: [],
-          lakeStarts: []
-        }));
-
-        // 帯の縦揺らぎ（列ごと）の事前生成（Drift時も固定。Reviseでは固定値を使う）
-        const wobbleRows = Math.max(0, Math.floor(this.landBandVerticalWobbleRows || 0));
-        this.wobbleRowsFixed = wobbleRows;
-        if (wobbleRows > 0) {
-          this._wobbleShiftByX = new Array(this.gridWidth);
-          for (let x = 0; x < this.gridWidth; x++) {
-            this._wobbleShiftByX[x] = Math.round((Math.random() * 2 - 1) * wobbleRows);
-          }
-        } else {
-          this._wobbleShiftByX = null;
-        }
-        // 低頻度パラメータを固定（Reviseではこの固定値を使う）
-        this.baseLandDistanceThresholdFixed = this.baseLandDistanceThreshold;
-
-        // 固定ノイズ（Driftでは毎回ランダムに作り直す）
-        const glacierNoiseTable = new Array(N);
-        for (let i = 0; i < N; i++) glacierNoiseTable[i] = (Math.random() * 2 - 1);
-        const tundraNoiseTopTable = new Array(N);
-        const tundraNoiseBottomTable = new Array(N);
-        for (let i = 0; i < N; i++) {
-          tundraNoiseTopTable[i] = (Math.random() * 2 - 1);
-          tundraNoiseBottomTable[i] = (Math.random() * 2 - 1);
-        }
-
-        // centerParameters は「既存の影響パラメータを保持しつつ座標だけ更新」を優先
-        let localCenterParameters = null;
-        if (Array.isArray(this.centerParameters) && this.centerParameters.length === centers.length) {
-          localCenterParameters = this.centerParameters.map((p, i) => ({
-            ...p,
-            x: centers[i].x,
-            y: centers[i].y
-          }));
-        } else {
-          localCenterParameters = centers.map((c) => {
-            const u1 = Math.random() * 2 - 1;
-            const u2 = Math.random();
-            return {
-              x: c.x,
-              y: c.y,
-              influenceMultiplier: 0.9 + u1 * 0.05,
-              kDecayVariation: this.kDecay * (1.3 + u1 * 0.1),
-              directionAngle: (u2 * 2 * Math.PI * 1.5)
-            };
-          });
-        }
-
-        // スコアと閾値計算（中心点は固定）。中心点が陸にならないケースでも resample はしない。
-        let scores, threshold;
-        const res = computeScoresForCenters(this, centers, localCenterParameters);
-        scores = res.scores;
-        const sorted = scores.slice().sort((a, b) => a - b);
-        const effectiveSeaLandRatio = Math.min(0.999, Math.max(0.0, mapSeaLandRatio(this.seaLandRatio)));
-        const k = Math.floor((1 - effectiveSeaLandRatio) * N);
-        threshold = sorted[Math.max(0, Math.min(sorted.length - 1, k))];
-
-        const landMask = new Array(N).fill(false);
-        for (let i = 0; i < N; i++) landMask[i] = scores[i] >= threshold;
-
-        const noiseGrid = buildVisualNoiseGrid(this, { N, seededRng });
-        const ownerCenterIdx = computeOwnerCenterIdx(this, centers);
-
-        dilateLandMask(this, {
-          landMask,
-          scores,
-          threshold,
-          expansionBias: 0.12,
-          maxIterations: 10
-        });
-        removeSingleCellIslands(this, { landMask, seededRng });
-        const preJitterLandMask = landMask.slice();
-        jitterCoastline(this, { landMask, scores, threshold, seededRng });
-
-        const seaNoiseAmplitude = 1.5;
-        const landNoiseAmplitude = 2.5;
-        const {
-          deepSeaColor, shallowSeaColor, lowlandColor, desertColor,
-          highlandColor, alpineColor, tundraColor, glacierColor
-        } = this._getBaseColors();
-        const directions = getDirections8();
-        const wrap = (x, y) => this.torusWrap(x, y);
-        const distFn = (x1, y1, x2, y2) => this.torusDistance(x1, y1, x2, y2);
-
-        const landSources = [];
-        for (let gy = 0; gy < this.gridHeight; gy++) {
-          for (let gx = 0; gx < this.gridWidth; gx++) {
-            const idx = gy * this.gridWidth + gx;
-            if (landMask[idx]) landSources.push({ x: gx, y: gy });
-          }
-        }
-        const distanceToLand = computeDistanceMap({
-          sources: landSources,
-          N,
-          directions,
-          gridWidth: this.gridWidth,
-          wrap,
-          distance: distFn
-        });
-
-        const seaSources = [];
-        for (let gy = 0; gy < this.gridHeight; gy++) {
-          for (let gx = 0; gx < this.gridWidth; gx++) {
-            const idx = gy * this.gridWidth + gx;
-            if (!landMask[idx]) seaSources.push({ x: gx, y: gy });
-          }
-        }
-        const distanceToSea = computeDistanceMap({
-          sources: seaSources,
-          N,
-          directions,
-          gridWidth: this.gridWidth,
-          wrap,
-          distance: distFn
-        });
-
-        const colors = classifyBaseColors(this, {
-          N,
-          landMask,
-          noiseGrid,
-          distanceToSea,
-          distanceToLand,
-          seaNoiseAmplitude,
-          landNoiseAmplitude,
-          deepSeaColor,
-          shallowSeaColor,
-          lowlandColor,
-          desertColor
-        });
-
-        const { centerLandCells, centerLandCellsPre } = buildCenterLandCells(this, {
-          centers,
-          ownerCenterIdx,
-          landMask,
-          preLandMask: preJitterLandMask
-        });
+        const seededLog = this._buildSeededLog(centers.length);
+        const { glacierNoiseTable, tundraNoiseTopTable, tundraNoiseBottomTable } =
+          this._precomputeDriftFixedTables({ N });
+        const localCenterParameters = this._computeCenterParametersForDrift({ centers });
+        const { scores, threshold, landMask } = this._computeScoresThresholdAndLandMaskForDrift({ N, centers, localCenterParameters });
 
         // Driftでは「ノイズは全再抽選」だが、高地の個数/クラスター（開始セル/サイズ）は
         // deterministicSeed が指定されている場合に限りシード固定にする。
-        // ※ 地形本体（landMask等）はランダムなので、結果は「高地生成の乱数源がMath.randomではない」ことを保証する。
-        const lakeMask = this._generateLakes(centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog);
         const seededRngHighlands = this._getSeededRng();
-        if (seededRngHighlands) {
-          // 高地生成だけ派生RNGも有効化して、中心/クラスタごとに独立ストリームにする
-          const prevForceHighlands = this.forceRandomDerivedRng;
-          this.forceRandomDerivedRng = false;
-          try {
-            this._generateHighlands(centers, centerLandCellsPre, preJitterLandMask, lakeMask, colors, highlandColor, seededRngHighlands, seededLog);
-          } finally {
-            this.forceRandomDerivedRng = prevForceHighlands;
-          }
-        } else {
-          this._generateHighlands(centers, centerLandCellsPre, preJitterLandMask, lakeMask, colors, highlandColor, seededRng, seededLog);
-        }
-        this._generateAlpines(colors, highlandColor, lowlandColor, desertColor, alpineColor, directions);
-
-        const preTundraColors = colors.slice();
-
-        const preGlacierStats = computePreGlacierStats({ N, landMask, lakeMask });
-        const ratioOcean = preGlacierStats.seaCount / (preGlacierStats.total || 1);
-        const computedTopGlacierRowsLand = computeTopGlacierRowsFromAverageTemperature(this, ratioOcean, 'land');
-        const computedTopGlacierRowsWater = computeTopGlacierRowsFromAverageTemperature(this, 0.7, 'water');
-        const computedSmoothedTopGlacierRowsLand = getSmoothedGlacierRows(this, ratioOcean, 'land');
-        const computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
-
-        const tundraExtraRows = Number.isFinite(Number(this.tundraExtraRows))
-          ? Math.max(0, Number(this.tundraExtraRows))
-          : Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
-        const computedTopTundraRows = Math.max(0, computedTopGlacierRowsWater + tundraExtraRows);
-        applyTundra(this, {
-          colors,
-          landNoiseAmplitude,
-          lowlandColor,
-          tundraColor,
-          computedTopTundraRows,
-          tundraNoiseTableTop: tundraNoiseTopTable,
-          tundraNoiseTableBottom: tundraNoiseBottomTable
-        });
-
-        const computedTopGlacierRows = computedTopGlacierRowsLand;
-        applyGlaciers(this, {
-          colors,
-          glacierNoiseTable,
-          landNoiseAmplitude,
-          computedTopGlacierRows,
-          computedTopGlacierRowsLand,
-          computedTopGlacierRowsWater,
-        computedSmoothedTopGlacierRowsLand,
-        computedSmoothedTopGlacierRowsWater,
-          shallowSeaColor,
-          deepSeaColor,
-          lowlandColor,
-          tundraColor,
-          desertColor,
-          highlandColor,
-          alpineColor,
-          glacierColor,
-          landMask,
-          lakeMask
-        });
-
-        const {
-          cityMask,
-          cultivatedMask,
-          bryophyteMask,
-          pollutedMask,
-          seaCityMask,
-          seaCultivatedMask,
-          seaPollutedMask
-        } = generateFeatures(this, { N, landMask, colors, lowlandColor, shallowSeaColor, seededRng });
-
-        const gridData = buildGridData(this, {
-          N,
-          colors,
-          landMask,
-          lakeMask,
-          shallowSeaColor,
-          lowlandColor,
-          highlandColor,
-          alpineColor,
-          tundraColor,
-          glacierColor,
-          desertColor,
-          cityMask,
-          cultivatedMask,
-          bryophyteMask,
-          pollutedMask,
-          seaCityMask,
-          seaCultivatedMask,
-          seaPollutedMask
-        });
-
-        applySeededLogToCenterParameters({
-          centers,
-          centerParameters: localCenterParameters,
-          seededLog
-        });
-        markCentersOnGridData(this, { gridData, centers });
-
-        // 高頻度更新に必要なデータをキャッシュ
-        this.hfCache = {
+        this._buildWorldAndEmit({
+          emitEvent: 'drifted',
           N,
           centers,
+          localCenterParameters,
           landMask,
-          lakeMask,
-        lakesList: this._lastLakesList || [],
-          noiseGrid,
-          distanceToSea,
-          distanceToLand,
-          preTundraColors,
+          scores,
+          threshold,
+          seededRng,
+          seededLog,
           glacierNoiseTable,
           tundraNoiseTopTable,
           tundraNoiseBottomTable,
-          shallowSeaColor,
-          deepSeaColor,
-          lowlandColor,
-          desertColor,
-          highlandColor,
-          alpineColor,
-          tundraColor,
-          glacierColor,
-          seaNoiseAmplitude,
-          landNoiseAmplitude,
-          preGlacierStats,
-          gridDataBase: gridData
-        };
-
-        this.$emit('drifted', buildGeneratedPayload({
-          centerParameters: localCenterParameters,
-          gridData,
-          deterministicSeed: this.deterministicSeed,
-          preGlacierStats,
-          computedTopGlacierRows,
-          driftMetrics: this.driftMetrics
-        }));
+          driftMetrics: this.driftMetrics,
+          highlandsSeededRng: seededRngHighlands || null,
+          enableDerivedRngDuringHighlands: !!seededRngHighlands
+        });
       } finally {
         this.forceRandomDerivedRng = prevForce;
       }
     },
-    // 高頻度生成タスク:
-    // - 乾燥地（帯別距離閾値）を再計算して反映
-    // - ツンドラを再計算して反映
-    // - 氷河行数を再計算して反映
-    // - 文明要素は不整合なら削除
-    // - 低頻度側の地形（海陸/湖/高地/高山/中心点）は保持
-    runReviseHighFrequency() {
-      const c = this.hfCache;
-      if (!c || !c.N || !Array.isArray(c.preTundraColors)) return;
-
-      const N = c.N;
-      const colors = c.preTundraColors.slice();
-
-      // --- 乾燥地（帯別閾値）を再分類（低地/乾燥地のみ対象。湖/高地/高山は保持） ---
+    // --- Revise helpers（高頻度更新。できるだけデータを引数で受け渡しして見通しを良くする） ---
+    _reviseReclassifyDesert({ c, colors }) {
+      // 乾燥地（帯別閾値）を再分類（低地/乾燥地のみ対象。湖/高地/高山は保持）
       for (let gy = 0; gy < this.gridHeight; gy++) {
         for (let gx = 0; gx < this.gridWidth; gx++) {
           const idx = gy * this.gridWidth + gx;
@@ -1232,20 +1178,20 @@ export default {
           if (c.lakeMask && c.lakeMask[idx]) continue; // 湖は保持
           const col = colors[idx];
           if (col === c.highlandColor || col === c.alpineColor) continue; // 高地/高山は保持
-          // 低地/乾燥地を再判定
           const n = c.noiseGrid[idx];
           const bandThreshold = this._getLandDistanceThresholdForRow(gy, gx);
           const landThreshold = bandThreshold + n * c.landNoiseAmplitude;
           colors[idx] = c.distanceToSea[idx] > landThreshold ? c.desertColor : c.lowlandColor;
         }
       }
-
-      // --- 湖の周囲を低地に戻す（低頻度結果を維持） ---
+    },
+    _reviseRestoreLowlandAroundLakes({ c, colors }) {
+      // 湖の周囲を低地に戻す（低頻度結果を維持）
       try {
         const baseLandThr = (this.baseLandDistanceThresholdFixed != null)
           ? this.baseLandDistanceThresholdFixed
           : this.baseLandDistanceThreshold;
-        applyLowlandAroundLakes(this, {
+        applyLowlandAroundLakes(this._buildLakeLowlandCtx(), {
           colors,
           lakesList: c.lakesList || [],
           lakeMask: c.lakeMask,
@@ -1254,8 +1200,8 @@ export default {
           lowlandColor: c.lowlandColor
         });
       } catch (e) { /* ignore */ }
-
-      // --- 氷河行数の再計算（smoothed含む） ---
+    },
+    _reviseComputeGlacierRows({ c }) {
       const ratioOcean = (c.preGlacierStats && c.preGlacierStats.total)
         ? (c.preGlacierStats.seaCount / (c.preGlacierStats.total || 1))
         : 0.7;
@@ -1263,8 +1209,14 @@ export default {
       const computedTopGlacierRowsWater = computeTopGlacierRowsFromAverageTemperature(this, 0.7, 'water');
       const computedSmoothedTopGlacierRowsLand = getSmoothedGlacierRows(this, ratioOcean, 'land');
       const computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
-
-      // --- ツンドラ再適用（固定ノイズ） ---
+      return {
+        computedTopGlacierRowsLand,
+        computedTopGlacierRowsWater,
+        computedSmoothedTopGlacierRowsLand,
+        computedSmoothedTopGlacierRowsWater
+      };
+    },
+    _reviseApplyTundra({ c, colors, computedTopGlacierRowsWater }) {
       const tundraExtraRows = Number.isFinite(Number(this.tundraExtraRows))
         ? Math.max(0, Number(this.tundraExtraRows))
         : Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
@@ -1278,18 +1230,26 @@ export default {
         tundraNoiseTableTop: c.tundraNoiseTopTable,
         tundraNoiseTableBottom: c.tundraNoiseBottomTable
       });
-
-      // --- 氷河再適用 ---
+      return { computedTopTundraRows };
+    },
+    _reviseApplyGlaciers({
+      c,
+      colors,
+      computedTopGlacierRowsLand,
+      computedTopGlacierRowsWater,
+      computedSmoothedTopGlacierRowsLand,
+      computedSmoothedTopGlacierRowsWater
+    }) {
       const computedTopGlacierRows = computedTopGlacierRowsLand;
       applyGlaciers(this, {
         colors,
         glacierNoiseTable: c.glacierNoiseTable,
         landNoiseAmplitude: c.landNoiseAmplitude,
-          computedTopGlacierRows,
-          computedTopGlacierRowsLand,
-          computedTopGlacierRowsWater,
-          computedSmoothedTopGlacierRowsLand,
-          computedSmoothedTopGlacierRowsWater,
+        computedTopGlacierRows,
+        computedTopGlacierRowsLand,
+        computedTopGlacierRowsWater,
+        computedSmoothedTopGlacierRowsLand,
+        computedSmoothedTopGlacierRowsWater,
         shallowSeaColor: c.shallowSeaColor,
         deepSeaColor: c.deepSeaColor,
         lowlandColor: c.lowlandColor,
@@ -1301,8 +1261,11 @@ export default {
         landMask: c.landMask,
         lakeMask: c.lakeMask
       });
-
-      // --- gridData を再構築（Plane更新用）。文明要素は不整合なら削除 ---
+      return { computedTopGlacierRows };
+    },
+    _reviseRebuildGridDataAndSanitizeFeatures({ c, colors }) {
+      // gridData を再構築（Plane更新用）。文明要素は不整合なら削除
+      const N = c.N;
       const base = Array.isArray(c.gridDataBase) ? c.gridDataBase : [];
       const cityMask = new Array(N).fill(false);
       const cultivatedMask = new Array(N).fill(false);
@@ -1381,11 +1344,38 @@ export default {
 
       // キャッシュのベース（文明要素）も更新して、連続Reviseで破綻しないようにする
       this.hfCache.gridDataBase = gridData;
+      return { gridData };
+    },
+    // 高頻度生成タスク:
+    // - 乾燥地（帯別距離閾値）を再計算して反映
+    // - ツンドラを再計算して反映
+    // - 氷河行数を再計算して反映
+    // - 文明要素は不整合なら削除
+    // - 低頻度側の地形（海陸/湖/高地/高山/中心点）は保持
+    runReviseHighFrequency() {
+      const c = this.hfCache;
+      if (!c || !c.N || !Array.isArray(c.preTundraColors)) return;
 
-      this.$emit('revised', {
-        gridData,
-        computedTopGlacierRows
+      const colors = c.preTundraColors.slice();
+      this._reviseReclassifyDesert({ c, colors });
+      this._reviseRestoreLowlandAroundLakes({ c, colors });
+      const {
+        computedTopGlacierRowsLand,
+        computedTopGlacierRowsWater,
+        computedSmoothedTopGlacierRowsLand,
+        computedSmoothedTopGlacierRowsWater
+      } = this._reviseComputeGlacierRows({ c });
+      this._reviseApplyTundra({ c, colors, computedTopGlacierRowsWater });
+      const { computedTopGlacierRows } = this._reviseApplyGlaciers({
+        c,
+        colors,
+        computedTopGlacierRowsLand,
+        computedTopGlacierRowsWater,
+        computedSmoothedTopGlacierRowsLand,
+        computedSmoothedTopGlacierRowsWater
       });
+      const { gridData } = this._reviseRebuildGridDataAndSanitizeFeatures({ c, colors });
+      this.$emit('revised', { gridData, computedTopGlacierRows });
     }
   }
 }

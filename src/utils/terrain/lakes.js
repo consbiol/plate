@@ -1,16 +1,20 @@
 // 湖の生成（各中心ごと）＋周囲低地化（縁取り）
 // Grids_Calculation.vue から切り出し（機能不変）。
 
-export function generateLakes(vm, centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog) {
-    const N = vm.gridWidth * vm.gridHeight;
+// NOTE:
+// - もともと Vue コンポーネントインスタンス（vm=this）を受け取っていたが、
+//   「必要な依存だけ」を受け取るための ctx 化を段階的に進める（挙動不変）。
+// - ctx は "vm と同じ形" でも良いし、必要な値/関数だけを持つ薄いオブジェクトでも良い。
+export function generateLakes(ctx, centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog) {
+    const N = ctx.gridWidth * ctx.gridHeight;
     const lakeMask = new Array(N).fill(false);
     const lakesList = []; // collect per-lake cells + radius
-    const seedStrict = (vm.era === '文明時代' || vm.era === '海棲文明時代') && !!seededRng;
+    const seedStrict = (ctx.era === '文明時代' || ctx.era === '海棲文明時代') && !!seededRng;
     for (let ci = 0; ci < centers.length; ci++) {
-        const lambda = vm.averageLakesPerCenter;
+        const lambda = ctx.averageLakesPerCenter;
         // 文明時代・海棲文明時代のみ湖の個数もシードで決定（他時代は従来通り）
-        const countRng = seedStrict ? (vm._getDerivedRng('lake-count', ci) || seededRng) : null;
-        const numLakes = vm._poissonSample(lambda, 20, countRng || seededRng || Math.random);
+        const countRng = seedStrict ? (ctx._getDerivedRng('lake-count', ci) || seededRng) : null;
+        const numLakes = ctx._poissonSample(lambda, 20, countRng || seededRng || Math.random);
         const centerLandGrids = centerLandCells[ci] || [];
         for (let lakeIdx = 0; lakeIdx < numLakes; lakeIdx++) {
             if (centerLandGrids.length === 0) break;
@@ -27,7 +31,7 @@ export function generateLakes(vm, centers, centerLandCells, landMask, colors, sh
                 if (!Array.isArray(seededLog[ci].lakeStarts)) seededLog[ci].lakeStarts = [];
                 seededLog[ci].lakeStarts.push({ x: start.x, y: start.y });
             }
-            const sizeRng = seedStrict ? (vm._getDerivedRng('lake-size', ci, lakeIdx) || seededRng) : null;
+            const sizeRng = seedStrict ? (ctx._getDerivedRng('lake-size', ci, lakeIdx) || seededRng) : null;
             const targetSize = 3 + Math.floor((sizeRng || Math.random)() * 13);
             const lakeQueue = [{ x: start.x, y: start.y, idx: start.idx }];
             const visited = new Set([start.idx]);
@@ -39,15 +43,15 @@ export function generateLakes(vm, centers, centerLandCells, landMask, colors, sh
                 { dx: -1, dy: -1 }, { dx: 1, dy: -1 },
                 { dx: -1, dy: 1 }, { dx: 1, dy: 1 }
             ];
-            const stepRng = seedStrict ? (vm._getDerivedRng('lake-expand', ci, lakeIdx) || seededRng) : null;
+            const stepRng = seedStrict ? (ctx._getDerivedRng('lake-expand', ci, lakeIdx) || seededRng) : null;
             while (q < lakeQueue.length && lakeCells.length < targetSize) {
                 const cur = lakeQueue[q++];
                 for (const d of dirs) {
                     const rr = (stepRng || Math.random)();
                     if (rr > 0.4) continue;
-                    const wrapped = vm.torusWrap(cur.x + d.dx, cur.y + d.dy);
+                    const wrapped = ctx.torusWrap(cur.x + d.dx, cur.y + d.dy);
                     if (!wrapped) continue;
-                    const nIdx = wrapped.y * vm.gridWidth + wrapped.x;
+                    const nIdx = wrapped.y * ctx.gridWidth + wrapped.x;
                     if (visited.has(nIdx)) continue;
                     if (!landMask[nIdx]) continue;
                     // 同じ中心に属することを確認
@@ -66,8 +70,8 @@ export function generateLakes(vm, centers, centerLandCells, landMask, colors, sh
             // Revise 側のアルゴリズムに合わせる: R = ceil(bandThreshold / 5).
             // If <= 0, this lake will not form lowland.
             let bandThreshold = 0;
-            if (typeof vm._getLandDistanceThresholdForRow === 'function' && start) {
-                try { bandThreshold = Number(vm._getLandDistanceThresholdForRow(start.y, start.x)) || 0; } catch (e) { bandThreshold = 0; }
+            if (typeof ctx._getLandDistanceThresholdForRow === 'function' && start) {
+                try { bandThreshold = Number(ctx._getLandDistanceThresholdForRow(start.y, start.x)) || 0; } catch (e) { bandThreshold = 0; }
             }
             const radiusForThisLake = Math.ceil(bandThreshold / 5);
             lakesList.push({
@@ -87,27 +91,27 @@ export function generateLakes(vm, centers, centerLandCells, landMask, colors, sh
 
     // Apply lowland conversion using helper (exposed for reuse by Revise)
     try {
-        applyLowlandAroundLakes(vm, {
+        applyLowlandAroundLakes(ctx, {
             colors,
             lakesList,
             lakeMask,
-            baseLandThr: vm.baseLandDistanceThreshold,
+            baseLandThr: ctx.baseLandDistanceThreshold,
             desertColor,
             lowlandColor
         });
     } catch (e) { /* ignore */ }
 
-    // expose per-lake list to caller vm for high-frequency revise use
-    try { vm._lastLakesList = lakesList; } catch (e) { /* ignore */ }
+    // expose per-lake list to caller ctx for high-frequency revise use
+    try { ctx._lastLakesList = lakesList; } catch (e) { /* ignore */ }
     return lakeMask;
 }
 
 /**
  * Apply lowland conversion around lakes.
- * - vm: component instance (provides torusWrap, gridWidth, gridHeight)
+ * - ctx: context object (provides torusWrap, gridWidth, gridHeight)
  * - options: { colors, lakesList, lakeMask, baseLandThr, desertColor, lowlandColor }
  */
-export function applyLowlandAroundLakes(vm, options) {
+export function applyLowlandAroundLakes(ctx, options) {
     const colors = options.colors;
     const lakesList = options.lakesList;
     const lakeMask = options.lakeMask;
@@ -118,17 +122,17 @@ export function applyLowlandAroundLakes(vm, options) {
     if (Array.isArray(lakesList) && lakesList.length === 0) {
         const lakeLowlandRadius = Math.floor(Number(baseLandThr || 0) / 5);
         if (lakeLowlandRadius > 0 && lakeMask) {
-            for (let gy = 0; gy < vm.gridHeight; gy++) {
-                for (let gx = 0; gx < vm.gridWidth; gx++) {
-                    const idx = gy * vm.gridWidth + gx;
+            for (let gy = 0; gy < ctx.gridHeight; gy++) {
+                for (let gx = 0; gx < ctx.gridWidth; gx++) {
+                    const idx = gy * ctx.gridWidth + gx;
                     if (!lakeMask[idx]) continue;
                     for (let dy = -lakeLowlandRadius; dy <= lakeLowlandRadius; dy++) {
                         for (let dx = -lakeLowlandRadius; dx <= lakeLowlandRadius; dx++) {
-                            const wrapped = vm.torusWrap(gx + dx, gy + dy);
+                            const wrapped = ctx.torusWrap(gx + dx, gy + dy);
                             if (!wrapped) continue;
                             const d = Math.hypot(dx, dy);
                             if (d > lakeLowlandRadius) continue;
-                            const nIdx = wrapped.y * vm.gridWidth + wrapped.x;
+                            const nIdx = wrapped.y * ctx.gridWidth + wrapped.x;
                             if (colors[nIdx] === desertColor) {
                                 colors[nIdx] = lowlandColor;
                             }
@@ -142,9 +146,9 @@ export function applyLowlandAroundLakes(vm, options) {
             // Recompute radius from current band threshold at lake start cell if possible,
             // so that Revise / GI changes affect lake lowland radius automatically.
             let R = lake && Number.isFinite(lake.radius) ? Number(lake.radius) : 0;
-            if (lake && typeof vm._getLandDistanceThresholdForRow === 'function' && typeof lake.startY === 'number' && typeof lake.startX === 'number') {
+            if (lake && typeof ctx._getLandDistanceThresholdForRow === 'function' && typeof lake.startY === 'number' && typeof lake.startX === 'number') {
                 try {
-                    const bandThreshold = Number(vm._getLandDistanceThresholdForRow(lake.startY, lake.startX)) || baseLandThr || 0;
+                    const bandThreshold = Number(ctx._getLandDistanceThresholdForRow(lake.startY, lake.startX)) || baseLandThr || 0;
                     R = Math.ceil(bandThreshold / 5);
                 } catch (e) {
                     // fallback to precomputed radius
@@ -152,15 +156,15 @@ export function applyLowlandAroundLakes(vm, options) {
             }
             if (!Number.isFinite(R) || R <= 0) continue;
             for (const cellIdx of (lake.cells || [])) {
-                const gx = cellIdx % vm.gridWidth;
-                const gy = Math.floor(cellIdx / vm.gridWidth);
+                const gx = cellIdx % ctx.gridWidth;
+                const gy = Math.floor(cellIdx / ctx.gridWidth);
                 for (let dy = -R; dy <= R; dy++) {
                     for (let dx = -R; dx <= R; dx++) {
-                        const wrapped = vm.torusWrap(gx + dx, gy + dy);
+                        const wrapped = ctx.torusWrap(gx + dx, gy + dy);
                         if (!wrapped) continue;
                         const d = Math.hypot(dx, dy);
                         if (d > R) continue;
-                        const nIdx = wrapped.y * vm.gridWidth + wrapped.x;
+                        const nIdx = wrapped.y * ctx.gridWidth + wrapped.x;
                         if (colors[nIdx] === desertColor) {
                             colors[nIdx] = lowlandColor;
                         }

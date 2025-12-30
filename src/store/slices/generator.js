@@ -1,4 +1,5 @@
 import { PARAM_DEFAULTS } from '../../utils/paramsDefaults.js';
+import { getGeneratorAllowedKeys } from '../../utils/paramKeys.js';
 
 function buildDefaultGeneratorParams() {
     // f_cloud は描画設定なので generatorParams から除外（renderSettings に移管）
@@ -41,12 +42,7 @@ export function createGeneratorSlice({ persisted = null } = {}) {
             setGeneratorParams(state, patch) {
                 const base = state.generatorParams || buildDefaultGeneratorParams();
                 const next = { ...base };
-                const allowed = new Set([
-                    // f_cloud は除外（renderSettings）
-                    ...Object.keys(PARAM_DEFAULTS).filter((k) => k !== 'f_cloud'),
-                    'deterministicSeed',
-                    'minCenterDistance'
-                ]);
+                const allowed = new Set(getGeneratorAllowedKeys(PARAM_DEFAULTS));
                 let changed = false;
                 if (patch && typeof patch === 'object') {
                     for (const k of Object.keys(patch)) {

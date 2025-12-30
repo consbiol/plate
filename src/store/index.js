@@ -44,9 +44,31 @@ export default createStore({
     },
     plugins: [
         (store) => {
+            // 永続化は debounce（高頻度UI操作での localStorage 書き込みを抑制）
+            let timer = null;
+            let lastState = null;
+            const flush = () => {
+                timer = null;
+                safePersistState(lastState);
+            };
             store.subscribe((_mutation, state) => {
-                safePersistState(state);
+                lastState = state;
+                if (timer) clearTimeout(timer);
+                timer = setTimeout(flush, 100);
             });
+            // 画面離脱時に最後の状態を確実に保存（可能な範囲で）
+            try {
+                if (typeof window !== 'undefined' && window && typeof window.addEventListener === 'function') {
+                    window.addEventListener('beforeunload', () => {
+                        if (!lastState) return;
+                        if (timer) {
+                            clearTimeout(timer);
+                            timer = null;
+                        }
+                        safePersistState(lastState);
+                    });
+                }
+            } catch (e) { /* ignore */ }
         }
     ]
 });

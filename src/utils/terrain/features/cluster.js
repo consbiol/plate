@@ -3,7 +3,7 @@
 import { getClusterRng } from './vmRng';
 
 export function growCluster({
-    vm,
+    ctx,
     startX,
     startY,
     startIdx,
@@ -25,9 +25,9 @@ export function growCluster({
         for (const d of dirs) {
             if (acceptNeighbor && !acceptNeighbor()) continue;
 
-            const w = vm.torusWrap(cur.x + d.dx, cur.y + d.dy);
+            const w = ctx.torusWrap(cur.x + d.dx, cur.y + d.dy);
             if (!w) continue;
-            const nIdx = w.y * vm.gridWidth + w.x;
+            const nIdx = w.y * ctx.gridWidth + w.x;
             if (visited.has(nIdx)) continue;
             visited.add(nIdx);
 
@@ -41,7 +41,7 @@ export function growCluster({
 }
 
 export function maybeStartClusterAtCell({
-    vm,
+    ctx,
     gx,
     gy,
     idx,
@@ -59,11 +59,11 @@ export function maybeStartClusterAtCell({
     if (!(startProbability > 0)) return;
     if (startRng() >= startProbability) return;
 
-    const clusterRng = getClusterRng(vm, clusterRngKey, gx, gy);
-    const targetSize = Math.max(1, vm._poissonSample(poissonMean, poissonMax, clusterRng));
+    const clusterRng = getClusterRng(ctx, clusterRngKey, gx, gy);
+    const targetSize = Math.max(1, ctx._poissonSample(poissonMean, poissonMax, clusterRng));
 
     growCluster({
-        vm,
+        ctx,
         startX: gx,
         startY: gy,
         startIdx: idx,

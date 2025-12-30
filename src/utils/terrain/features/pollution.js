@@ -2,7 +2,7 @@
 
 import { growCluster } from './cluster';
 
-export function generatePollutedAreas(vm, {
+export function generatePollutedAreas(ctx, {
     N,
     countAreas,
     isEligible,
@@ -29,7 +29,7 @@ export function generatePollutedAreas(vm, {
         totalWeight += w;
     }
 
-    const pickRng = vm._getDerivedRng(pickRngKey) || Math.random;
+    const pickRng = ctx._getDerivedRng(pickRngKey) || Math.random;
     const chosen = new Set();
 
     for (let k = 0; k < countAreas && eligible.length > 0; k++) {
@@ -65,13 +65,13 @@ export function generatePollutedAreas(vm, {
             weights[pickedEi] = 0;
         }
 
-        const sx = startIdx % vm.gridWidth;
-        const sy = Math.floor(startIdx / vm.gridWidth);
-        const clusterRng = vm._getDerivedRng(clusterRngKey, sx, sy) || Math.random;
-        const targetSize = Math.max(1, vm._poissonSample(targetMean, targetMax, clusterRng));
+        const sx = startIdx % ctx.gridWidth;
+        const sy = Math.floor(startIdx / ctx.gridWidth);
+        const clusterRng = ctx._getDerivedRng(clusterRngKey, sx, sy) || Math.random;
+        const targetSize = Math.max(1, ctx._poissonSample(targetMean, targetMax, clusterRng));
 
         growCluster({
-            vm,
+            ctx,
             startX: sx,
             startY: sy,
             startIdx,
