@@ -14,6 +14,15 @@ import { initSphereWebGL, drawSphereWebGL, updateSphereTexturesWebGL, disposeSph
 export default {
   name: 'Sphere_Display',
   // props を廃止し store に完全依存する（必要な設定は store または既定値から取得）
+  data() {
+    return {
+      // 描画に使う雲量は「スナップショット値」を保持し、UI操作（store更新）で即時反映しない。
+      // Generate/Update/Drift のタイミングでのみ applyCloudSnapshot() で更新する。
+      renderFCloudSnapshot: null,
+      renderCloudPeriodSnapshot: null,
+      renderPolarCloudBoostSnapshot: null
+    };
+  },
   computed: {
     gridWidth() {
       return this.$store?.getters?.gridWidth ?? 200;
@@ -111,17 +120,33 @@ export default {
     polarNoiseScale() {
       this.scheduleWebGLTextureRefreshAndRedraw();
     },
-    f_cloud() {
-      this.requestRedraw();
-    },
-    cloudPeriod() {
-      this.requestRedraw();
-    },
-    polarCloudBoost() {
-      this.requestRedraw();
-    }
+    // NOTE: f_cloud は store 側を直接見ているが、描画では _renderFCloud を使うためここでは再描画しない。
+    // NOTE: cloudPeriod / polarCloudBoost も store 側を直接見ているが、描画ではスナップショットを使うため
+    //       ここでは再描画しない（Generate/Update/Drift時に applyCloudSnapshot() で反映）。
   },
   methods: {
+    _getFCloudForRender() {
+      const v = this.renderFCloudSnapshot;
+      if (typeof v === 'number' && isFinite(v)) return v;
+      // 初期化前フォールバック（attachToWindow前の安全策）
+      return this.f_cloud;
+    },
+    _getCloudPeriodForRender() {
+      const v = this.renderCloudPeriodSnapshot;
+      if (typeof v === 'number' && isFinite(v)) return v;
+      return this.cloudPeriod;
+    },
+    _getPolarCloudBoostForRender() {
+      const v = this.renderPolarCloudBoostSnapshot;
+      if (typeof v === 'number' && isFinite(v)) return v;
+      return this.polarCloudBoost;
+    },
+    // Generate/Update/Drift のタイミングで呼んで、雲量を描画へ反映させる
+    applyCloudSnapshot() {
+      this.renderFCloudSnapshot = this.f_cloud;
+      this.renderCloudPeriodSnapshot = this.cloudPeriod;
+      this.renderPolarCloudBoostSnapshot = this.polarCloudBoost;
+    },
     refreshWebGLTexturesIfNeeded() {
       if (!this._sphereCanvas) return false;
       if (!this._useWebGL) return false;
@@ -229,6 +254,8 @@ export default {
       } catch (e) {
         this._useWebGL = false;
       }
+      // 初回描画前に、現在の雲量をスナップショットとして取り込む
+      this.applyCloudSnapshot();
       // WebGL context lost/restored を監視（GPUリセット等で真っ黒になるのを防ぐ）
       this.bindWebGLContextEvents(canvas);
       this.requestRedraw();

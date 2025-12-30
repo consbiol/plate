@@ -560,7 +560,11 @@ export default {
       const renderPatch = {};
       for (const k of Object.keys(local)) {
         if (generatorAllowed.has(k)) genPatch[k] = local[k];
-        if (renderAllowed.has(k)) renderPatch[k] = local[k];
+        if (renderAllowed.has(k)) {
+          const v = local[k];
+          // f_cloud は数値でない値で上書きしない（undefined や非数で既定値に戻る問題を防止）
+          if (typeof v === 'number' && isFinite(v)) renderPatch[k] = v;
+        }
       }
       try {
         if (Object.keys(genPatch).length > 0) this.$store?.dispatch?.('updateGeneratorParams', genPatch);
@@ -575,6 +579,8 @@ export default {
       try {
         // local に存在するキーだけ上書き（local.era 等は store別管理のため触らない）
         for (const k of Object.keys(gp)) {
+          // 互換: 旧generatorParamsに混入している可能性があるが、f_cloudはrenderSettings側が正なので同期しない
+          if (k === 'f_cloud') continue;
           if (Object.prototype.hasOwnProperty.call(this.local, k)) {
             // 差分があるときだけ代入（循環＆無駄な更新を防ぐ）
             if (this.local[k] !== gp[k]) this.local[k] = gp[k];
@@ -848,6 +854,10 @@ export default {
         // If sphere iframe already attached and parent sphere component has initialized, request redraw
         const sphComp = (this.$refs && this.$refs.sphere) ? this.$refs.sphere : null;
         if (sphComp && this._sphereWin) {
+          // 雲量など「描画用スナップショット」を Generate/Update/Drift のタイミングでだけ反映
+          try {
+            if (typeof sphComp.applyCloudSnapshot === 'function') sphComp.applyCloudSnapshot();
+          } catch (e) { /* ignore */ }
           // Use update count to avoid indefinite non-reload updates (resource leakage)
           if ((this.sphereUpdateCount || 0) >= (this.sphereMaxUpdates || 200)) {
             try { sphComp.cleanupSpherePopup(); } catch (e) { /* ignore cleanup errors */ }

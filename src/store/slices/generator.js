@@ -16,8 +16,17 @@ function buildDefaultGeneratorParams() {
 
 export function createGeneratorSlice({ persisted = null } = {}) {
     const defaultParams = buildDefaultGeneratorParams();
-    const initialParams = (persisted && persisted.generatorParams && typeof persisted.generatorParams === 'object')
-        ? { ...defaultParams, ...persisted.generatorParams }
+    // 互換/安全:
+    // 旧バージョンで generatorParams に混入していた f_cloud は描画設定なので無視する。
+    // （これが残っていると、generatorParams更新のたびにUI側のlocal.f_cloudが上書きされ、0.67へ戻る原因になる）
+    const persistedGen = (persisted && persisted.generatorParams && typeof persisted.generatorParams === 'object')
+        ? { ...persisted.generatorParams }
+        : null;
+    if (persistedGen && Object.prototype.hasOwnProperty.call(persistedGen, 'f_cloud')) {
+        delete persistedGen.f_cloud;
+    }
+    const initialParams = persistedGen
+        ? { ...defaultParams, ...persistedGen }
         : defaultParams;
 
     return {
@@ -48,6 +57,11 @@ export function createGeneratorSlice({ persisted = null } = {}) {
                             changed = true;
                         }
                     }
+                }
+                // 互換: 旧保存値等で混入した f_cloud を確実に排除する
+                if (Object.prototype.hasOwnProperty.call(next, 'f_cloud')) {
+                    delete next.f_cloud;
+                    changed = true;
                 }
                 // 値が変わらないなら state を更新しない（deep watch 連鎖・無限ループ防止）
                 if (!state.generatorParams) {

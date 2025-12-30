@@ -191,7 +191,8 @@ export function drawSphereCPU(vm, canvas) {
                 const lambda = Math.atan2(sx, sz);
                 const uCoord = (((lambda + Math.PI) / (2 * Math.PI)) + (vm._rotationColumns || 0) / Math.max(1, width)) % 1;
                 const vCoord = Math.max(0, Math.min(1, (vEff - uTopFrac) / Math.max(1e-6, uHeightFrac)));
-                const rUV = 0.75 / Math.max(1, vm.cloudPeriod || 16);
+                const cloudPeriod = (typeof vm._getCloudPeriodForRender === 'function') ? vm._getCloudPeriodForRender() : vm.cloudPeriod;
+                const rUV = 0.75 / Math.max(1, cloudPeriod || 16);
                 classW = vm._sampleClassWeightSmooth(uCoord, vCoord, width, height, vm.gridData, rUV);
                 const cell = vm.gridData[yMap * width + xMap];
                 if (cell && cell.terrain && cell.terrain.type === 'land' && cell.terrain.land !== 'glacier') {
@@ -229,14 +230,17 @@ export function drawSphereCPU(vm, canvas) {
             // 経度u: 回転を反映したマップ列から推定
             const uEff = ((xMap % width) + width) % width / width;
             // クラウド有効度
-            const effC = Math.max(0, Math.min(1, (vm.f_cloud || 0) * classW));
+            const fCloud = (typeof vm._getFCloudForRender === 'function') ? vm._getFCloudForRender() : vm.f_cloud;
+            const effC = Math.max(0, Math.min(1, (fCloud || 0) * classW));
             let rr = r, gg = g, bb = b;
             if (effC > 0) {
-                const nCloud = vm._fbmTile(uEff, vEff, vm.cloudPeriod || 16);
+                const cloudPeriod = (typeof vm._getCloudPeriodForRender === 'function') ? vm._getCloudPeriodForRender() : vm.cloudPeriod;
+                const nCloud = vm._fbmTile(uEff, vEff, cloudPeriod || 16);
                 let t = 0.9 + (0.2 - 0.9) * effC; // mix(0.9,0.2,effC)
                 // 極ブースト: vEffが0/1に近いほど閾値を下げる（端で1, 赤道で0）
                 const pole = Math.max(0, Math.min(1, Math.abs(0.5 - vEff) / 0.5));
-                const boost = Math.max(0, Math.min(1, vm.polarCloudBoost || 0));
+                const polarCloudBoost = (typeof vm._getPolarCloudBoostForRender === 'function') ? vm._getPolarCloudBoostForRender() : vm.polarCloudBoost;
+                const boost = Math.max(0, Math.min(1, polarCloudBoost || 0));
                 const tAdj = 0.25 * boost * pole;
                 t = Math.max(0, Math.min(1, t - tAdj));
                 const edge = 0.08;
@@ -247,7 +251,7 @@ export function drawSphereCPU(vm, canvas) {
                 else coverage = (nCloud - (t - edge)) / (2 * edge);
                 const alpha = 0.35 + 0.45 * Math.sqrt(effC);
                 const depth = Math.max(0, Math.min(1, (nCloud - t) / Math.max(1e-3, 1 - t)));
-                const detail = vm._fbmTile((uEff + 0.123) % 1, (vEff + 0.456) % 1, (vm.cloudPeriod || 16) * 4);
+                const detail = vm._fbmTile((uEff + 0.123) % 1, (vEff + 0.456) % 1, (cloudPeriod || 16) * 4);
                 const density = 0.3 + (1.0 - 0.3) * (0.5 * detail + 0.5 * depth);
                 const k = Math.max(0, Math.min(1, coverage * alpha * density));
                 const cloudTint = vm.parseColorToRgb(getEraCloudTint(vm.era));
@@ -313,7 +317,8 @@ export function drawSphereCPU(vm, canvas) {
                 const lambda = Math.atan2(sx, sz);
                 const uCoord = (((lambda + Math.PI) / (2 * Math.PI)) + (vm._rotationColumns || 0) / Math.max(1, width)) % 1;
                 const vCoord = Math.max(0, Math.min(1, (vEff - uTopFrac) / Math.max(1e-6, uHeightFrac)));
-                const rUV = 0.75 / Math.max(1, vm.cloudPeriod || 16);
+                const cloudPeriod = (typeof vm._getCloudPeriodForRender === 'function') ? vm._getCloudPeriodForRender() : vm.cloudPeriod;
+                const rUV = 0.75 / Math.max(1, cloudPeriod || 16);
                 classW = vm._sampleClassWeightSmooth(uCoord, vCoord, width, height, vm.gridData, rUV);
                 // 陸トーン適用のためのセル参照（グリッド座標）
                 const xMap = ((ix0 + colShift) % width + width) % width;
@@ -330,14 +335,17 @@ export function drawSphereCPU(vm, canvas) {
             // --- 雲オーバーレイ（描画後に適用） ---
             // 経度u: 回転を反映したマップ列から
             const uEff = ((((ix0 + colShift) % width) + width) % width) / width;
-            const effC = Math.max(0, Math.min(1, (vm.f_cloud || 0) * classW));
+            const fCloud = (typeof vm._getFCloudForRender === 'function') ? vm._getFCloudForRender() : vm.f_cloud;
+            const effC = Math.max(0, Math.min(1, (fCloud || 0) * classW));
             let rr = r, gg = g, bb = b;
             if (effC > 0) {
-                const nCloud = vm._fbmTile(uEff, vEff, vm.cloudPeriod || 16);
+                const cloudPeriod = (typeof vm._getCloudPeriodForRender === 'function') ? vm._getCloudPeriodForRender() : vm.cloudPeriod;
+                const nCloud = vm._fbmTile(uEff, vEff, cloudPeriod || 16);
                 let t = 0.9 + (0.2 - 0.9) * effC;
                 // 極ブースト（端で1, 赤道で0）
                 const pole = Math.max(0, Math.min(1, Math.abs(0.5 - vEff) / 0.5));
-                const boost = Math.max(0, Math.min(1, vm.polarCloudBoost || 0));
+                const polarCloudBoost = (typeof vm._getPolarCloudBoostForRender === 'function') ? vm._getPolarCloudBoostForRender() : vm.polarCloudBoost;
+                const boost = Math.max(0, Math.min(1, polarCloudBoost || 0));
                 const tAdj = 0.25 * boost * pole;
                 t = Math.max(0, Math.min(1, t - tAdj));
                 const edge = 0.08;
@@ -347,7 +355,7 @@ export function drawSphereCPU(vm, canvas) {
                 else coverage = (nCloud - (t - edge)) / (2 * edge);
                 const alpha = 0.35 + 0.45 * Math.sqrt(effC);
                 const depth = Math.max(0, Math.min(1, (nCloud - t) / Math.max(1e-3, 1 - t)));
-                const detail = vm._fbmTile((uEff + 0.123) % 1, (vEff + 0.456) % 1, (vm.cloudPeriod || 16) * 4);
+                const detail = vm._fbmTile((uEff + 0.123) % 1, (vEff + 0.456) % 1, (cloudPeriod || 16) * 4);
                 const density = 0.3 + (1.0 - 0.3) * (0.5 * detail + 0.5 * depth);
                 const k = Math.max(0, Math.min(1, coverage * alpha * density));
                 const cloudTint = vm.parseColorToRgb(getEraCloudTint(vm.era));

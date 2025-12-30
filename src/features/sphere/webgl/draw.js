@@ -34,15 +34,18 @@ export function drawSphereWebGL(vm) {
         gl.uniform1f(vm._glUniforms.u_texWidth, Math.max(1, vm.gridWidth || 1));
     }
 
-    // update cloud params per-frame (UI反映)
+    // update cloud params per-frame
     if (vm._glUniforms && vm._glUniforms.u_f_cloud) {
-        gl.uniform1f(vm._glUniforms.u_f_cloud, Math.max(0, Math.min(1, vm.f_cloud || 0)));
+        const fCloud = (typeof vm._getFCloudForRender === 'function') ? vm._getFCloudForRender() : vm.f_cloud;
+        gl.uniform1f(vm._glUniforms.u_f_cloud, Math.max(0, Math.min(1, fCloud || 0)));
     }
     if (vm._glUniforms && vm._glUniforms.u_cloudPeriod) {
-        gl.uniform1f(vm._glUniforms.u_cloudPeriod, Math.max(2, vm.cloudPeriod || 16));
+        const cloudPeriod = (typeof vm._getCloudPeriodForRender === 'function') ? vm._getCloudPeriodForRender() : vm.cloudPeriod;
+        gl.uniform1f(vm._glUniforms.u_cloudPeriod, Math.max(2, cloudPeriod || 16));
     }
     if (vm._glUniforms && vm._glUniforms.u_polarCloudBoost) {
-        gl.uniform1f(vm._glUniforms.u_polarCloudBoost, Math.max(0, Math.min(1, vm.polarCloudBoost || 0)));
+        const polarCloudBoost = (typeof vm._getPolarCloudBoostForRender === 'function') ? vm._getPolarCloudBoostForRender() : vm.polarCloudBoost;
+        gl.uniform1f(vm._glUniforms.u_polarCloudBoost, Math.max(0, Math.min(1, polarCloudBoost || 0)));
     }
 
     // keep cloud color in sync (in case era changes dynamically)

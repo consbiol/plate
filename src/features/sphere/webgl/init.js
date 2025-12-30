@@ -122,10 +122,13 @@ export function initSphereWebGL(vm, canvas) {
     gl.uniform1f(vm._glUniforms.u_polarNoiseStrength, vm.polarNoiseStrength || 0.3);
 
     // cloud params
-    gl.uniform1f(vm._glUniforms.u_f_cloud, Math.max(0, Math.min(1, vm.f_cloud || 0)));
-    gl.uniform1f(vm._glUniforms.u_cloudPeriod, Math.max(2, vm.cloudPeriod || 16));
+    const fCloud = (typeof vm._getFCloudForRender === 'function') ? vm._getFCloudForRender() : vm.f_cloud;
+    gl.uniform1f(vm._glUniforms.u_f_cloud, Math.max(0, Math.min(1, fCloud || 0)));
+    const cloudPeriod = (typeof vm._getCloudPeriodForRender === 'function') ? vm._getCloudPeriodForRender() : vm.cloudPeriod;
+    gl.uniform1f(vm._glUniforms.u_cloudPeriod, Math.max(2, cloudPeriod || 16));
     if (vm._glUniforms.u_polarCloudBoost) {
-        gl.uniform1f(vm._glUniforms.u_polarCloudBoost, Math.max(0, Math.min(1, vm.polarCloudBoost || 0)));
+        const polarCloudBoost = (typeof vm._getPolarCloudBoostForRender === 'function') ? vm._getPolarCloudBoostForRender() : vm.polarCloudBoost;
+        gl.uniform1f(vm._glUniforms.u_polarCloudBoost, Math.max(0, Math.min(1, polarCloudBoost || 0)));
     }
 
     // era-based cloud color (normalized 0..1)
