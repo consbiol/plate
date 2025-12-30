@@ -492,15 +492,18 @@ export default {
     },
     // 平均気温(=store)の変更に追従して、GIテーブルを再適用
     averageTemperature() {
+      if (this.isSyncingLocalFromStore) return;
       this.applyGreenIndexToLandDistanceThresholds();
     },
     // greenIndex の変更に追従して、帯別閾値を自動更新
     'local.greenIndex'() {
+      if (this.isSyncingLocalFromStore) return;
       this.applyGreenIndexToLandDistanceThresholds();
     },
     // 自動更新のON/OFF切り替え
     'local.landDistanceThresholdAuto'() {
       // ONにした瞬間にテーブル値へ同期（OFF→ONで最新状態に揃える）
+      if (this.isSyncingLocalFromStore) return;
       this.applyGreenIndexToLandDistanceThresholds();
     },
     // local の入力変更を store に反映（v-model での変更を自動で拾う）
@@ -516,6 +519,8 @@ export default {
     applyGreenIndexToLandDistanceThresholds() {
       // OFFのときは手動上書きを尊重して何もしない
       if (!this.local || !this.local.landDistanceThresholdAuto) return;
+      // store -> local 同期中に走ると循環するためガード
+      if (this.isSyncingLocalFromStore) return;
       const gi = (this.local && Number.isFinite(this.local.greenIndex)) ? Number(this.local.greenIndex) : Number(PARAM_DEFAULTS.greenIndex);
       const next = computeLandDistanceThresholdsByGreenIndex({
         averageTemperature: this.averageTemperature,
@@ -523,18 +528,21 @@ export default {
       });
       if (!next || typeof next !== 'object') return;
 
-      // deep watcher の多重発火を避けるため、ローカル更新は一括で行い最後に store へ1回だけ反映
+      // deep watcher の多重発火を避けるため、ローカル更新は一括で行う
+      // NOTE: ここから直接 store に dispatch すると store->local 同期と循環して
+      //       "Maximum recursive updates exceeded" になりやすいので、store反映は
+      //       local deep watcher（_syncStoreFromLocal）に任せる。
       this.isSyncingLocalFromStore = true;
       try {
         for (const k of Object.keys(next)) {
           if (Object.prototype.hasOwnProperty.call(this.local, k)) {
-            this.local[k] = next[k];
+            // 値が変わるときだけ代入（不要なリアクティブ通知を減らす）
+            if (this.local[k] !== next[k]) this.local[k] = next[k];
           }
         }
       } finally {
         this.isSyncingLocalFromStore = false;
       }
-      this._syncStoreFromLocal();
     },
     _syncStoreFromLocal() {
       // generatorParams と renderSettings に分配して store に反映する
@@ -568,7 +576,8 @@ export default {
         // local に存在するキーだけ上書き（local.era 等は store別管理のため触らない）
         for (const k of Object.keys(gp)) {
           if (Object.prototype.hasOwnProperty.call(this.local, k)) {
-            this.local[k] = gp[k];
+            // 差分があるときだけ代入（循環＆無駄な更新を防ぐ）
+            if (this.local[k] !== gp[k]) this.local[k] = gp[k];
           }
         }
       } finally {
@@ -582,7 +591,7 @@ export default {
       try {
         // 現状 UI で扱っているのは f_cloud のみ
         if (Object.prototype.hasOwnProperty.call(this.local, 'f_cloud') && typeof rs.f_cloud !== 'undefined') {
-          this.local.f_cloud = rs.f_cloud;
+          if (this.local.f_cloud !== rs.f_cloud) this.local.f_cloud = rs.f_cloud;
         }
       } finally {
         this.isSyncingLocalFromStore = false;

@@ -38,13 +38,23 @@ export function createGeneratorSlice({ persisted = null } = {}) {
                     'deterministicSeed',
                     'minCenterDistance'
                 ]);
+                let changed = false;
                 if (patch && typeof patch === 'object') {
                     for (const k of Object.keys(patch)) {
                         if (!allowed.has(k)) continue;
-                        next[k] = patch[k];
+                        const v = patch[k];
+                        if (next[k] !== v) {
+                            next[k] = v;
+                            changed = true;
+                        }
                     }
                 }
-                state.generatorParams = next;
+                // 値が変わらないなら state を更新しない（deep watch 連鎖・無限ループ防止）
+                if (!state.generatorParams) {
+                    state.generatorParams = next;
+                } else if (changed) {
+                    state.generatorParams = next;
+                }
             },
             setDeterministicSeed(state, value) {
                 if (!state.generatorParams) state.generatorParams = buildDefaultGeneratorParams();

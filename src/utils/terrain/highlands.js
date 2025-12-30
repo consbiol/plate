@@ -12,7 +12,7 @@ export function generateHighlands(vm, centers, centerLandCellsPre, preLandMask, 
         // ルール: 陸の割合 x が 0.1 増えるごとにクラスタ数が +1、
         // 例: x=0.1 -> 3, x=0.3 -> 5, x=0.7 -> 9, x=0.9 ->11
         const landRatioForHighlands = (typeof vm.seaLandRatio === 'number') ? Number(vm.seaLandRatio) : 0.3;
-        const lambda = 2 + 10 * landRatioForHighlands; // 上限は撤廃（非整数でも Poisson の平均として扱う）
+        const lambda = 0.5 + 11 * landRatioForHighlands; // 上限は撤廃（非整数でも Poisson の平均として扱う）
         const numHighlands = vm._poissonSample(lambda, 20, centerRng || seededRng); // 個数はシードで決定
         if (seededLog && seededLog[ci]) {
             seededLog[ci].highlandsCount = numHighlands;

@@ -41,13 +41,23 @@ export function createRenderSlice({ persisted = null } = {}) {
                 const base = state.renderSettings || buildDefaultRenderSettings();
                 const next = { ...base };
                 const allowed = new Set(Object.keys(defaults));
+                let changed = false;
                 if (patch && typeof patch === 'object') {
                     for (const k of Object.keys(patch)) {
                         if (!allowed.has(k)) continue;
-                        next[k] = patch[k];
+                        const v = patch[k];
+                        if (next[k] !== v) {
+                            next[k] = v;
+                            changed = true;
+                        }
                     }
                 }
-                state.renderSettings = next;
+                // 値が変わらないなら state を更新しない（deep watch 連鎖・無限ループ防止）
+                if (!state.renderSettings) {
+                    state.renderSettings = next;
+                } else if (changed) {
+                    state.renderSettings = next;
+                }
             },
             setCloudAmount(state, value) {
                 if (!state.renderSettings) state.renderSettings = buildDefaultRenderSettings();
