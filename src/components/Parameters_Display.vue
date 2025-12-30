@@ -12,6 +12,24 @@
     <button @click="onClickDrift" style="margin-bottom: 12px; margin-left: 8px;">
       Drift 大陸中心点 + ノイズ再抽選
     </button>
+
+    <div style="margin: 10px 8px 18px 8px; padding: 10px; border: 1px solid #ddd; border-radius: 6px; max-width: 720px; margin-left:auto; margin-right:auto; text-align:left;">
+      <div style="font-weight:bold; margin-bottom:6px;">ターン進行</div>
+      <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+        <button @click="onClickTurnStart" :disabled="!!climateTurn.isRunning">ターン進行</button>
+        <button @click="onClickTurnStop" :disabled="!climateTurn.isRunning">ターン停止</button>
+        <button @click="adjustTurnSpeed(-0.1)">-</button>
+        <span>Turn_speed: <b>{{ (climateTurn.Turn_speed || 1).toFixed(1) }}</b> sec/turn</span>
+        <button @click="adjustTurnSpeed(0.1)">+</button>
+        <button @click="openClimatePopup">気候パラメータ</button>
+      </div>
+      <div style="margin-top:6px; color:#333;">
+        Time_turn: <b>{{ climateTurn.Time_turn }}</b> /
+        Turn_yr: <b>{{ climateTurn.Turn_yr }}</b> yr/turn /
+        Time_yr: <b>{{ climateTurn.Time_yr }}</b> yr /
+        時代: <b>{{ climateTurn.era }}</b>
+      </div>
+    </div>
     
     <div style="margin-bottom: 8px;">
       <label>陸の中心点の数 y: </label>
@@ -35,12 +53,7 @@
       <input type="number" min="-50" max="60" step="2" v-model.number="averageTemperature" />
       <span style="margin-left:8px">{{ Math.round(averageTemperature) }}</span>
     </div>
-    <div style="margin-bottom: 8px;">
-      <label>greenIndex (GI): </label>
-      <input type="range" min="0" max="1.8" step="0.01" v-model.number="local.greenIndex" />
-      <span style="margin-left:8px">{{ (Number.isFinite(local.greenIndex) ? local.greenIndex : 1).toFixed(2) }}</span>
-      <span style="margin-left:8px;color:#666">（GIに応じて「低地・乾燥地間の距離閾値（帯別）」が自動更新）</span>
-    </div>
+    <!-- greenIndex UI removed: managed by climate model / generator params -->
     <div style="margin-bottom: 8px;">
       <label>低地・乾燥地 閾値（帯別）を自動更新: </label>
       <input type="checkbox" v-model="local.landDistanceThresholdAuto" />
@@ -77,11 +90,7 @@
       <label>シード: </label>
       <input type="text" v-model="local.deterministicSeed" placeholder="任意（空=完全ランダム）" />
     </div>
-    <div style="margin-bottom: 8px;">
-      <label>雲量: </label>
-      <input type="range" min="0" max="1" step="0.1" v-model.number="local.f_cloud" />
-      <span style="margin-left:8px">{{ (local.f_cloud || 0).toFixed(2) }}</span>
-    </div>
+    <!-- UI cloud slider removed: f_cloud is managed by climate model and renderSettings -->
     <div style="margin-bottom: 8px;">
       <label>平面地図のグリッド1マスのピクセル数: </label>
       <input type="range" min="1" max="10" step="1" v-model.number="planeGridCellPx" />
@@ -276,10 +285,12 @@ import { computeGlacierBaseRowsFromTemperature } from '../utils/terrain/glacierA
 import { computeLandDistanceThresholdsByGreenIndex } from '../utils/terrain/landDistanceThresholdsByGreenIndex.js';
 import { computeGridTypeCounts } from '../features/stats/gridTypeCounts.js';
 import { buildParametersOutputHtml } from '../features/popup/parametersOutputHtml.js';
+import { buildClimateOutputHtml } from '../features/popup/climateOutputHtml.js';
 import { buildPlaneSphereShellHtml } from '../features/popup/planeSphereShellHtml.js';
 import { buildPlaneHtml as buildPlaneHtmlUtil } from '../features/popup/planeHtml.js';
 import { buildStorePatchesFromLocal, applyGeneratorParamsToLocal, applyRenderSettingsToLocal } from '../utils/storeSync.js';
 import { deepClone } from '../utils/clone.js';
+import { computeRadiativeEquilibriumTempK } from '../utils/climate/model.js';
 export default {
   name: 'Parameters_Display',
   components: { Grids_Calculation, Sphere_Display },
@@ -383,9 +394,14 @@ export default {
       sphereUpdateCount: 0,
       sphereMaxUpdates: 200,
       popupRef: null,
+      climatePopupRef: null,
       stats: null,
       // store<->local 同期のループ防止フラグ
-      isSyncingLocalFromStore: false
+      isSyncingLocalFromStore: false,
+      // ターン進行のタイマー（setTimeout）
+      turnTimer: null,
+      // generate/update/drift のどれで onGenerated が呼ばれたかを判定するためのフラグ
+      lastRunMode: null
     };
   },
   computed: {
@@ -398,6 +414,15 @@ export default {
     },
     storeRenderSettings() {
       return this.$store?.getters?.renderSettings ?? null;
+    },
+    climateTurn() {
+      return this.$store?.getters?.climateTurn ?? { Time_turn: 0, Time_yr: 0, Turn_yr: 50000, Turn_speed: 1.0, isRunning: false, era: this.storeEra };
+    },
+    climateVars() {
+      return this.$store?.getters?.climateVars ?? null;
+    },
+    climateHistory() {
+      return this.$store?.getters?.climateHistory ?? null;
     },
     averageTemperature: {
       get() {
@@ -492,16 +517,24 @@ export default {
         this._syncLocalFromStoreRenderSettings();
       }
     },
+    // store era の変化（気候の自動遷移等）を local.era UI に反映
+    storeEra() {
+      if (!this.local) return;
+      if (this.local.era !== this.storeEra) {
+        this.isSyncingLocalFromStore = true;
+        try { this.local.era = this.storeEra; } finally { this.isSyncingLocalFromStore = false; }
+      }
+    },
+    // ターンが進むたびに気候ポップアップを更新（開いている場合）
+    'climateTurn.Time_turn'() {
+      this.openOrUpdateClimatePopup();
+    },
     // 平均気温(=store)の変更に追従して、GIテーブルを再適用
     averageTemperature() {
       if (this.isSyncingLocalFromStore) return;
       this.applyGreenIndexToLandDistanceThresholds();
     },
-    // greenIndex の変更に追従して、帯別閾値を自動更新
-    'local.greenIndex'() {
-      if (this.isSyncingLocalFromStore) return;
-      this.applyGreenIndexToLandDistanceThresholds();
-    },
+    // greenIndex is now managed by the climate model; listen to store changes via storeGeneratorParams instead
     // 自動更新のON/OFF切り替え
     'local.landDistanceThresholdAuto'() {
       // ONにした瞬間にテーブル値へ同期（OFF→ONで最新状態に揃える）
@@ -523,7 +556,11 @@ export default {
       if (!this.local || !this.local.landDistanceThresholdAuto) return;
       // store -> local 同期中に走ると循環するためガード
       if (this.isSyncingLocalFromStore) return;
-      const gi = (this.local && Number.isFinite(this.local.greenIndex)) ? Number(this.local.greenIndex) : Number(PARAM_DEFAULTS.greenIndex);
+      // greenIndex is sourced from the climate model / generator params (store). Prefer climate.vars.greenIndex if available.
+      const climateVars = this.$store?.getters?.climateVars ?? null;
+      const storeGen = this.storeGeneratorParams ?? {};
+      const giCandidate = (climateVars && typeof climateVars.greenIndex === 'number') ? climateVars.greenIndex : (typeof storeGen.greenIndex === 'number' ? storeGen.greenIndex : Number(PARAM_DEFAULTS.greenIndex));
+      const gi = Number.isFinite(Number(giCandidate)) ? Number(giCandidate) : Number(PARAM_DEFAULTS.greenIndex);
       const next = computeLandDistanceThresholdsByGreenIndex({
         averageTemperature: this.averageTemperature,
         greenIndex: gi
@@ -564,6 +601,10 @@ export default {
       } finally {
         this.isSyncingLocalFromStore = false;
       }
+      // store->local 同期が終わったら、greenIndex に基づく帯別閾値を最新化する
+      try {
+        this.applyGreenIndexToLandDistanceThresholds();
+      } catch (e) { /* ignore */ }
     },
     _syncLocalFromStoreRenderSettings() {
       const rs = this.storeRenderSettings;
@@ -594,19 +635,46 @@ export default {
       }
     },
     onClickGenerate() {
+      this.onClickTurnStop();
+      this.lastRunMode = 'generate';
+      // 1) 気候を先に初期化（generate時の純粋な放射平衡温度に基づいた topGlacierRows を作るため）
+      try {
+        const era = (this.local && this.local.era) ? this.local.era : this.storeEra;
+        const seed = (this.local && typeof this.local.deterministicSeed !== 'undefined') ? this.local.deterministicSeed : '';
+        this.$store?.dispatch?.('initClimateFromGenerate', { era, deterministicSeed: seed });
+        // climateVars に averageTemperature_calc (K) が入っている想定
+        const cv = this.$store?.getters?.climateVars || {};
+        if (cv && typeof cv.averageTemperature_calc === 'number') {
+          const rawC = cv.averageTemperature_calc - 273.15;
+          try {
+            const rows = computeGlacierBaseRowsFromTemperature(rawC);
+            this.local.topGlacierRows = Math.round(rows);
+          } catch (e) { /* ignore */ }
+        } else if (typeof this.averageTemperature === 'number') {
+          // フォールバック: 既存の平滑済み平均気温を使う
+          this.updateAverageTemperature(this.averageTemperature);
+        }
+
+      } catch (e) { /* ignore */ }
+
       // 構造（幅/高さ/バージョン）に影響する完全再生成なのでビルドバージョンを上げてiframe差し替えを促す
       this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
       this.generateSignal += 1;
     },
     onClickUpdate() {
+      this.onClickTurnStop();
+      this.lastRunMode = 'update';
       // 中心点座標を保持して再生成（iframeの完全差し替えは行わない）
       this.updateSignal += 1;
     },
     onClickReviseHighFrequency() {
+      this.onClickTurnStop();
       // Generate後のキャッシュを前提とした高頻度更新
       this.reviseSignal += 1;
     },
     onClickDrift() {
+      this.onClickTurnStop();
+      this.lastRunMode = 'drift';
       // 中心点をドリフトさせてフル再生成（ノイズは全てランダム）
       this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
       this.driftSignal += 1;
@@ -625,8 +693,7 @@ export default {
       }
       // 1.1.1) 計算側が実際に使った「上端・下端氷河row（基準）」を保存してUI表示を一致させる
       if (payload && typeof payload.computedTopGlacierRows === 'number') {
-        if (!this.stats) this.stats = {};
-        this.stats.computedTopGlacierRows = payload.computedTopGlacierRows;
+        this.stats = { ...(this.stats || {}), computedTopGlacierRows: payload.computedTopGlacierRows };
       }
       // 1.2) 平面表示色（+2枠）を計算してポップアップ用に保持
       try {
@@ -676,6 +743,37 @@ export default {
         gridWidth: this.gridWidth,
         gridHeight: this.gridHeight
       });
+
+      // 4) 気候モデル: generateSignal のときだけ初期化（update/drift では初期化しない）
+      try {
+        const era = (this.local && this.local.era) ? this.local.era : this.storeEra;
+        const seed = (this.local && typeof this.local.deterministicSeed !== 'undefined') ? this.local.deterministicSeed : '';
+        // 初期化は generate 操作のときのみ行う（update/revise/drift の emit では行わない）
+        if (this.lastRunMode === 'generate') {
+          this.$store?.dispatch?.('initClimateFromGenerate', { era, deterministicSeed: seed });
+        }
+        // 地形面積率は常に最新に更新（同期で commit される）
+        this.$store?.dispatch?.('updateClimateTerrainFractions', {
+          gridTypeCounts: this.stats.gridTypeCounts,
+          preGlacierStats: payload.preGlacierStats || null,
+          gridWidth: this.gridWidth,
+          gridHeight: this.gridHeight
+        });
+        // updateClimateTerrainFractions が反映された直後の store state を使って
+        // 放射平衡温度を再計算し、averageTemperature_calc を最新化して popup に反映する
+        try {
+          const curClimate = this.$store?.getters?.climate ?? null;
+          if (curClimate) {
+            const out = computeRadiativeEquilibriumTempK(curClimate, { conservative: true });
+            if (out && typeof out.averageTemperature_calc === 'number') {
+              // patchClimate mutation を使って vars.averageTemperature_calc を更新
+              try { this.$store.commit('patchClimate', { vars: { ...(curClimate.vars || {}), averageTemperature_calc: out.averageTemperature_calc, Sol: out.Sol, f_cloud: out.f_cloud } }); } catch (e) { /* ignore */ }
+            }
+          }
+        } catch (e) { /* ignore */ }
+        this.openOrUpdateClimatePopup();
+      } catch (e) { /* ignore */ }
+      this.lastRunMode = null;
       // 最後にポップアップを更新
       this.openOrUpdatePopup();
     },
@@ -685,7 +783,7 @@ export default {
       const gridData = (payload && Array.isArray(payload.gridData)) ? payload.gridData : [];
       if (!this.stats) this.stats = {};
       if (payload && typeof payload.computedTopGlacierRows === 'number') {
-        this.stats.computedTopGlacierRows = payload.computedTopGlacierRows;
+        this.stats = { ...(this.stats || {}), computedTopGlacierRows: payload.computedTopGlacierRows };
       }
 
       // 平面表示色（+2枠）を更新
@@ -704,8 +802,156 @@ export default {
       this._updateGridTypeCountsFromGridData(gridData);
       this.openOrUpdatePopup();
 
+      // グリッドデータをローカル/ストアにも反映して Sphere などが最新の氷河描写を使えるようにする
+      this.gridDataLocal = Array.isArray(gridData) ? gridData : [];
+      try {
+        this.$store?.dispatch?.('updateGridData', Array.isArray(gridData) ? gridData : []);
+      } catch (e) { /* ignore */ }
+
+      // 気候モデルの地形面積率も更新
+      try {
+        this.$store?.dispatch?.('updateClimateTerrainFractions', {
+          gridTypeCounts: this.stats && this.stats.gridTypeCounts ? this.stats.gridTypeCounts : null,
+          preGlacierStats: (this.stats && this.stats.preGlacier) ? this.stats.preGlacier : null,
+          gridWidth: this.gridWidth,
+          gridHeight: this.gridHeight
+        });
+      } catch (e) { /* ignore */ }
+
       // Plane iframe だけ差し替え（sphere iframeは触らない）
       this.updatePlaneIframeOnly();
+    },
+
+    // ---------------------------
+    // Turn UI / Climate popup
+    // ---------------------------
+    openOrUpdateClimatePopup() {
+      const w = (this.climatePopupRef && !this.climatePopupRef.closed)
+        ? this.climatePopupRef
+        : null;
+      if (!w) return;
+      try {
+        const doc = w.document;
+        const html = buildClimateOutputHtml({
+          climateTurn: this.climateTurn,
+          climateVars: this.climateVars,
+          climateHistory: this.climateHistory
+        });
+        doc.open();
+        doc.write(html);
+        doc.close();
+      } catch (e) { /* ignore */ }
+    },
+    openClimatePopup() {
+      const w = window.open('', 'ClimateParameters', 'width=520,height=820,scrollbars=yes');
+      if (!w) return;
+      this.climatePopupRef = w;
+      this.openOrUpdateClimatePopup();
+    },
+    adjustTurnSpeed(delta) {
+      const cur = Number(this.climateTurn.Turn_speed || 1.0);
+      let next = cur + Number(delta || 0);
+      if (!isFinite(next)) next = 1.0;
+      next = Math.max(0.1, Math.min(10, Math.round(next * 10) / 10));
+      this.$store?.dispatch?.('updateTurnSpeed', next);
+    },
+    onClickTurnStart() {
+      // まだ初期化されていない場合は、現在のUI時代で初期化（シード未指定ならランダム）
+      try {
+        const c = this.$store?.getters?.climate;
+        const needInit = !c || !c.constants || c.constants.solarFlareUpRate == null;
+        if (needInit) {
+          const era = (this.local && this.local.era) ? this.local.era : this.storeEra;
+          const seed = (this.local && typeof this.local.deterministicSeed !== 'undefined') ? this.local.deterministicSeed : '';
+          this.$store?.dispatch?.('initClimateFromGenerate', { era, deterministicSeed: seed });
+          // terrain は未生成ならデフォルトのまま（Generate後は onGenerated で更新される）
+        }
+      } catch (e) { /* ignore */ }
+      // 気候ポップアップを開く（なければ）
+      if (!this.climatePopupRef || this.climatePopupRef.closed) this.openClimatePopup();
+      // ターン進行中は sphere 回転OFF
+      try { this.$refs?.sphere?.setRotationEnabled?.(false); } catch (e) { /* ignore */ }
+      this.$store?.dispatch?.('setTurnRunning', true);
+      this._scheduleNextTurnTick(0);
+    },
+    onClickTurnStop() {
+      this.$store?.dispatch?.('setTurnRunning', false);
+      if (this.turnTimer) {
+        clearTimeout(this.turnTimer);
+        this.turnTimer = null;
+      }
+      // 停止中は sphere 回転ON
+      try { this.$refs?.sphere?.setRotationEnabled?.(true); } catch (e) { /* ignore */ }
+    },
+    _scheduleNextTurnTick(waitMs) {
+      if (!this.$store?.getters?.climateTurn?.isRunning) return;
+      if (this.turnTimer) {
+        clearTimeout(this.turnTimer);
+        this.turnTimer = null;
+      }
+      const w = Math.max(0, Number(waitMs) || 0);
+      this.turnTimer = setTimeout(() => {
+        this._runOneTurnTick();
+      }, w);
+    },
+    _runOneTurnTick() {
+      if (!this.$store?.getters?.climateTurn?.isRunning) return;
+      const start = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+
+      try {
+        this.$store?.dispatch?.('advanceClimateOneTurn');
+      } catch (e) { /* ignore */ }
+
+      // 気候の出力を既存ストアへ統合（描画/地形UIが追従できるように）
+      try {
+        const v = this.$store?.getters?.climateVars;
+        const turn = this.$store?.getters?.climateTurn;
+        if (v && typeof v.averageTemperature === 'number') {
+          this.$store?.dispatch?.('updateAverageTemperature', v.averageTemperature);
+          // 氷河行数は平均気温に連動するので、UI側ローカルも更新
+          this.updateAverageTemperature(v.averageTemperature);
+        }
+        if (v && typeof v.f_cloud === 'number') {
+          this.$store?.dispatch?.('updateRenderSettings', { f_cloud: v.f_cloud });
+        }
+        if (v && typeof v.greenIndex === 'number') {
+          this.$store?.dispatch?.('updateGeneratorParams', { greenIndex: v.greenIndex });
+        }
+        // 自動時代遷移が発生した場合はUIにも反映（store era）
+        if (turn && turn.era && this.storeEra !== turn.era) {
+          this.$store?.dispatch?.('updateEra', turn.era);
+        }
+        // Step8: 1ターンごとに reviseSignal を発火して高頻度更新を行う
+        try {
+          // revise は毎ターン
+          this.reviseSignal += 1;
+        } catch (e) { /* ignore */ }
+        // 60ターンごとに updateSignal を発火
+        try {
+          if (turn && typeof turn.Time_turn === 'number' && (turn.Time_turn % 60 === 0)) {
+            this.updateSignal += 1;
+          }
+        } catch (e) { /* ignore */ }
+        // driftSignal は "2000000/Turn_yr" ターンごとに発火（最小1ターン）
+        try {
+          if (turn && typeof turn.Time_turn === 'number' && typeof turn.Turn_yr === 'number') {
+            const interval = Math.max(1, Math.round(2000000 / Math.max(1, turn.Turn_yr)));
+            if (interval > 0 && (turn.Time_turn % interval === 0)) {
+              this.driftSignal += 1;
+            }
+          }
+        } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore */ }
+
+      // ポップアップを更新（開いていれば）
+      this.openOrUpdateClimatePopup();
+
+      const end = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      const elapsed = end - start;
+      const speedSec = Number(this.$store?.getters?.climateTurn?.Turn_speed || 1.0);
+      const targetMs = Math.max(100, speedSec * 1000);
+      const waitMs = (elapsed >= targetMs) ? 100 : Math.max(0, targetMs - elapsed);
+      this._scheduleNextTurnTick(waitMs);
     },
 
     _updateGridTypeCountsFromGridData(gridData) {

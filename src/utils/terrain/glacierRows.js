@@ -86,6 +86,38 @@ export function computeTopGlacierRowsFromAverageTemperature(vm, ratioOceanOverri
 }
 
 /**
+ * Pure computation of top glacier rows from a temperature value (no smoothing, no vm mutation).
+ * - temperature: Celsius
+ * - ratioOceanOverride: 0..1
+ * - stateKey: 'land' or 'water' (affects formula)
+ * Returns a rounded integer row count (consistent with computeTopGlacierRowsFromAverageTemperature's output).
+ */
+export function computeTopGlacierRowsPure(temperature, ratioOceanOverride, stateKey = null) {
+    const t = (typeof temperature === 'number') ? temperature : 15;
+    if (stateKey === 'water') {
+        const v_calc = computeGlacierBaseRowsFromTemperature(t);
+        return Math.round(v_calc);
+    }
+
+    // Land
+    const v_calc = GLACIER_LAND_ANCHOR.val + (t - GLACIER_LAND_ANCHOR.t) * (-1);
+
+    const ratio_ocean = (typeof ratioOceanOverride === 'number')
+        ? Math.min(1, Math.max(0, ratioOceanOverride))
+        : 0.7;
+    const ratio_ocean_ref = 0.7;
+
+    const glacierSlope = computeGlacierSlope(ratio_ocean, ratio_ocean_ref);
+    const V_REF = 2;
+    const v_eff_slope = V_REF + (v_calc - V_REF) * glacierSlope;
+
+    const v_boost = computeSeaBoost(v_calc, ratio_ocean, ratio_ocean_ref, 1.6, V_REF);
+    const v_eff = v_eff_slope + v_boost;
+
+    return Math.round(v_eff);
+}
+
+/**
  * smoothed（glacier_alpha による遅延）後の内部値を返す。
  * - 注意: この関数は state を「更新」しません（乱数ではないが、平滑化 state を進める副作用があるため）。
  *   先に computeTopGlacierRowsFromAverageTemperature を1回だけ呼び出し、その直後に参照してください。

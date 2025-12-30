@@ -4,6 +4,7 @@ import { createUiSlice } from './slices/ui.js';
 import { createGeneratorSlice } from './slices/generator.js';
 import { createRenderSlice } from './slices/render.js';
 import { createWorldSlice } from './slices/world.js';
+import { createClimateSlice } from './slices/climate.js';
 
 const PERSISTED = safeLoadPersistedState();
 
@@ -11,6 +12,7 @@ const UI = createUiSlice({ persisted: PERSISTED });
 const GENERATOR = createGeneratorSlice({ persisted: PERSISTED });
 const RENDER = createRenderSlice({ persisted: PERSISTED });
 const WORLD = createWorldSlice({ persisted: PERSISTED });
+const CLIMATE = createClimateSlice({ persisted: PERSISTED });
 
 export default createStore({
     // Vuex modules にせず「ファイル分割」で整理（既存の action/getter 名を維持するため）
@@ -19,6 +21,7 @@ export default createStore({
         ...GENERATOR.state,
         ...RENDER.state,
         ...WORLD.state,
+        ...CLIMATE.state,
         // -------------------------------------------------------------------
         // 予約（現状未使用）:
         // 以前 state に入っていた将来用パラメータは、混乱を避けるため state から外し、コメントとして残す。
@@ -28,19 +31,22 @@ export default createStore({
         ...UI.getters,
         ...GENERATOR.getters,
         ...RENDER.getters,
-        ...WORLD.getters
+        ...WORLD.getters,
+        ...CLIMATE.getters
     },
     mutations: {
         ...UI.mutations,
         ...GENERATOR.mutations,
         ...RENDER.mutations,
-        ...WORLD.mutations
+        ...WORLD.mutations,
+        ...CLIMATE.mutations
     },
     actions: {
         ...UI.actions,
         ...GENERATOR.actions,
         ...RENDER.actions,
-        ...WORLD.actions
+        ...WORLD.actions,
+        ...CLIMATE.actions
     },
     plugins: [
         (store) => {

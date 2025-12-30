@@ -26,7 +26,7 @@ import { buildCenterLandCells } from '../utils/terrain/centerCells.js';
 import { buildGridData, markCentersOnGridData } from '../utils/terrain/gridData.js';
 import { applySeededLogToCenterParameters } from '../utils/terrain/centerParams.js';
 import { computePreGlacierStats, buildGeneratedPayload } from '../utils/terrain/output.js';
-import { computeTopGlacierRowsFromAverageTemperature, getSmoothedGlacierRows } from '../utils/terrain/glacierRows.js';
+import { computeTopGlacierRowsFromAverageTemperature, getSmoothedGlacierRows, computeTopGlacierRowsPure } from '../utils/terrain/glacierRows.js';
 import { noise2D as noise2DUtil, fractalNoise2D as fractalNoise2DUtil } from '../utils/noise.js';
 import { poissonSample } from '../utils/stats/poisson.js';
 import { PARAM_DEFAULTS } from '../utils/paramsDefaults.js';
@@ -348,6 +348,13 @@ export default {
           this.superPloom_history = [];
           this.driftTurn = 0;
           this.driftIsApproach = true; // start with Approach phase
+          // clear high-frequency caches so Generate starts from fresh state
+          try { this.hfCache = null; } catch (e) { /* ignore */ }
+          try { this._lastLakesList = null; } catch (e) { /* ignore */ }
+          // reset glacier smoothing/internal state to avoid carrying previous generate's cache
+          try { this._glacierRowsState = null; } catch (e) { /* ignore */ }
+          try { this.internalTopGlacierRows = null; } catch (e) { /* ignore */ }
+          try { this.lastReturnedGlacierRows = null; } catch (e) { /* ignore */ }
         }
       } catch (e) { /* ignore */ }
     },
@@ -614,11 +621,36 @@ export default {
       const preGlacierStats = computePreGlacierStats({ N, landMask, lakeMask });
       const ratioOcean = preGlacierStats.seaCount / (preGlacierStats.total || 1);
       // 海率の影響は「陸の氷河形成」にのみ適用し、海/湖は標準（0.7相当）で固定する
-      const computedTopGlacierRowsLand = computeTopGlacierRowsFromAverageTemperature(this, ratioOcean, 'land');
-      const computedTopGlacierRowsWater = computeTopGlacierRowsFromAverageTemperature(this, 0.7, 'water');
-      // glacier_alpha による平滑化後の内部値（小数）
-      const computedSmoothedTopGlacierRowsLand = getSmoothedGlacierRows(this, ratioOcean, 'land');
-      const computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
+      // 要件: generate 時は「平滑化なし（放射平衡温度由来）」の topGlacierRows を使いたい。
+      // ここでは store の気候モデルが出す averageTemperature_calc (K) があればそれを優先して使い、
+      // 一時的に this.averageTemperature と this.glacier_alpha を上書きして computeTopGlacierRowsFromAverageTemperature を呼び、
+      // 平滑化を実質無効（glacier_alpha=1）にして即値を取得します。
+      let computedTopGlacierRowsLand;
+      let computedTopGlacierRowsWater;
+      let computedSmoothedTopGlacierRowsLand;
+      let computedSmoothedTopGlacierRowsWater;
+      try {
+        const climateVars = (this.$store && this.$store.getters && this.$store.getters.climateVars) ? this.$store.getters.climateVars : null;
+        if (climateVars && typeof climateVars.averageTemperature_calc === 'number') {
+          const rawC = climateVars.averageTemperature_calc - 273.15;
+          // use pure computation (no smoothing, no vm mutation)
+          computedTopGlacierRowsLand = computeTopGlacierRowsPure(rawC, ratioOcean, 'land');
+          computedTopGlacierRowsWater = computeTopGlacierRowsPure(rawC, 0.7, 'water');
+          computedSmoothedTopGlacierRowsLand = computedTopGlacierRowsLand;
+          computedSmoothedTopGlacierRowsWater = computedTopGlacierRowsWater;
+        } else {
+          computedTopGlacierRowsLand = computeTopGlacierRowsFromAverageTemperature(this, ratioOcean, 'land');
+          computedTopGlacierRowsWater = computeTopGlacierRowsFromAverageTemperature(this, 0.7, 'water');
+          computedSmoothedTopGlacierRowsLand = getSmoothedGlacierRows(this, ratioOcean, 'land');
+          computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
+        }
+      } catch (e) {
+        // fallback to default behaviour on error
+        computedTopGlacierRowsLand = computeTopGlacierRowsFromAverageTemperature(this, ratioOcean, 'land');
+        computedTopGlacierRowsWater = computeTopGlacierRowsFromAverageTemperature(this, 0.7, 'water');
+        computedSmoothedTopGlacierRowsLand = getSmoothedGlacierRows(this, ratioOcean, 'land');
+        computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
+      }
 
       // --- ツンドラの適用（上端・下端） ---
       const tundraExtraRows = Number.isFinite(Number(this.tundraExtraRows))
@@ -1205,10 +1237,25 @@ export default {
       const ratioOcean = (c.preGlacierStats && c.preGlacierStats.total)
         ? (c.preGlacierStats.seaCount / (c.preGlacierStats.total || 1))
         : 0.7;
-      const computedTopGlacierRowsLand = computeTopGlacierRowsFromAverageTemperature(this, ratioOcean, 'land');
-      const computedTopGlacierRowsWater = computeTopGlacierRowsFromAverageTemperature(this, 0.7, 'water');
-      const computedSmoothedTopGlacierRowsLand = getSmoothedGlacierRows(this, ratioOcean, 'land');
-      const computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
+      // Prefer climate raw radiative temperature (averageTemperature_calc) when available to avoid using smoothed store averageTemperature.
+      const climateVars = (this.$store && this.$store.getters && this.$store.getters.climateVars) ? this.$store.getters.climateVars : null;
+      let computedTopGlacierRowsLand;
+      let computedTopGlacierRowsWater;
+      let computedSmoothedTopGlacierRowsLand;
+      let computedSmoothedTopGlacierRowsWater;
+      if (climateVars && typeof climateVars.averageTemperature_calc === 'number') {
+        const rawC = climateVars.averageTemperature_calc - 273.15;
+        computedTopGlacierRowsLand = computeTopGlacierRowsPure(rawC, ratioOcean, 'land');
+        computedTopGlacierRowsWater = computeTopGlacierRowsPure(rawC, 0.7, 'water');
+        // For revise application we treat smoothed values as equal to pure when using climate raw temp
+        computedSmoothedTopGlacierRowsLand = computedTopGlacierRowsLand;
+        computedSmoothedTopGlacierRowsWater = computedTopGlacierRowsWater;
+      } else {
+        computedTopGlacierRowsLand = computeTopGlacierRowsFromAverageTemperature(this, ratioOcean, 'land');
+        computedTopGlacierRowsWater = computeTopGlacierRowsFromAverageTemperature(this, 0.7, 'water');
+        computedSmoothedTopGlacierRowsLand = getSmoothedGlacierRows(this, ratioOcean, 'land');
+        computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
+      }
       return {
         computedTopGlacierRowsLand,
         computedTopGlacierRowsWater,

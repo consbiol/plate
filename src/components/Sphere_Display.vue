@@ -20,7 +20,9 @@ export default {
       // Generate/Update/Drift のタイミングでのみ applyCloudSnapshot() で更新する。
       renderFCloudSnapshot: null,
       renderCloudPeriodSnapshot: null,
-      renderPolarCloudBoostSnapshot: null
+      renderPolarCloudBoostSnapshot: null,
+      // 外部（ターン進行）からの回転ON/OFF要求を保持（popup未表示でも反映できるように）
+      desiredRotationEnabled: true
     };
   },
   computed: {
@@ -217,6 +219,7 @@ export default {
       if (!doc) return;
       const rotateBtn = doc.getElementById('rotate-btn');
       if (rotateBtn) {
+        rotateBtn.textContent = (this.desiredRotationEnabled ? 'Stop' : 'Rotate');
         rotateBtn.addEventListener('click', () => {
           this.toggleRotate(rotateBtn);
         });
@@ -260,7 +263,27 @@ export default {
       this.bindWebGLContextEvents(canvas);
       this.requestRedraw();
       this.bindPopupControls(win.document);
+      // 画面が開いたタイミングで外部要求（desired）を反映
+      this.setRotationEnabled(this.desiredRotationEnabled);
       return true;
+    },
+    // 外部から回転を明示制御する（popupが開いていない場合も「希望値」を保存）
+    setRotationEnabled(enabled) {
+      this.desiredRotationEnabled = !!enabled;
+      // popup/iframe が開いていて canvas がある場合は即反映
+      if (this.desiredRotationEnabled) {
+        this.startRotationLoop();
+        this._isRotating = true;
+      } else {
+        this.stopRotationLoop();
+        this._isRotating = false;
+      }
+      // ボタン表示も可能なら同期
+      try {
+        const doc = this._sphereWin && this._sphereWin.document;
+        const btn = doc && doc.getElementById && doc.getElementById('rotate-btn');
+        if (btn) btn.textContent = this.desiredRotationEnabled ? 'Stop' : 'Rotate';
+      } catch (e) { /* ignore */ }
     },
     bindWebGLContextEvents(canvas) {
       if (!canvas) return;
@@ -426,11 +449,13 @@ export default {
       if (this._isRotating) {
         this.stopRotationLoop();
         this._isRotating = false;
+        this.desiredRotationEnabled = false;
         if (btn) btn.textContent = 'Rotate';
       } else {
         // rAFベースの回転ループ開始
         this.startRotationLoop();
         this._isRotating = true;
+        this.desiredRotationEnabled = true;
         if (btn) btn.textContent = 'Stop';
       }
     },
