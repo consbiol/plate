@@ -31,6 +31,10 @@ export const PARAM_DEFAULTS = Object.freeze({
     minCenterDistance: 20,
     baseSeaDistanceThreshold: 5,
     baseLandDistanceThreshold: 10,
+    // greenIndex (GI): 低地↔乾燥地の帯別距離閾値を決めるための植生指標（基準: 1.0）
+    greenIndex: 1.0,
+    // 低地↔乾燥地の帯別距離閾値をGIで自動更新するか（ONで自動、OFFで手動上書き）
+    landDistanceThresholdAuto: true,
     landDistanceThreshold1: 10,
     landDistanceThreshold2: 15,
     landDistanceThreshold3: 15,
@@ -70,6 +74,8 @@ export function createLocalParams(vm) {
         minCenterDistance: vm.minCenterDistance,
         baseSeaDistanceThreshold: vm.baseSeaDistanceThreshold,
         baseLandDistanceThreshold: vm.baseLandDistanceThreshold,
+        greenIndex: vm.greenIndex,
+        landDistanceThresholdAuto: vm.landDistanceThresholdAuto,
         tundraExtraRows: vm.tundraExtraRows,
         topGlacierRows: vm.topGlacierRows,
         landBandVerticalWobbleRows: vm.landBandVerticalWobbleRows,

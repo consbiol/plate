@@ -36,6 +36,19 @@
       <span style="margin-left:8px">{{ Math.round(averageTemperature) }}</span>
     </div>
     <div style="margin-bottom: 8px;">
+      <label>greenIndex (GI): </label>
+      <input type="range" min="0" max="1.8" step="0.01" v-model.number="local.greenIndex" />
+      <span style="margin-left:8px">{{ (Number.isFinite(local.greenIndex) ? local.greenIndex : 1).toFixed(2) }}</span>
+      <span style="margin-left:8px;color:#666">（GIに応じて「低地・乾燥地間の距離閾値（帯別）」が自動更新）</span>
+    </div>
+    <div style="margin-bottom: 8px;">
+      <label>低地・乾燥地 閾値（帯別）を自動更新: </label>
+      <input type="checkbox" v-model="local.landDistanceThresholdAuto" />
+      <span style="margin-left:8px;color:#666">
+        （ON: 平均気温×GIテーブルで帯01〜10を自動更新 / OFF: 帯01〜10を手動上書き）
+      </span>
+    </div>
+    <div style="margin-bottom: 8px;">
       <label>低地・乾燥地間の距離閾値 (グリッド): </label>
       <input type="number" min="-60" max="60" step="1" :value="landDistanceThresholdAverage" disabled />
       <span style="margin-left:8px;color:#666">（帯別平均）</span>
@@ -43,16 +56,16 @@
     <details style="margin-bottom:8px;max-width:600px;margin-left:auto;margin-right:auto;">
       <summary style="cursor:pointer;font-weight:bold;margin-bottom:6px;">低地・乾燥地間の距離閾値（帯別）</summary>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
-        <div style="width:48%;"><label>帯01 (極): </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold1" /></div>
-        <div style="width:48%;"><label>帯02: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold2" /></div>
-        <div style="width:48%;"><label>帯03: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold3" /></div>
-        <div style="width:48%;"><label>帯04: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold4" /></div>
-        <div style="width:48%;"><label>帯05: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold5" /></div>
-        <div style="width:48%;"><label>帯06: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold6" /></div>
-        <div style="width:48%;"><label>帯07: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold7" /></div>
-        <div style="width:48%;"><label>帯08: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold8" /></div>
-        <div style="width:48%;"><label>帯09: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold9" /></div>
-        <div style="width:48%;"><label>帯10 (赤道): </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold10" /></div>
+        <div style="width:48%;"><label>帯01 (極): </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold1" :disabled="!!local.landDistanceThresholdAuto" /></div>
+        <div style="width:48%;"><label>帯02: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold2" :disabled="!!local.landDistanceThresholdAuto" /></div>
+        <div style="width:48%;"><label>帯03: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold3" :disabled="!!local.landDistanceThresholdAuto" /></div>
+        <div style="width:48%;"><label>帯04: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold4" :disabled="!!local.landDistanceThresholdAuto" /></div>
+        <div style="width:48%;"><label>帯05: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold5" :disabled="!!local.landDistanceThresholdAuto" /></div>
+        <div style="width:48%;"><label>帯06: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold6" :disabled="!!local.landDistanceThresholdAuto" /></div>
+        <div style="width:48%;"><label>帯07: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold7" :disabled="!!local.landDistanceThresholdAuto" /></div>
+        <div style="width:48%;"><label>帯08: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold8" :disabled="!!local.landDistanceThresholdAuto" /></div>
+        <div style="width:48%;"><label>帯09: </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold9" :disabled="!!local.landDistanceThresholdAuto" /></div>
+        <div style="width:48%;"><label>帯10 (赤道): </label><input type="number" min="-60" max="60" step="1" v-model.number="local.landDistanceThreshold10" :disabled="!!local.landDistanceThresholdAuto" /></div>
       </div>
       <div style="width:100%;margin-top:8px;">
         <label>帯の縦揺らぎ（行数）: </label>
@@ -260,6 +273,7 @@ import Sphere_Display from './Sphere_Display.vue';
 import { deriveDisplayColorsFromGridData, getEraTerrainColors } from '../utils/colors.js';
 import { ERAS, GRID_DEFAULTS, PARAM_DEFAULTS, createLocalParams } from '../utils/paramsDefaults.js';
 import { computeGlacierBaseRowsFromTemperature } from '../utils/terrain/glacierAnchors.js';
+import { computeLandDistanceThresholdsByGreenIndex } from '../utils/terrain/landDistanceThresholdsByGreenIndex.js';
 import { computeGridTypeCounts } from '../features/stats/gridTypeCounts.js';
 import { buildParametersOutputHtml } from '../features/popup/parametersOutputHtml.js';
 import { buildPlaneSphereShellHtml } from '../features/popup/planeSphereShellHtml.js';
@@ -278,6 +292,10 @@ export default {
     baseSeaDistanceThreshold: { type: Number, required: false, default: PARAM_DEFAULTS.baseSeaDistanceThreshold },
     // 低地・乾燥地間の距離閾値: 陸グリッドが低地か乾燥地かを判定する距離の基準値。大きいほど低地が広がります。
     baseLandDistanceThreshold: { type: Number, required: false, default: PARAM_DEFAULTS.baseLandDistanceThreshold },
+    // greenIndex (GI): 低地↔乾燥地の帯別距離閾値を自動決定する植生指標（基準: 1.0）
+    greenIndex: { type: Number, required: false, default: PARAM_DEFAULTS.greenIndex },
+    // 低地↔乾燥地の帯別距離閾値をGIで自動更新するか
+    landDistanceThresholdAuto: { type: Boolean, required: false, default: PARAM_DEFAULTS.landDistanceThresholdAuto },
     // 低地・乾燥地間の距離閾値（帯ごと、上端/下端から5グリッド単位、帯1..帯10）
     landDistanceThreshold1: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold1 },
     landDistanceThreshold2: { type: Number, required: false, default: PARAM_DEFAULTS.landDistanceThreshold2 },
@@ -335,6 +353,8 @@ export default {
     this.local.era = this.storeEra || '大森林時代';
     // store の generatorParams を local に同期（入力値の永続化＆複数コンポーネント間共有）
     this._syncLocalFromStoreGeneratorParams();
+    // greenIndex と平均気温に応じて「低地・乾燥地間の距離閾値（帯別）」を初期反映
+    this.applyGreenIndexToLandDistanceThresholds();
   },
   data() {
     return {
@@ -470,6 +490,19 @@ export default {
         this._syncLocalFromStoreRenderSettings();
       }
     },
+    // 平均気温(=store)の変更に追従して、GIテーブルを再適用
+    averageTemperature() {
+      this.applyGreenIndexToLandDistanceThresholds();
+    },
+    // greenIndex の変更に追従して、帯別閾値を自動更新
+    'local.greenIndex'() {
+      this.applyGreenIndexToLandDistanceThresholds();
+    },
+    // 自動更新のON/OFF切り替え
+    'local.landDistanceThresholdAuto'() {
+      // ONにした瞬間にテーブル値へ同期（OFF→ONで最新状態に揃える）
+      this.applyGreenIndexToLandDistanceThresholds();
+    },
     // local の入力変更を store に反映（v-model での変更を自動で拾う）
     local: {
       deep: true,
@@ -480,6 +513,29 @@ export default {
     }
   },
   methods: {
+    applyGreenIndexToLandDistanceThresholds() {
+      // OFFのときは手動上書きを尊重して何もしない
+      if (!this.local || !this.local.landDistanceThresholdAuto) return;
+      const gi = (this.local && Number.isFinite(this.local.greenIndex)) ? Number(this.local.greenIndex) : Number(PARAM_DEFAULTS.greenIndex);
+      const next = computeLandDistanceThresholdsByGreenIndex({
+        averageTemperature: this.averageTemperature,
+        greenIndex: gi
+      });
+      if (!next || typeof next !== 'object') return;
+
+      // deep watcher の多重発火を避けるため、ローカル更新は一括で行い最後に store へ1回だけ反映
+      this.isSyncingLocalFromStore = true;
+      try {
+        for (const k of Object.keys(next)) {
+          if (Object.prototype.hasOwnProperty.call(this.local, k)) {
+            this.local[k] = next[k];
+          }
+        }
+      } finally {
+        this.isSyncingLocalFromStore = false;
+      }
+      this._syncStoreFromLocal();
+    },
     _syncStoreFromLocal() {
       // generatorParams と renderSettings に分配して store に反映する
       const local = this.local || {};

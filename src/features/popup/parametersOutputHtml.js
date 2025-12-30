@@ -89,6 +89,8 @@ export function buildParametersOutputHtml({
     <div class="row"><label>陸の割合 x:</label><span>${escape(params.seaLandRatio)}</span></div>
     <div class="row"><label>中心間の排他距離 (グリッド):</label><span>${escape(params.minCenterDistance)}</span></div>
     <div class="row"><label>浅瀬・深海間距離閾値:</label><span>${escape(params.baseSeaDistanceThreshold)}</span></div>
+    <div class="row"><label>greenIndex (GI):</label><span>${escape((params.greenIndex != null ? Number(params.greenIndex).toFixed(2) : '1.00'))}</span></div>
+    <div class="row"><label>帯別閾値 自動更新:</label><span>${escape(params.landDistanceThresholdAuto ? 'ON' : 'OFF')}</span></div>
     <div class="row"><label>低地・乾燥地間距離閾値:</label><span>${escape(landDistanceThresholdAverage)}</span></div>
     <div class="row"><label>上端・下端ツンドラ追加グリッド数:</label><span>${escape(params.tundraExtraRows)}</span></div>
     <div class="row"><label>上端・下端ツンドラ総グリッド数:</label><span>${escape(topTundraRowsComputed)}</span></div>

@@ -139,7 +139,17 @@ export function applyLowlandAroundLakes(vm, options) {
         }
     } else {
         for (const lake of (lakesList || [])) {
-            const R = lake.radius;
+            // Recompute radius from current band threshold at lake start cell if possible,
+            // so that Revise / GI changes affect lake lowland radius automatically.
+            let R = lake && Number.isFinite(lake.radius) ? Number(lake.radius) : 0;
+            if (lake && typeof vm._getLandDistanceThresholdForRow === 'function' && typeof lake.startY === 'number' && typeof lake.startX === 'number') {
+                try {
+                    const bandThreshold = Number(vm._getLandDistanceThresholdForRow(lake.startY, lake.startX)) || baseLandThr || 0;
+                    R = Math.ceil(bandThreshold / 5);
+                } catch (e) {
+                    // fallback to precomputed radius
+                }
+            }
             if (!Number.isFinite(R) || R <= 0) continue;
             for (const cellIdx of (lake.cells || [])) {
                 const gx = cellIdx % vm.gridWidth;
