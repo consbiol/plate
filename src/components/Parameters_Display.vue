@@ -585,11 +585,13 @@ export default {
 
       // 気候モデルの地形面積率も更新（これを advanceClimateOneTurn より前に行う）
       try {
+        const era = this.local && this.local.era ? this.local.era : this.storeEra;
         await this.$store?.dispatch?.('updateClimateTerrainFractions', {
           gridTypeCounts: this.stats && this.stats.gridTypeCounts ? this.stats.gridTypeCounts : null,
           preGlacierStats: (this.stats && this.stats.preGlacier) ? this.stats.preGlacier : null,
           gridWidth: this.gridWidth,
-          gridHeight: this.gridHeight
+          gridHeight: this.gridHeight,
+          era
         });
       } catch (e) { /* ignore */ }
 
@@ -804,7 +806,8 @@ export default {
           gridTypeCounts: this.stats.gridTypeCounts,
           preGlacierStats: payload.preGlacierStats || null,
           gridWidth: this.gridWidth,
-          gridHeight: this.gridHeight
+          gridHeight: this.gridHeight,
+          era
         });
         // updateClimateTerrainFractions が反映された直後の store state を使って
         // 放射平衡温度を再計算し、averageTemperature_calc を最新化して popup に反映する。
@@ -955,9 +958,9 @@ export default {
         if (turn && turn.era && this.storeEra !== turn.era) {
           this.$store?.dispatch?.('updateEra', turn.era);
         }
-        // 60ターンごとに update（中心点保持の再生成）
+        // 120ターンごとに update（中心点保持の再生成）
         try {
-          if (turn && typeof turn.Time_turn === 'number' && (turn.Time_turn % 60 === 0)) {
+          if (turn && typeof turn.Time_turn === 'number' && (turn.Time_turn % 120 === 0)) {
             const calc = this.$refs?.calc || null;
             calc?.runGenerate?.({ preserveCenterCoordinates: true });
           }

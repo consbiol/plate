@@ -14,6 +14,7 @@ import { generateLakes, applyLowlandAroundLakes } from '../utils/terrain/lakes.j
 import { generateHighlands } from '../utils/terrain/highlands.js';
 import { generateAlpines } from '../utils/terrain/alpines.js';
 import { generateFeatures } from '../utils/terrain/features.js';
+import { getBiasedCityProbability } from '../utils/terrain/features/probability.js';
 import { computeDistanceMap } from '../utils/pathfinding/distanceMap.js';
 import { applyGlaciers } from '../utils/terrain/glaciers.js';
 import { applyTundra } from '../utils/terrain/tundra.js';
@@ -1338,6 +1339,7 @@ export default {
       // gridData を再構築（Plane更新用）。文明要素は不整合なら削除
       const N = c.N;
       const base = Array.isArray(c.gridDataBase) ? c.gridDataBase : [];
+      
       const cityMask = new Array(N).fill(false);
       const cultivatedMask = new Array(N).fill(false);
       const bryophyteMask = new Array(N).fill(false);
@@ -1379,6 +1381,68 @@ export default {
       // 中心点マーキングは維持
       markCentersOnGridData(this, { gridData, centers: c.centers });
 
+      // --- 苔類進出（軽量版） ---
+      // Generate の「苔クラスター生成」は重いので、Revise では
+      // 「non-lowland → lowland に戻ったセル」だけ苔を再サンプルする。
+      // これにより、氷河→低地復活などの後でも苔率が毎ターンの気候計算へ反映され続ける。
+      const isBryophyteEra = (this.era === '苔類進出時代');
+      const isCivilizationEra = (this.era === '文明時代');
+      const isSeaCivilizationEra = (this.era === '海棲文明時代');
+      const baseBryo = Math.max(0, Number(this.bryophyteGenerationProbability || 0));
+      const baseCult = Math.max(0, Number(this.cultivatedGenerationProbability || 0));
+      const baseCity = Math.max(0, Number(this.cityGenerationProbability || 0));
+      const countPollutedAreas = Math.max(0, Math.floor(Number(this.pollutedAreasCount || 0)));
+      const baseSeaCult = Math.max(0, Number(this.seaCultivatedGenerationProbability || 0));
+      const baseSeaCity = Math.max(0, Number(this.seaCityGenerationProbability || 0));
+      const countSeaPollutedAreas = Math.max(0, Math.floor(Number(this.seaPollutedAreasCount || 0)));
+      
+      const dirs8 = [
+        [-1, -1], [0, -1], [1, -1],
+        [-1, 0], /*0,0*/ [1, 0],
+        [-1, 1], [0, 1], [1, 1]
+      ];
+      const isAdjacentToSea = (gx, gy) => {
+        for (let di = 0; di < dirs8.length; di++) {
+          const d = dirs8[di];
+          const w = this.torusWrap(gx + d[0], gy + d[1]);
+          if (!w) continue;
+          const nIdx = w.y * this.gridWidth + w.x;
+          if (!c.landMask[nIdx]) return true;
+        }
+        return false;
+      };
+      const isAdjacentToLand = (gx, gy) => {
+        for (let di = 0; di < dirs8.length; di++) {
+          const d = dirs8[di];
+          const w = this.torusWrap(gx + d[0], gy + d[1]);
+          if (!w) continue;
+          const nIdx = w.y * this.gridWidth + w.x;
+          if (c.landMask[nIdx]) return true;
+        }
+        return false;
+      };
+
+      // 汚染は本来「クラスター生成（重い）」だが、Reviseでは軽量に扱う。
+      // 目標セル数 ≒ countAreas * 20（generateFeatures の targetMean=20 に合わせる）
+      // ただし、Revise では「戻ったセルだけ」なので、概算確率で十分。
+      let lowlandCount = 0;
+      let shallowCount = 0;
+      for (let i = 0; i < N; i++) {
+        const cell = gridData[i];
+        if (!cell || !cell.terrain) continue;
+        if (cell.terrain.type === 'land') {
+          if (cell.terrain.land === 'lowland') lowlandCount++;
+        } else {
+          if (cell.terrain.sea === 'shallow') shallowCount++;
+        }
+      }
+      const pPollutedApprox = Math.min(1, (countPollutedAreas > 0) ? ((countPollutedAreas * 20) / Math.max(1, lowlandCount)) : 0);
+      const pSeaPollutedApprox = Math.min(1, (countSeaPollutedAreas > 0) ? ((countSeaPollutedAreas * 20) / Math.max(1, shallowCount)) : 0);
+      // city bias 設定（generateFeatures と同等の定数）
+      const cityBiasScale = 0.01;
+      const cityBiasMin = 0.05;
+      const cityBiasMax = 8.0;
+
       // 不整合なら削除（地形に合わないフラグを落とす）
       for (let i = 0; i < N; i++) {
         const cell = gridData[i];
@@ -1387,10 +1451,81 @@ export default {
           const land = cell.terrain.land;
           const isLowland = (land === 'lowland');
           if (!isLowland) {
-            cell.city = false;
-            cell.cultivated = false;
-            cell.bryophyte = false;
-            cell.polluted = false;
+            // 変更: 都市/耕作/汚染/海棲系をツンドラ上でも維持する仕様に合わせる。
+            // non-lowland のうち、以下の landTypes の場合のみ完全削除する:
+            // glacier, desert, highland, alpine
+            const landType = land;
+            const fullyIneligible = (landType === 'glacier' || landType === 'desert' || landType === 'highland' || landType === 'alpine');
+            if (fullyIneligible) {
+              // これらは明確に文明要素が維持できないと判断してフラグを消す
+              cell.city = false;
+              cell.cultivated = false;
+              cell.polluted = false;
+              cell.bryophyte = false;
+            } else {
+              // それ以外（例: tundra）は苔/都市/耕作/汚染を維持する
+            }
+          }
+          // non-lowland → lowland に戻った場合のみ、苔を軽量に再サンプル
+          else if (isBryophyteEra) {
+            const prev = base[i];
+            const prevIsLowland = !!(prev && prev.terrain && prev.terrain.type === 'land' && prev.terrain.land === 'lowland');
+            if (!prevIsLowland && !cell.bryophyte && !cell.city && !cell.cultivated && !cell.polluted) {
+              const gx = i % this.gridWidth;
+              const gy = Math.floor(i / this.gridWidth);
+              const adjSea = isAdjacentToSea(gx, gy);
+              const p = Math.min(1, adjSea ? (baseBryo * 100) : baseBryo);
+              if (p > 0) {
+                const rng = createDerivedRng(this.deterministicSeed, 'bryophyte-revise', `i${i}`) || Math.random;
+                if (rng() < p) cell.bryophyte = true;
+              }
+            }
+          }
+          // non-lowland → lowland に戻った場合のみ、文明要素を軽量に再サンプル
+          else if (isCivilizationEra) {
+            const prev = base[i];
+            const prevIsLowland = !!(prev && prev.terrain && prev.terrain.type === 'land' && prev.terrain.land === 'lowland');
+            if (!prevIsLowland) {
+              const gx = i % this.gridWidth;
+              const gy = Math.floor(i / this.gridWidth);
+              const adjSea = isAdjacentToSea(gx, gy);
+              // cultivated（先に）
+              if (!cell.cultivated) {
+                const pCult = Math.min(1, adjSea ? (baseCult * 5) : baseCult);
+                if (pCult > 0) {
+                  const rng = createDerivedRng(this.deterministicSeed, 'cultivated-revise', `i${i}`) || Math.random;
+                  if (rng() < pCult) cell.cultivated = true;
+                }
+              }
+              // city（後で）
+              if (!cell.city) {
+                const pcCity = getBiasedCityProbability({
+                  ctx: this,
+                  gx,
+                  gy,
+                  baseProbability: baseCity,
+                  isAdjacentFn: isAdjacentToSea,
+                  biasScale: cityBiasScale,
+                  biasMin: cityBiasMin,
+                  biasMax: cityBiasMax,
+                  adjacencyMultiplier: 5
+                });
+                if (pcCity > 0) {
+                  const rng = createDerivedRng(this.deterministicSeed, 'city-revise', `i${i}`) || Math.random;
+                  if (rng() < pcCity) cell.city = true;
+                }
+              }
+              // polluted（概算、低地/都市/農地上）
+              if (countPollutedAreas > 0 && !cell.polluted) {
+                // 生成側は「海岸セル重み10」だが、Reviseは戻りセルだけなので簡易に海岸優遇のみ残す
+                const w = adjSea ? 10 : 1;
+                const p = Math.min(1, pPollutedApprox * w);
+                if (p > 0) {
+                  const rng = createDerivedRng(this.deterministicSeed, 'polluted-revise', `i${i}`) || Math.random;
+                  if (rng() < p) cell.polluted = true;
+                }
+              }
+            }
           }
           // 海棲系は陸なら全消し
           cell.seaCity = false;
@@ -1404,6 +1539,51 @@ export default {
             cell.seaCity = false;
             cell.seaCultivated = false;
             cell.seaPolluted = false;
+          }
+          // non-shallow → shallow に戻った場合のみ、海棲文明要素を軽量に再サンプル
+          else if (isSeaCivilizationEra) {
+            const prev = base[i];
+            const prevIsShallow = !!(prev && prev.terrain && prev.terrain.type === 'sea' && prev.terrain.sea === 'shallow');
+            if (!prevIsShallow) {
+              const gx = i % this.gridWidth;
+              const gy = Math.floor(i / this.gridWidth);
+              const adjLand = isAdjacentToLand(gx, gy);
+              // seaCultivated（先に）
+              if (!cell.seaCultivated) {
+                const pSeaCult = Math.min(1, adjLand ? (baseSeaCult * 5) : baseSeaCult);
+                if (pSeaCult > 0) {
+                  const rng = createDerivedRng(this.deterministicSeed, 'sea-cultivated-revise', `i${i}`) || Math.random;
+                  if (rng() < pSeaCult) cell.seaCultivated = true;
+                }
+              }
+              // seaCity（後で）
+              if (!cell.seaCity) {
+                const pcSeaCity = getBiasedCityProbability({
+                  ctx: this,
+                  gx,
+                  gy,
+                  baseProbability: baseSeaCity,
+                  isAdjacentFn: isAdjacentToLand,
+                  biasScale: cityBiasScale,
+                  biasMin: cityBiasMin,
+                  biasMax: cityBiasMax,
+                  adjacencyMultiplier: 5
+                });
+                if (pcSeaCity > 0) {
+                  const rng = createDerivedRng(this.deterministicSeed, 'sea-city-revise', `i${i}`) || Math.random;
+                  if (rng() < pcSeaCity) cell.seaCity = true;
+                }
+              }
+              // seaPolluted（概算、浅瀬/海棲都市/海棲農地上）
+              if (countSeaPollutedAreas > 0 && !cell.seaPolluted) {
+                const w = adjLand ? 10 : 1;
+                const p = Math.min(1, pSeaPollutedApprox * w);
+                if (p > 0) {
+                  const rng = createDerivedRng(this.deterministicSeed, 'sea-polluted-revise', `i${i}`) || Math.random;
+                  if (rng() < p) cell.seaPolluted = true;
+                }
+              }
+            }
           }
           // 陸系は海なら全消し
           cell.city = false;

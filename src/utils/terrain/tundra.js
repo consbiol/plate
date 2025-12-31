@@ -5,6 +5,8 @@ function isSeedStrictEra(vm) {
   return (vm.era === '文明時代' || vm.era === '海棲文明時代');
 }
 
+
+
 export function applyTundra(vm, {
   colors,
   landNoiseAmplitude,

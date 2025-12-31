@@ -140,7 +140,7 @@ export function getEraColors_BryophyteExpansion() {
         desert: '#d2a68c',
         highland: '#91644B',
         alpine: '#5F5046',
-        tundra: '#c88e6a',
+        tundra: '#b47700',
         bryophyte: '#7ea836',
         glacier: '#E6EEF2',
         border: '#000000'

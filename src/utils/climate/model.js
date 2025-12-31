@@ -150,27 +150,30 @@ export function computeNextClimateTurn(cur) {
     const f_glacier = Number(terrain.f_glacier) || 0;
     const f_land_original = Number(terrain.f_land_original) || 0.3;
 
-    // CO2
-    const f_weather =
-        clamp((f_cloud - 0.25) / 0.5, 0, 1)
-        * (1 / (1 + Math.exp((averageTemperature - 45) / 5)));
+    // CO2吸収の調整項
+    const f_weather = Math.max(
+        0.01,
+        1 / (1 + Math.exp((averageTemperature - 90) / 5))
+    );
 
     const CO2_abs_rock =
         Turn_yr
-        * 0.00002
+        * 0.00000001
         * (f_land / 0.3)
         * Math.exp((averageTemperature - 15) / 17)
-        * Math.pow((f_CO2 / 0.0004), 0.25)
+        * Math.pow((f_CO2 / 0.0004), 0.5)
         * f_weather;
 
     const Pland_t = computePland_t(era);
     const CO2_abs_plant =
-        Turn_yr
-        * 0.001
-        * Pland_t
-        * (f_green / 0.3)
-        * Math.exp(-sq((averageTemperature - 22.5) / 15))
-        * ((3 * f_CO2) / (f_CO2 + 0.0008));
+        (f_CO2 < 0.0001) ? 0 : (
+            Turn_yr
+            * 0.00000005
+            * Pland_t
+            * (f_green / 0.3)
+            * Math.exp(-sq((averageTemperature - 22.5) / 15))
+            * ((3 * f_CO2) / (f_CO2 + 0.0008))
+        );
 
     const CO2_abs_total = CO2_abs_rock + CO2_abs_plant;
 

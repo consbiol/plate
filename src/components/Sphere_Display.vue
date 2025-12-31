@@ -99,7 +99,16 @@ export default {
     },
     gridData() {
       // 参照が差し替わったタイミングでのみ発火（deep watchは重いので避ける）
-      this.scheduleWebGLTextureRefreshAndRedraw();
+      // 描画負荷軽減のため、表示更新は 5 ターンごとに限定する。
+      try {
+        const turnObj = this.$store && this.$store.getters && this.$store.getters.climateTurn;
+        const turnNum = (turnObj && typeof turnObj.Time_turn === 'number') ? turnObj.Time_turn : null;
+        const shouldUpdate = (turnNum === null) ? true : (turnNum % 5 === 0);
+        if (shouldUpdate) this.scheduleWebGLTextureRefreshAndRedraw();
+      } catch (e) {
+        // 万一取得に失敗したらフォールバックで更新する（安全策）
+        this.scheduleWebGLTextureRefreshAndRedraw();
+      }
     },
     landTintColor() {
       this.scheduleWebGLTextureRefreshAndRedraw();

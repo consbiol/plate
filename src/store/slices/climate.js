@@ -68,6 +68,7 @@ function buildDefaultClimateState() {
             f_alpine: 0,
             f_tundra: 0,
             f_lake: 0,
+            f_bryophyte: 0,
             f_city: 0,
             f_cultivated: 0,
             f_polluted: 0,
@@ -253,13 +254,14 @@ export function createClimateSlice() {
             },
 
             // Parameters_Display 側から「地形面積率」を注入
-            updateClimateTerrainFractions({ commit, state }, { gridTypeCounts, preGlacierStats, gridWidth, gridHeight } = {}) {
+            updateClimateTerrainFractions({ commit, state }, { gridTypeCounts, preGlacierStats, gridWidth, gridHeight, era } = {}) {
                 const cur = state.climate || buildDefaultClimateState();
                 const terrain = buildTerrainFractionsFromTypeCounts({
                     typeCounts: gridTypeCounts,
                     preGlacierStats,
                     gridWidth,
-                    gridHeight
+                    gridHeight,
+                    era
                 });
                 commit('setClimate', { ...cur, terrain: { ...cur.terrain, ...terrain } });
             },
