@@ -104,7 +104,7 @@ export default {
     // 海棲汚染地クラスター数（マップ全体、開始セルはシードで決定）
     seaPollutedAreasCount: { type: Number, required: false, default: 1 },
     // 大陸中心点を赤で表示（平面地図オーバーレイ）
-    showCentersRed: { type: Boolean, required: false, default: true },
+    showCentersRed: { type: Boolean, required: false, default: false },
     // 中心点近傍の陸生成バイアス（0で無効、値を上げると中心付近が陸になりやすい）
     centerBias: { type: Number, required: false, default: 0.8 },
     // 指定要素のみ決定化するためのシード（未指定時は従来通り）
@@ -1423,7 +1423,7 @@ export default {
     // - 氷河行数を再計算して反映
     // - 文明要素は不整合なら削除
     // - 低頻度側の地形（海陸/湖/高地/高山/中心点）は保持
-    runReviseHighFrequency() {
+    runReviseHighFrequency({ emit = true } = {}) {
       const c = this.hfCache;
       if (!c || !c.N || !Array.isArray(c.preTundraColors)) return;
 
@@ -1446,7 +1446,9 @@ export default {
         computedSmoothedTopGlacierRowsWater
       });
       const { gridData } = this._reviseRebuildGridDataAndSanitizeFeatures({ c, colors });
-      this.$emit('revised', { gridData, computedTopGlacierRows });
+      const payload = { gridData, computedTopGlacierRows };
+      if (emit) this.$emit('revised', payload);
+      return payload;
     }
   }
 }

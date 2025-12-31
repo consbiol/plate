@@ -354,7 +354,7 @@ export default {
     seaCultivatedProbability: { type: Number, required: false, default: PARAM_DEFAULTS.seaCultivatedProbability },
     // 海棲汚染地クラスター数（マップ全体、シードで開始セルを決定）
     seaPollutedAreasCount: { type: Number, required: false, default: PARAM_DEFAULTS.seaPollutedAreasCount },
-    // 大陸中心点を赤で表示（デフォルト: ON）
+    // 大陸中心点を赤で表示（デフォルト: OFF）
     showCentersRed: { type: Boolean, required: false, default: PARAM_DEFAULTS.showCentersRed },
     // 中心点近傍の陸生成バイアス（0で無効、値を上げると中心付近が陸になりやすい）
     centerBias: { type: Number, required: false, default: PARAM_DEFAULTS.centerBias }
@@ -551,6 +551,53 @@ export default {
     }
   },
   methods: {
+    async _applyRevisedPayload(payload, { updatePlane = true } = {}) {
+      // Turn中の「順序保証」用: Grids_Calculation の revise 結果を、emit経由ではなく同期的に反映する。
+      const gridData = (payload && Array.isArray(payload.gridData)) ? payload.gridData : [];
+      if (!this.stats) this.stats = {};
+      if (payload && typeof payload.computedTopGlacierRows === 'number') {
+        this.stats = { ...(this.stats || {}), computedTopGlacierRows: payload.computedTopGlacierRows };
+      }
+
+      // Plane用の表示色は、必要なとき（updatePlane=true）だけ計算して更新
+      if (updatePlane) {
+        try {
+          const era = this.local && this.local.era ? this.local.era : this.storeEra;
+          const eraColors = getEraTerrainColors(era);
+          const displayColors = (gridData && gridData.length === this.gridWidth * this.gridHeight)
+            ? deriveDisplayColorsFromGridData(gridData, this.gridWidth, this.gridHeight, undefined, eraColors, /*preferPalette*/ true)
+            : [];
+          this.planeDisplayColors = Array.isArray(displayColors) ? displayColors : [];
+        } catch (e) {
+          this.planeDisplayColors = [];
+        }
+      }
+
+      // 統計（グリッド種類カウント）を更新して、Parameters popupにも反映
+      this._updateGridTypeCountsFromGridData(gridData);
+      this.openOrUpdatePopup();
+
+      // グリッドデータをローカル/ストアにも反映して Sphere などが最新の氷河描写を使えるようにする
+      this.gridDataLocal = Array.isArray(gridData) ? gridData : [];
+      try {
+        await this.$store?.dispatch?.('updateGridData', Array.isArray(gridData) ? gridData : []);
+      } catch (e) { /* ignore */ }
+
+      // 気候モデルの地形面積率も更新（これを advanceClimateOneTurn より前に行う）
+      try {
+        await this.$store?.dispatch?.('updateClimateTerrainFractions', {
+          gridTypeCounts: this.stats && this.stats.gridTypeCounts ? this.stats.gridTypeCounts : null,
+          preGlacierStats: (this.stats && this.stats.preGlacier) ? this.stats.preGlacier : null,
+          gridWidth: this.gridWidth,
+          gridHeight: this.gridHeight
+        });
+      } catch (e) { /* ignore */ }
+
+      // Plane iframe 更新は「外に見える部分」なので、必要なときだけ
+      if (updatePlane) {
+        this.updatePlaneIframeOnly();
+      }
+    },
     applyGreenIndexToLandDistanceThresholds() {
       // OFFのときは手動上書きを尊重して何もしない
       if (!this.local || !this.local.landDistanceThresholdAuto) return;
@@ -785,48 +832,9 @@ export default {
       this.openOrUpdatePopup();
     },
 
-    onRevised(payload) {
+    async onRevised(payload) {
       // Revise は Plane map のみ更新（Sphereは更新しない）
-      const gridData = (payload && Array.isArray(payload.gridData)) ? payload.gridData : [];
-      if (!this.stats) this.stats = {};
-      if (payload && typeof payload.computedTopGlacierRows === 'number') {
-        this.stats = { ...(this.stats || {}), computedTopGlacierRows: payload.computedTopGlacierRows };
-      }
-
-      // 平面表示色（+2枠）を更新
-      try {
-        const era = this.local && this.local.era ? this.local.era : this.storeEra;
-        const eraColors = getEraTerrainColors(era);
-        const displayColors = (gridData && gridData.length === this.gridWidth * this.gridHeight)
-          ? deriveDisplayColorsFromGridData(gridData, this.gridWidth, this.gridHeight, undefined, eraColors, /*preferPalette*/ true)
-          : [];
-        this.planeDisplayColors = Array.isArray(displayColors) ? displayColors : [];
-      } catch (e) {
-        this.planeDisplayColors = [];
-      }
-
-      // 統計（グリッド種類カウント）を更新して、Parameters popupにも反映
-      this._updateGridTypeCountsFromGridData(gridData);
-      this.openOrUpdatePopup();
-
-      // グリッドデータをローカル/ストアにも反映して Sphere などが最新の氷河描写を使えるようにする
-      this.gridDataLocal = Array.isArray(gridData) ? gridData : [];
-      try {
-        this.$store?.dispatch?.('updateGridData', Array.isArray(gridData) ? gridData : []);
-      } catch (e) { /* ignore */ }
-
-      // 気候モデルの地形面積率も更新
-      try {
-        this.$store?.dispatch?.('updateClimateTerrainFractions', {
-          gridTypeCounts: this.stats && this.stats.gridTypeCounts ? this.stats.gridTypeCounts : null,
-          preGlacierStats: (this.stats && this.stats.preGlacier) ? this.stats.preGlacier : null,
-          gridWidth: this.gridWidth,
-          gridHeight: this.gridHeight
-        });
-      } catch (e) { /* ignore */ }
-
-      // Plane iframe だけ差し替え（sphere iframeは触らない）
-      this.updatePlaneIframeOnly();
+      await this._applyRevisedPayload(payload, { updatePlane: true });
     },
 
     // ---------------------------
@@ -903,18 +911,35 @@ export default {
         this._runOneTurnTick();
       }, w);
     },
-    _runOneTurnTick() {
+    async _runOneTurnTick() {
       if (!this.$store?.getters?.climateTurn?.isRunning) return;
       const start = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
 
+      // Step8: ターンごとの地形更新（重要）
+      // 要件: 「同一ターン内で最新地形の面積率を使って気候を計算」するため、
+      // 1) 地形(Revise) → 2) 面積率(store)更新 → 3) 気候を1ターン進める の順序にする。
       try {
-        this.$store?.dispatch?.('advanceClimateOneTurn');
+        const turn = this.$store?.getters?.climateTurn;
+        const nextTurn = (turn && typeof turn.Time_turn === 'number') ? (turn.Time_turn + 1) : 1;
+        const shouldUpdatePlane = (nextTurn % 5 === 0);
+        const calc = this.$refs?.calc || null;
+        if (calc && typeof calc.runReviseHighFrequency === 'function') {
+          const revisedPayload = calc.runReviseHighFrequency({ emit: false });
+          if (revisedPayload) {
+            await this._applyRevisedPayload(revisedPayload, { updatePlane: shouldUpdatePlane });
+          }
+        }
+      } catch (e) { /* ignore */ }
+
+      try {
+        await this.$store?.dispatch?.('advanceClimateOneTurn');
       } catch (e) { /* ignore */ }
 
       // 気候の出力を既存ストアへ統合（描画/地形UIが追従できるように）
       try {
         const v = this.$store?.getters?.climateVars;
         const turn = this.$store?.getters?.climateTurn;
+        const calc = this.$refs?.calc || null;
         if (v && typeof v.averageTemperature === 'number') {
           this.$store?.dispatch?.('updateAverageTemperature', v.averageTemperature);
           // 氷河行数は平均気温に連動するので、UI側ローカルも更新
@@ -930,15 +955,10 @@ export default {
         if (turn && turn.era && this.storeEra !== turn.era) {
           this.$store?.dispatch?.('updateEra', turn.era);
         }
-        // Step8: ターンごとの地形更新（重要）
-        // Signal(=prop更新)経由だとVueのnextTickに依存して「次ターン開始より後に走る」ことがあるため、
-        // ターン進行中は $refs.calc のメソッドを直接呼び、地形→面積率更新→次ターン開始の順序を保証する。
-        const calc = this.$refs?.calc || null;
-        // revise は毎ターン
-        try { calc?.runReviseHighFrequency?.(); } catch (e) { /* ignore */ }
         // 60ターンごとに update（中心点保持の再生成）
         try {
           if (turn && typeof turn.Time_turn === 'number' && (turn.Time_turn % 60 === 0)) {
+            const calc = this.$refs?.calc || null;
             calc?.runGenerate?.({ preserveCenterCoordinates: true });
           }
         } catch (e) { /* ignore */ }

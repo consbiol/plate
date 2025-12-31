@@ -61,7 +61,7 @@ export const PARAM_DEFAULTS = Object.freeze({
     seaCityProbability: 0.002,
     seaCultivatedProbability: 0.05,
     seaPollutedAreasCount: 1,
-    showCentersRed: true,
+    showCentersRed: false,
     centerBias: 0.5
 });
 

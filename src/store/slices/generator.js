@@ -26,6 +26,12 @@ export function createGeneratorSlice({ persisted = null } = {}) {
     if (persistedGen && Object.prototype.hasOwnProperty.call(persistedGen, 'f_cloud')) {
         delete persistedGen.f_cloud;
     }
+    // Migration: prefer new default for showCentersRed (treat persisted value as legacy).
+    // If persisted generatorParams contains showCentersRed, remove it so the current
+    // PARAM_DEFAULTS.showCentersRed (false) is used as the initial value.
+    if (persistedGen && Object.prototype.hasOwnProperty.call(persistedGen, 'showCentersRed')) {
+        delete persistedGen.showCentersRed;
+    }
     const initialParams = persistedGen
         ? { ...defaultParams, ...persistedGen }
         : defaultParams;
