@@ -125,6 +125,9 @@ export default {
       baseLandDistanceThresholdFixed: null,
       // Drift中は deterministicSeed 由来の派生RNG（shape-profile等）を無効化して「全ノイズをランダム」にする
       forceRandomDerivedRng: false,
+      // Generate に既に入っていて、新しい生成リクエストが来たか
+      isGenerateRunning: false,
+      pendingGenerateOptions: null,
 
       // --- Drift の「ターン」状態（driftSignal 1回 = 1ターン） ---
       driftTurn: 0,
@@ -138,12 +141,12 @@ export default {
   },
   watch: {
     generateSignal() {
-      this.runGenerate();
+      this._scheduleGenerate({ preserveCenterCoordinates: false });
     },
     updateSignal() {
       // Update は中心座標を維持するが、ドリフト状態（superPloom_calc/superPloom/phase）は
       // 初期化せずにそのまま保持する（generate と挙動を分ける）。
-      this.runGenerate({ preserveCenterCoordinates: true });
+      this._scheduleGenerate({ preserveCenterCoordinates: true });
     },
     reviseSignal() {
       this.runReviseHighFrequency();
@@ -153,6 +156,27 @@ export default {
     }
   },
   methods: {
+    _scheduleGenerate(options = {}) {
+      const opts = {
+        preserveCenterCoordinates: false,
+        ...options
+      };
+      if (this.isGenerateRunning) {
+        this.pendingGenerateOptions = opts;
+        return;
+      }
+      this.isGenerateRunning = true;
+      try {
+        this.runGenerate(opts);
+      } finally {
+        this.isGenerateRunning = false;
+      }
+      if (this.pendingGenerateOptions) {
+        const next = this.pendingGenerateOptions;
+        this.pendingGenerateOptions = null;
+        this._scheduleGenerate(next);
+      }
+    },
     // --- ctx builders: ctx 化のために依存を明示する（挙動は変えない） ---
     _buildLakesCtx() {
       return {

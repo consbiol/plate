@@ -85,7 +85,10 @@ function buildDefaultClimateState() {
             solarEvolution: null,
             greenIndex: 1,
 
+            CO2_abs_rock: 0,
+            CO2_abs_plant: 0,
             CO2_abs_total: 0,
+            CO2_release_volcano: 0,
             CO2_release_total: 0,
             O2_abs_total: 0,
             O2_release_total: 0,

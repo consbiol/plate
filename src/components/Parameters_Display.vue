@@ -760,17 +760,24 @@ export default {
           gridHeight: this.gridHeight
         });
         // updateClimateTerrainFractions が反映された直後の store state を使って
-        // 放射平衡温度を再計算し、averageTemperature_calc を最新化して popup に反映する
-        try {
-          const curClimate = this.$store?.getters?.climate ?? null;
-          if (curClimate) {
-            const out = computeRadiativeEquilibriumTempK(curClimate, { conservative: true });
-            if (out && typeof out.averageTemperature_calc === 'number') {
-              // patchClimate mutation を使って vars.averageTemperature_calc を更新
-              try { this.$store.commit('patchClimate', { vars: { ...(curClimate.vars || {}), averageTemperature_calc: out.averageTemperature_calc, Sol: out.Sol, f_cloud: out.f_cloud } }); } catch (e) { /* ignore */ }
+        // 放射平衡温度を再計算し、averageTemperature_calc を最新化して popup に反映する。
+        //
+        // NOTE:
+        // - これは近似（albedo等が簡略）であり、ターン進行中の自動 update（60ターン毎など）で
+        //   毎回上書きすると averageTemperature_calc が一時的に大きく跳ねるため、
+        //   ユーザーが明示的に Generate を押したときだけ実行する。
+        if (this.lastRunMode === 'generate') {
+          try {
+            const curClimate = this.$store?.getters?.climate ?? null;
+            if (curClimate) {
+              const out = computeRadiativeEquilibriumTempK(curClimate, { conservative: true });
+              if (out && typeof out.averageTemperature_calc === 'number') {
+                // patchClimate mutation を使って vars.averageTemperature_calc を更新
+                try { this.$store.commit('patchClimate', { vars: { ...(curClimate.vars || {}), averageTemperature_calc: out.averageTemperature_calc, Sol: out.Sol, f_cloud: out.f_cloud } }); } catch (e) { /* ignore */ }
+              }
             }
-          }
-        } catch (e) { /* ignore */ }
+          } catch (e) { /* ignore */ }
+        }
         this.openOrUpdateClimatePopup();
       } catch (e) { /* ignore */ }
       this.lastRunMode = null;
@@ -832,7 +839,9 @@ export default {
       if (!w) return;
       try {
         const doc = w.document;
+        const curClimate = this.$store?.getters?.climate ?? null;
         const html = buildClimateOutputHtml({
+          climate: curClimate,
           climateTurn: this.climateTurn,
           climateVars: this.climateVars,
           climateHistory: this.climateHistory
@@ -921,23 +930,24 @@ export default {
         if (turn && turn.era && this.storeEra !== turn.era) {
           this.$store?.dispatch?.('updateEra', turn.era);
         }
-        // Step8: 1ターンごとに reviseSignal を発火して高頻度更新を行う
-        try {
-          // revise は毎ターン
-          this.reviseSignal += 1;
-        } catch (e) { /* ignore */ }
-        // 60ターンごとに updateSignal を発火
+        // Step8: ターンごとの地形更新（重要）
+        // Signal(=prop更新)経由だとVueのnextTickに依存して「次ターン開始より後に走る」ことがあるため、
+        // ターン進行中は $refs.calc のメソッドを直接呼び、地形→面積率更新→次ターン開始の順序を保証する。
+        const calc = this.$refs?.calc || null;
+        // revise は毎ターン
+        try { calc?.runReviseHighFrequency?.(); } catch (e) { /* ignore */ }
+        // 60ターンごとに update（中心点保持の再生成）
         try {
           if (turn && typeof turn.Time_turn === 'number' && (turn.Time_turn % 60 === 0)) {
-            this.updateSignal += 1;
+            calc?.runGenerate?.({ preserveCenterCoordinates: true });
           }
         } catch (e) { /* ignore */ }
-        // driftSignal は "2000000/Turn_yr" ターンごとに発火（最小1ターン）
+        // drift は "2000000/Turn_yr" ターンごと（最小1ターン）
         try {
           if (turn && typeof turn.Time_turn === 'number' && typeof turn.Turn_yr === 'number') {
             const interval = Math.max(1, Math.round(2000000 / Math.max(1, turn.Turn_yr)));
             if (interval > 0 && (turn.Time_turn % interval === 0)) {
-              this.driftSignal += 1;
+              calc?.runDrift?.();
             }
           }
         } catch (e) { /* ignore */ }

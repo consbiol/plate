@@ -386,7 +386,20 @@ export function computeNextClimateTurn(cur) {
             solarEvolution,
             greenIndex,
             CO2_abs_total,
+            CO2_abs_rock,
+            CO2_abs_plant,
             CO2_release_total,
+            CO2_release_volcano,
+            // expose intermediate / helper values for diagnostics/UI
+            f_weather,
+            land_abs_eff,
+            ocean_plantO2_base,
+            land_plantO2,
+            fungal_factor,
+            // expose constants used for H2O_eff calculation so UI can display them
+            T_sat,
+            dT,
+            H2O_max,
             O2_abs_total: O2_abs,
             O2_release_total: O2_prod,
             Pressure,
@@ -463,7 +476,10 @@ export function computeRadiativeEquilibriumTempK(state, options = {}) {
     const f_cloud = Math.max(0.001, Math.min(1, f_cloud_0 * (1 - 0.3 * hazeFrac) * CosmicRay));
 
     // H2O_eff approximation (use v0.averageTemperature as driver)
-    const averageTemperature = Number(s.baseAverageTemperature) || Number(v0.averageTemperature) || 15;
+    // NOTE: baseAverageTemperature は「時代初期値」なので、ここでは現在値（v0.averageTemperature）を優先する。
+    const averageTemperature = (typeof v0.averageTemperature === 'number')
+        ? Number(v0.averageTemperature)
+        : (Number(s.baseAverageTemperature) || 15);
     const T_sat = Number(constants.T_sat) || 40;
     const dT = Number(constants.dT) || 5;
     const H2O_max = Number(constants.H2O_max) || 2.9;
