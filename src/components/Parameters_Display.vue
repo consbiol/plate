@@ -18,9 +18,17 @@
       <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
         <button @click="onClickTurnStart" :disabled="!!climateTurn.isRunning">ターン進行</button>
         <button @click="onClickTurnStop" :disabled="!climateTurn.isRunning">ターン停止</button>
-        <button @click="adjustTurnSpeed(-0.1)">-</button>
-        <span>Turn_speed: <b>{{ (climateTurn.Turn_speed || 1).toFixed(1) }}</b> sec/turn</span>
-        <button @click="adjustTurnSpeed(0.1)">+</button>
+        <label style="display:flex; align-items:center; gap:8px; margin-left:8px;">
+          <!-- スライダーは対数スケールで -1..1 を exponent とし、10^exp が速度 (0.1..10) -->
+          <input type="range" min="-1" max="1" step="0.01" v-model.number="turnSliderExp" />
+          <span>Turn_speed: <b>{{ turnSpeed.toFixed(1) }}</b> sec/turn</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; margin-left:8px;">
+          <span>Turn_yr: </span>
+          <select :value="selectedTurnYr" @change="onTurnYrChange($event)">
+            <option v-for="v in turnYrOptions" :key="v" :value="v">{{ v }} yr</option>
+          </select>
+        </label>
         <button @click="openClimatePopup">気候パラメータ</button>
       </div>
       <div style="margin-top:6px; color:#333;">
@@ -396,6 +404,8 @@ export default {
       popupRef: null,
       climatePopupRef: null,
       stats: null,
+      // UIで選べる Turn_yr の選択肢
+      turnYrOptions: [10, 20, 100, 1000, 2000, 5000, 10000, 50000, 100000],
       // store<->local 同期のループ防止フラグ
       isSyncingLocalFromStore: false,
       // ターン進行のタイマー（setTimeout）
@@ -409,6 +419,16 @@ export default {
     storeEra() {
       return this.$store?.getters?.era ?? null;
     },
+    selectedTurnYr: {
+      get() {
+        const v = this.climateTurn && typeof this.climateTurn.Turn_yr === 'number' ? Number(this.climateTurn.Turn_yr) : 50000;
+        return v;
+      },
+      set(val) {
+        const n = Number(val) || 50000;
+        try { this.$store?.commit?.('patchClimate', { Turn_yr: n }); } catch (e) { /* ignore */ }
+      }
+    },
     storeGeneratorParams() {
       return this.$store?.getters?.generatorParams ?? null;
     },
@@ -417,6 +437,34 @@ export default {
     },
     climateTurn() {
       return this.$store?.getters?.climateTurn ?? { Time_turn: 0, Time_yr: 0, Turn_yr: 50000, Turn_speed: 1.0, isRunning: false, era: this.storeEra };
+    },
+    turnSpeed: {
+      get() {
+        return Number(this.climateTurn.Turn_speed || 1.0);
+      },
+      set(val) {
+        let v = Number(val);
+        if (!isFinite(v)) v = 1.0;
+        v = Math.max(0.1, Math.min(10, Math.round(v * 10) / 10));
+        this.$store?.dispatch?.('updateTurnSpeed', v);
+      }
+    },
+    turnSliderExp: {
+      get() {
+        const ts = Number(this.climateTurn.Turn_speed || 1.0);
+        // avoid NaN
+        const safeTs = (ts > 0) ? ts : 1.0;
+        return Math.log10(safeTs);
+      },
+      set(val) {
+        let exp = Number(val);
+        if (!isFinite(exp)) exp = 0;
+        // map back to speed and dispatch (clamped + rounded to 0.1)
+        let v = Math.pow(10, exp);
+        v = Math.max(0.1, Math.min(10, v));
+        v = Math.round(v * 10) / 10;
+        this.$store?.dispatch?.('updateTurnSpeed', v);
+      }
     },
     climateVars() {
       return this.$store?.getters?.climateVars ?? null;
@@ -551,6 +599,14 @@ export default {
     }
   },
   methods: {
+    onTurnYrChange(ev) {
+      try {
+        const raw = ev && ev.target ? ev.target.value : null;
+        const n = Number(raw);
+        if (!isFinite(n) || n <= 0) return;
+        this.$store.commit('patchClimate', { Turn_yr: n });
+      } catch (e) { /* ignore */ }
+    },
     async _applyRevisedPayload(payload, { updatePlane = true } = {}) {
       // Turn中の「順序保証」用: Grids_Calculation の revise 結果を、emit経由ではなく同期的に反映する。
       const gridData = (payload && Array.isArray(payload.gridData)) ? payload.gridData : [];
@@ -690,7 +746,8 @@ export default {
       try {
         const era = (this.local && this.local.era) ? this.local.era : this.storeEra;
         const seed = (this.local && typeof this.local.deterministicSeed !== 'undefined') ? this.local.deterministicSeed : '';
-        this.$store?.dispatch?.('initClimateFromGenerate', { era, deterministicSeed: seed });
+        // Generate では「時代デフォルトへ戻す」仕様（必須）
+        this.$store?.dispatch?.('initClimateFromGenerate', { era, deterministicSeed: seed, resetTurnYrToEraDefault: true });
         // climateVars に averageTemperature_calc (K) が入っている想定
         const cv = this.$store?.getters?.climateVars || {};
         if (cv && typeof cv.averageTemperature_calc === 'number') {
@@ -799,7 +856,8 @@ export default {
         const seed = (this.local && typeof this.local.deterministicSeed !== 'undefined') ? this.local.deterministicSeed : '';
         // 初期化は generate 操作のときのみ行う（update/revise/drift の emit では行わない）
         if (this.lastRunMode === 'generate') {
-          this.$store?.dispatch?.('initClimateFromGenerate', { era, deterministicSeed: seed });
+          // Generate では「時代デフォルトへ戻す」仕様（必須）
+          this.$store?.dispatch?.('initClimateFromGenerate', { era, deterministicSeed: seed, resetTurnYrToEraDefault: true });
         }
         // 地形面積率は常に最新に更新（同期で commit される）
         this.$store?.dispatch?.('updateClimateTerrainFractions', {
@@ -883,7 +941,8 @@ export default {
         if (needInit) {
           const era = (this.local && this.local.era) ? this.local.era : this.storeEra;
           const seed = (this.local && typeof this.local.deterministicSeed !== 'undefined') ? this.local.deterministicSeed : '';
-          this.$store?.dispatch?.('initClimateFromGenerate', { era, deterministicSeed: seed });
+          // turn開始時の初期化は、現在の Turn_yr（UI選択）を維持する
+          this.$store?.dispatch?.('initClimateFromGenerate', { era, deterministicSeed: seed, resetTurnYrToEraDefault: false });
           // terrain は未生成ならデフォルトのまま（Generate後は onGenerated で更新される）
         }
       } catch (e) { /* ignore */ }

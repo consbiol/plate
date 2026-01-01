@@ -190,12 +190,20 @@ export function createClimateSlice() {
         },
         actions: {
             // generateSignal 実行時にのみ初期化（revise/update/drift では初期化しない）
-            initClimateFromGenerate({ commit }, { era, deterministicSeed } = {}) {
+            initClimateFromGenerate({ commit, state }, { era, deterministicSeed, Turn_yrOverride, resetTurnYrToEraDefault } = {}) {
                 const nextEra = (typeof era === 'string' && ERAS.includes(era)) ? era : defaults.era;
                 const constants = buildSeededConstants({ deterministicSeed });
 
                 const initial = buildEraInitialClimate(nextEra);
-                const Turn_yr = buildEraTurnYr(nextEra);
+                const cur = (state && state.climate) ? state.climate : null;
+                const prevTurnYr = cur ? Number(cur.Turn_yr) : NaN;
+                const overrideCandidate = Number(Turn_yrOverride);
+                const shouldReset = (typeof resetTurnYrToEraDefault === 'boolean') ? resetTurnYrToEraDefault : false;
+                const Turn_yr = (typeof Turn_yrOverride !== 'undefined' && isFinite(overrideCandidate) && overrideCandidate > 0)
+                    ? overrideCandidate
+                    : (shouldReset
+                        ? buildEraTurnYr(nextEra)
+                        : (isFinite(prevTurnYr) && prevTurnYr > 0 ? prevTurnYr : buildEraTurnYr(nextEra)));
 
                 const terrain = { ...defaults.terrain };
                 const vars = {

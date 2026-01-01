@@ -3,7 +3,7 @@
 // - state構造は store/slices/climate.js の `climate` を前提
 
 import { clamp } from './math.js';
-import { buildEraTurnYr, buildTurnAlphaParams, buildEraTransitionRule, getNextEraByTime, buildEraInitialClimate } from './eraPresets.js';
+import { buildEraTurnYr, buildTurnAlphaParams, getNextEraByTime, buildEraInitialClimate } from './eraPresets.js';
 
 function safeLn(x) {
     const v = Number(x);
@@ -85,15 +85,12 @@ export function computeNextClimateTurn(cur) {
     const Time_yr = Number(state.Time_yr) || 0;
     let baseAverageTemperature = (typeof state.baseAverageTemperature === 'number') ? state.baseAverageTemperature : 15;
 
-    // Turn_yr（時代変遷の30ターン補正を優先）
+    // Turn_yr（UIで指定された値を優先。未設定なら era 既定値）
     let Turn_yr = Number(state.Turn_yr) || buildEraTurnYr(era);
-    let transitionTurnsRemaining = Number(state.transitionTurnsRemaining) || 0;
-    let transitionNextTurnYr = (typeof state.transitionNextTurnYr === 'number') ? state.transitionNextTurnYr : null;
-
-    const wasInTransitionAtStart = transitionTurnsRemaining > 0;
-    if (wasInTransitionAtStart) {
-        Turn_yr = 1000;
-    }
+    // NOTE: 以前あった「時代遷移の30ターン補正 (Turn_yr=1000)」は要件により削除。
+    // 互換のため state に古い transition* が残っていても無視し、常に 0/null にクリアして返す。
+    let transitionTurnsRemaining = 0;
+    let transitionNextTurnYr = null;
 
     const { GI_alpha, CO2_alpha, O2_alpha, Temp_alpha } = buildTurnAlphaParams(Turn_yr);
 
@@ -330,43 +327,24 @@ export function computeNextClimateTurn(cur) {
 
     // --- Step8: ターン終了処理 ---
     const nextTimeYr = Time_yr + Turn_yr;
-    const nextTimeTurn = Time_turn + 1;
+    let nextTimeTurn = Time_turn + 1;
 
     // --- Step9: 時代変更トリガー（時間経過） ---
     let nextEra = era;
     const { nextEra: eraByTime, didChange } = getNextEraByTime(era, nextTimeYr);
     if (didChange) {
         nextEra = eraByTime;
-        const rule = buildEraTransitionRule(era);
-        if (rule.use30Turns1000yr) {
-            transitionTurnsRemaining = 30;
-            transitionNextTurnYr = buildEraTurnYr(nextEra);
-        } else {
-            transitionTurnsRemaining = 0;
-            transitionNextTurnYr = null;
-        }
+        // 30ターン補正は削除（常に無効）
+        transitionTurnsRemaining = 0;
+        transitionNextTurnYr = null;
         baseAverageTemperature = buildEraInitialClimate(nextEra).averageTemperature;
+        // 時代が変わったらターンカウントをリセットする
+        // （次 state は次時代開始時点の状態なので Time_turn を 0 にする）
+        nextTimeTurn = 0;
     }
 
-    // transition カウント減算:
-    // - 「このターンの計算」が Turn_yr=1000 で実行されたときだけ 1 減らす
-    // - era変化を検知したターン（didChangeがtrueになったターン）は、まだ 1000yr ターンを消費していないため減らさない
-    if (wasInTransitionAtStart && transitionTurnsRemaining > 0) {
-        transitionTurnsRemaining = transitionTurnsRemaining - 1;
-        if (transitionTurnsRemaining <= 0) {
-            transitionTurnsRemaining = 0;
-            if (typeof transitionNextTurnYr === 'number') {
-                Turn_yr = transitionNextTurnYr;
-            } else {
-                Turn_yr = buildEraTurnYr(nextEra);
-            }
-            transitionNextTurnYr = null;
-        }
-    }
-
-    // 次stateの Turn_yr は「残りがあれば1000、なければ era既定値」
-    // （この関数の戻り値は “次ターン開始時点の状態” なので、次ターンの計算で使う値を保持する）
-    const nextTurnYrForState = (transitionTurnsRemaining > 0) ? 1000 : buildEraTurnYr(nextEra);
+    // 次stateの Turn_yr は常に「現在の Turn_yr（=ユーザー指定）」を維持する
+    const nextTurnYrForState = Turn_yr;
 
     // 10ターンごとの平均気温履歴
     const history = state.history || { averageTemperatureEvery10: [] };
