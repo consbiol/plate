@@ -135,10 +135,17 @@ export function computeNextClimateTurn(cur) {
     const CH4_event = Number(events.CH4_event);
     const sol_event = Number(events.sol_event);
     const CosmicRay = (typeof events.CosmicRay === 'number') ? events.CosmicRay : 1;
+    // 次 state が時代遷移で開始されるかを事前判定（時代変化直後の「初回ターン」扱いを検出するため）
+    const eraWillChange = getNextEraByTime(era, Time_yr + Turn_yr).didChange;
 
     // --- Step3: 植生 ---
     const greenIndex_calc = 1.81 * Math.exp(-(sq(averageTemperature - 22.5)) / (2 * sq(12))) * f_cloud;
-    greenIndex = GI_alpha * greenIndex_calc + (1 - GI_alpha) * greenIndex;
+    // 最初のターン（または時代変化による次state開始ターン）では平滑化を行わず、生値を採用する
+    if (Time_turn === 0 || eraWillChange) {
+        greenIndex = greenIndex_calc;
+    } else {
+        greenIndex = GI_alpha * greenIndex_calc + (1 - GI_alpha) * greenIndex;
+    }
 
     // --- Step4: 大気成分（収支） ---
     const f_land = Number(terrain.f_land) || 0;
@@ -186,7 +193,12 @@ export function computeNextClimateTurn(cur) {
     const CO2_release_total = CO2_release_volcano + CO2_release_civil + Fire_event_CO2;
 
     const f_CO2_calc = f_CO2 - CO2_abs_total + CO2_release_total;
-    f_CO2 = CO2_alpha * f_CO2_calc + (1 - CO2_alpha) * f_CO2;
+    // 最初のターン（または時代変化による次state開始ターン）では平滑化を行わず、収支計算結果をそのまま採用する
+    if (Time_turn === 0 || eraWillChange) {
+        f_CO2 = f_CO2_calc;
+    } else {
+        f_CO2 = CO2_alpha * f_CO2_calc + (1 - CO2_alpha) * f_CO2;
+    }
     f_CO2 = Math.max(f_CO2, 0.000006);
 
     // O2
