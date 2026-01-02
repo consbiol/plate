@@ -9,16 +9,24 @@
       <label class="control">
         <input
           type="range"
-          min="-1"
-          max="1"
-          step="0.01"
-          :value="turnSliderExp"
-          @input="$emit('update-turn-slider-exp', toNumber($event && $event.target ? $event.target.value : 0))"
+          :min="0"
+          :max="Math.max(0, speedOptions.length - 1)"
+          step="1"
+          :value="selectedSpeedIndex"
+          @input="onSpeedIndexInput($event && $event.target ? $event.target.value : 0)"
         />
         <span>Turn_speed: <b>{{ safeSpeedLabel }}</b> sec/turn</span>
       </label>
+      <div class="speed-labels">
+        <span
+          v-for="(opt, idx) in speedOptions"
+          :key="opt.display"
+          :class="['speed-label', { active: idx === selectedSpeedIndex }]"
+        >{{ opt.display }}</span>
+      </div>
 
       <label class="control">
+        <input type="checkbox" :checked="turnYrEnabled" @change="onToggleTurnYrEnabled($event)" />
         <span>Turn_yr:</span>
         <input
           type="range"
@@ -26,6 +34,7 @@
           :max="Math.max(0, (turnYrOptions && turnYrOptions.length ? turnYrOptions.length - 1 : 0))"
           step="1"
           :value="selectedIndex"
+          :disabled="!turnYrEnabled"
           @input="onIndexInput($event && $event.target ? $event.target.value : 0)"
         />
         <span class="hint">{{ currentTurnYr }} yr</span>
@@ -53,11 +62,42 @@ export default {
     selectedTurnYr: { type: Number, required: true },
     turnYrOptions: { type: Array, required: true },
   },
+  data() {
+    return {
+      // default: OFF (unchecked)
+      turnYrEnabled: false,
+    };
+  },
   computed: {
     safeSpeedLabel() {
       const v = Number(this.turnSpeed);
       if (!isFinite(v)) return '1.0';
       return v.toFixed(1);
+    },
+    speedOptions() {
+      // display and the exponent value (log10)
+      return [
+        { display: 'x0.1', exp: -1 },
+        { display: 'x0.5', exp: Math.log10(0.5) },
+        { display: 'x1',   exp: 0 },
+        { display: 'x2',   exp: Math.log10(2) },
+        { display: 'x4',   exp: Math.log10(4) },
+        { display: 'x10',  exp: 1 },
+      ];
+    },
+    selectedSpeedIndex() {
+      const e = Number(this.turnSliderExp || 0);
+      if (!isFinite(e)) return 2; // default to x1
+      let bestIdx = 0;
+      let bestDiff = Infinity;
+      this.speedOptions.forEach((opt, idx) => {
+        const d = Math.abs(opt.exp - e);
+        if (d < bestDiff) {
+          bestDiff = d;
+          bestIdx = idx;
+        }
+      });
+      return bestIdx;
     },
     selectedIndex() {
       if (!Array.isArray(this.turnYrOptions) || this.turnYrOptions.length === 0) return 0;
@@ -71,6 +111,18 @@ export default {
     },
   },
   methods: {
+    onToggleTurnYrEnabled(ev) {
+      const enabled = !!(ev && ev.target && ev.target.checked);
+      this.turnYrEnabled = enabled;
+      // inform parent if it cares
+      this.$emit('update-turn-yr-enabled', enabled);
+    },
+    onSpeedIndexInput(val) {
+      const idx = Math.max(0, Math.min((this.speedOptions || []).length - 1, Number(val || 0)));
+      const opt = (this.speedOptions && this.speedOptions[idx]) ? this.speedOptions[idx] : this.speedOptions[2];
+      // emit exponent value so parent maps to speed
+      this.$emit('update-turn-slider-exp', Number(opt.exp));
+    },
     onIndexInput(val) {
       const idx = Math.max(0, Math.min((this.turnYrOptions || []).length - 1, Number(val || 0)));
       const v = (this.turnYrOptions && this.turnYrOptions[idx]) ? this.turnYrOptions[idx] : this.selectedTurnYr;
@@ -110,6 +162,21 @@ export default {
   align-items: center;
   gap: 8px;
   margin-left: 8px;
+}
+.speed-labels {
+  display: flex;
+  gap: 8px;
+  margin-left: 8px;
+  align-items: center;
+}
+.speed-label {
+  font-size: 0.9em;
+  opacity: 0.75;
+  padding: 2px 4px;
+}
+.speed-label.active {
+  font-weight: bold;
+  opacity: 1;
 }
 .status {
   margin-top: 6px;
