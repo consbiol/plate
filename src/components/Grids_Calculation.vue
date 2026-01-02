@@ -60,9 +60,10 @@ import { bestEffort } from '../utils/bestEffort.js';
 export default {
   name: 'Grids_Calculation',
   props: {
-    // UI側で固定して渡す「今回の実行コンテキスト」（runMode/runId）
-    // @type {{runMode?: ('generate'|'update'|'revise'|'drift')|null, runId?: (number|string|null)}|null}
-    runContext: { type: Object, required: false, default: null },
+    // 統合シグナル: runSignal が増えたら runCommand を解釈して処理する
+    runSignal: { type: Number, required: false, default: 0 },
+    // @type {{mode?: ('generate'|'update'|'revise'|'drift')|null, options?: any, runContext?: any}|null}
+    runCommand: { type: Object, required: false, default: null },
     gridWidth: { type: Number, required: true },
     gridHeight: { type: Number, required: true },
     seaLandRatio: { type: Number, required: true },
@@ -98,13 +99,6 @@ export default {
     averageLakesPerCenter: { type: Number, required: true },
     averageHighlandsPerCenter: { type: Number, required: true },
     centerParameters: { type: Array, required: true },
-    generateSignal: { type: Number, required: true },
-    // Update（Generateと同等だが中心点座標を維持）用シグナル
-    updateSignal: { type: Number, required: false, default: 0 },
-    // 高頻度生成タスク（氷河・乾燥地の再計算）用シグナル
-    reviseSignal: { type: Number, required: false, default: 0 },
-    // Drift（大陸中心点の移動 + 全ノイズ再抽選）用シグナル
-    driftSignal: { type: Number, required: false, default: 0 },
     // 都市グリッド生成の確率（低地のみ、海隣接で10倍）
     cityGenerationProbability: { type: Number, required: false, default: 0.002 },
     // 耕作地グリッド生成の確率（低地のみ、海隣接で10倍）
@@ -146,33 +140,64 @@ export default {
       isGenerateRunning: false,
       pendingGenerateOptions: null,
 
-      // --- Drift の「ターン」状態（driftSignal 1回 = 1ターン） ---
+      // --- Drift の「ターン」状態（ドリフト実行1回 = 1ターン） ---
       driftTurn: 0,
       // 現在のフェーズ（true=接近, false=反発）
       driftIsApproach: true,
       superPloom_calc: 0,
       superPloom_history: [],
       // Parameters Output に出す用（直近ターンの値）
-      driftMetrics: null
+      driftMetrics: null,
+
+      // runContext が渡されないケースのフォールバック用（payloadを自己記述化する）
+      emitSeq: 0
     };
   },
   watch: {
-    generateSignal() {
-      this._scheduleGenerate({ preserveCenterCoordinates: false, runContext: this.runContext });
-    },
-    updateSignal() {
-      // Update は中心座標を維持するが、ドリフト状態（superPloom_calc/superPloom/phase）は
-      // 初期化せずにそのまま保持する（generate と挙動を分ける）。
-      this._scheduleGenerate({ preserveCenterCoordinates: true, runContext: this.runContext });
-    },
-    reviseSignal() {
-      this.runReviseHighFrequency();
-    },
-    driftSignal() {
-      this.runDrift();
+    runSignal() {
+      this._handleRunCommand();
     }
   },
   methods: {
+    _handleRunCommand() {
+      const cmd = this.runCommand || null;
+      const mode = cmd && cmd.mode ? String(cmd.mode) : '';
+      const options = cmd && cmd.options ? cmd.options : null;
+      // runContext is carried in runCommand (single wire). Direct method calls can pass runContext explicitly.
+      const rc = cmd && cmd.runContext ? cmd.runContext : null;
+
+      if (mode === 'revise') {
+        this.runReviseHighFrequency({ ...(options || {}), runContext: rc });
+        return;
+      }
+      if (mode === 'drift') {
+        this.runDrift({ runContext: rc });
+        return;
+      }
+      if (mode === 'update' || mode === 'generate') {
+        const preserve = (options && typeof options.preserveCenterCoordinates === 'boolean')
+          ? !!options.preserveCenterCoordinates
+          : (mode === 'update');
+        this._scheduleGenerate({ preserveCenterCoordinates: preserve, runContext: rc });
+        return;
+      }
+      // unknown/empty command => ignore
+    },
+    _makeFallbackRunId() {
+      this.emitSeq = (Number(this.emitSeq) || 0) + 1;
+      return `${Date.now()}-${this.emitSeq}`;
+    },
+    /**
+     * Ensure payload run context exists even when parent forgets to pass it.
+     * @param {{runContext?: any, defaultRunMode?: ('generate'|'update'|'revise'|'drift')|null}} arg
+     */
+    _ensureRunContext({ runContext = null, defaultRunMode = null } = {}) {
+      const rc = runContext || null;
+      const runMode = (rc && rc.runMode) ? rc.runMode : (defaultRunMode || null);
+      const hasRunId = rc && (typeof rc.runId !== 'undefined') && rc.runId !== null;
+      const runId = hasRunId ? rc.runId : this._makeFallbackRunId();
+      return { runMode, runId };
+    },
     _scheduleGenerate(options = {}) {
       const opts = {
         preserveCenterCoordinates: false,
@@ -843,10 +868,14 @@ export default {
         gridDataBase: gridData
       };
 
+      const ensured = this._ensureRunContext({
+        runContext,
+        defaultRunMode: (emitEvent === 'drifted') ? 'drift' : null
+      });
       const payload = buildGeneratedPayload({
         eventType: emitEvent,
-        runMode: runContext && runContext.runMode ? runContext.runMode : null,
-        runId: (runContext && (typeof runContext.runId !== 'undefined')) ? runContext.runId : null,
+        runMode: ensured.runMode,
+        runId: ensured.runId,
         centerParameters: localCenterParameters,
         gridData,
         deterministicSeed: this.deterministicSeed,
@@ -918,7 +947,7 @@ export default {
       return { scores, threshold, landMask };
     },
     /**
-     * Full generation. Called by watchers (generateSignal/updateSignal) and emits `generated`.
+     * Full generation. Called by runSignal watcher (mode: generate/update) and emits `generated`.
      * @param {{preserveCenterCoordinates?: boolean}} [options]
      * @returns {TerrainEventPayload} emitted payload
      */
@@ -944,9 +973,13 @@ export default {
         seededRng,
         effectiveMinCenterDistance
       });
+      const ensured = this._ensureRunContext({
+        runContext,
+        defaultRunMode: preserveCenterCoordinates ? 'update' : 'generate'
+      });
       return this._buildWorldAndEmit({
         emitEvent: 'generated',
-        runContext,
+        runContext: ensured,
         N,
         centers,
         localCenterParameters,
@@ -969,10 +1002,10 @@ export default {
     //   - 常に minCenterDistance（中心間の排他距離）を衝突判定で維持
     // - すべてのノイズをランダムに再抽選（deterministicSeed由来の派生RNGも無効化）
     /**
-     * One drift turn. Called by watcher (driftSignal) and emits `drifted`.
+     * One drift turn. Called by runSignal watcher (mode: drift) and emits `drifted`.
      * @returns {TerrainEventPayload} emitted payload
      */
-    runDrift() {
+    runDrift({ runContext = null } = {}) {
       const N = this.gridWidth * this.gridHeight;
       // Driftでは決定論RNGは原則無効（ノイズはランダム化）だが、いくつかの処理は seededRng 引数を取るため null を用いる
       const seededRng = null;
@@ -1255,7 +1288,7 @@ export default {
           this.driftIsApproach = true;
         }
 
-        // ターンを進める（driftSignal 1回 = 1ターン）
+        // ターンを進める（ドリフト実行1回 = 1ターン）
         this.driftTurn = turn0 + 1;
 
         // 出力用メトリクス（Parameters Output で表示）
@@ -1276,7 +1309,7 @@ export default {
         const seededRngHighlands = this._getSeededRng();
         return this._buildWorldAndEmit({
           emitEvent: 'drifted',
-          runContext: this.runContext,
+          runContext: this._ensureRunContext({ runContext, defaultRunMode: 'drift' }),
           N,
           centers,
           localCenterParameters,
@@ -1675,11 +1708,11 @@ export default {
     // - 文明要素は不整合なら削除
     // - 低頻度側の地形（海陸/湖/高地/高山/中心点）は保持
     /**
-     * High-frequency revise (no full regen). Used both by watcher (reviseSignal) and turn-loop logic.
+     * High-frequency revise (no full regen). Used both by runSignal watcher (mode: revise) and turn-loop logic.
      * @param {{emit?: boolean}} [options] - emit `revised` if true
      * @returns {TerrainEventPayload|undefined} payload when cache is available; otherwise undefined
      */
-    runReviseHighFrequency({ emit = true } = {}) {
+    runReviseHighFrequency({ emit = true, runContext = null } = {}) {
       const c = this.hfCache;
       if (!c || !c.N || !Array.isArray(c.preTundraColors)) return;
 
@@ -1702,11 +1735,11 @@ export default {
         computedSmoothedTopGlacierRowsWater
       });
       const { gridData } = this._reviseRebuildGridDataAndSanitizeFeatures({ c, colors });
-      const runContext = this.runContext;
+      const ensured = this._ensureRunContext({ runContext, defaultRunMode: 'revise' });
       const payload = buildTerrainEventPayload({
         eventType: 'revised',
-        runMode: runContext && runContext.runMode ? runContext.runMode : 'revise',
-        runId: (runContext && (typeof runContext.runId !== 'undefined')) ? runContext.runId : null,
+        runMode: ensured.runMode,
+        runId: ensured.runId,
         gridData,
         // reviseでは中心点/シード/比率は「既知の最新」を埋めておく（受け側の分岐削減）
         centerParameters: Array.isArray(this.centerParameters) ? this.centerParameters : [],

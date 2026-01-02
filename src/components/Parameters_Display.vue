@@ -164,7 +164,8 @@
     <!-- 非表示の計算コンポーネント（テンプレート内に配置することで使用済みとして認識される） -->
     <Grids_Calculation
       ref="calc"
-      :runContext="runContext"
+      :runSignal="runSignal"
+      :runCommand="runCommand"
       :gridWidth="gridWidth"
       :gridHeight="gridHeight"
       :seaLandRatio="local.seaLandRatio"
@@ -175,7 +176,6 @@
       :baseSeaDistanceThreshold="local.baseSeaDistanceThreshold"
       :baseLandDistanceThreshold="landDistanceThresholdAverage"
       :tundraExtraRows="local.tundraExtraRows"
-      :updateSignal="updateSignal"
       :landDistanceThreshold1="local.landDistanceThreshold1"
       :landDistanceThreshold2="local.landDistanceThreshold2"
       :landDistanceThreshold3="local.landDistanceThreshold3"
@@ -196,9 +196,6 @@
       :averageLakesPerCenter="local.averageLakesPerCenter"
       :averageHighlandsPerCenter="computedAverageHighlandsPerCenter"
       :centerParameters="mutableCenterParams"
-      :generateSignal="generateSignal"
-      :reviseSignal="reviseSignal"
-      :driftSignal="driftSignal"
         :deterministicSeed="local.deterministicSeed"
       :era="local.era || storeEra"
       :cityGenerationProbability="local.cityProbability"
@@ -412,22 +409,20 @@ export default {
       },
 
       // ---------------------------
-      // Signals (child trigger)
+      // Run command (child trigger) - unified signal
       // ---------------------------
-      signals: {
-        generateSignal: 0,
-        updateSignal: 0,
-        reviseSignal: 0,
-        driftSignal: 0
+      run: {
+        // single trigger counter
+        runSignal: 0,
+        // latest command to execute on next runSignal tick
+      runCommand: { mode: null, options: null, runContext: null }
       },
 
       // ---------------------------
       // Run context (mode/id): used to make emitted payloads self-describing
       // ---------------------------
-      run: {
-        runSeq: 0,
-        runContext: { runMode: null, runId: null }
-      },
+      runSeq: 0,
+      runContext: { runMode: null, runId: null },
 
       // ---------------------------
       // Turn / timers
@@ -478,25 +473,13 @@ export default {
       get() { return this.popup.climatePopupRef; },
       set(v) { this.popup.climatePopupRef = v; }
     },
-    generateSignal: {
-      get() { return this.signals.generateSignal; },
-      set(v) { this.signals.generateSignal = v; }
+    runSignal: {
+      get() { return this.run.runSignal; },
+      set(v) { this.run.runSignal = v; }
     },
-    updateSignal: {
-      get() { return this.signals.updateSignal; },
-      set(v) { this.signals.updateSignal = v; }
-    },
-    reviseSignal: {
-      get() { return this.signals.reviseSignal; },
-      set(v) { this.signals.reviseSignal = v; }
-    },
-    driftSignal: {
-      get() { return this.signals.driftSignal; },
-      set(v) { this.signals.driftSignal = v; }
-    },
-    runContext: {
-      get() { return this.run.runContext; },
-      set(v) { this.run.runContext = v; }
+    runCommand: {
+      get() { return this.run.runCommand; },
+      set(v) { this.run.runCommand = v; }
     },
     turnTimer: {
       get() { return this.turn.turnTimer; },
@@ -817,13 +800,19 @@ export default {
     // ---------------------------
     _setRunContext(runMode) {
       try {
-        this.run.runSeq = (Number(this.run.runSeq) || 0) + 1;
+        this.runSeq = (Number(this.runSeq) || 0) + 1;
         // string id to avoid overflow / collision
-        this.runContext = { runMode, runId: `${Date.now()}-${this.run.runSeq}` };
+        this.runContext = { runMode, runId: `${Date.now()}-${this.runSeq}` };
       } catch (e) {
         // fallback
         this.runContext = { runMode, runId: null };
       }
+    },
+    _triggerRun(mode, options = null) {
+      this._setRunContext(mode);
+      // runCommand carries both the command and the runContext (single wire to child)
+      this.runCommand = { mode, options: options || null, runContext: this.runContext };
+      this.runSignal += 1;
     },
     _getRunModeFromPayload(payload) {
       // Prefer explicit runMode (new payload shape). Fallback to eventType mapping.
@@ -855,7 +844,7 @@ export default {
       this.stats = buildParametersStatsFromTerrainPayload(this.stats, payload, { gridWidth: this.gridWidth, gridHeight: this.gridHeight });
     },
     _applyTerrainPayloadToClimate({ payload, runMode }) {
-      // 4) 気候モデル: generateSignal のときだけ初期化（update/drift では初期化しない）
+      // 4) 気候モデル: generate のときだけ初期化（update/drift では初期化しない）
       bestEffort(() => {
         const era = (this.local && this.local.era) ? this.local.era : this.storeEra;
         const seed = (this.local && typeof this.local.deterministicSeed !== 'undefined') ? this.local.deterministicSeed : '';
@@ -881,7 +870,8 @@ export default {
     },
     onClickGenerate() {
       this.onClickTurnStop();
-      this._setRunContext('generate');
+      // Generate
+      this._triggerRun('generate');
       // 1) 気候を先に初期化（generate時の純粋な放射平衡温度に基づいた topGlacierRows を作るため）
       bestEffort(() => {
         const era = (this.local && this.local.era) ? this.local.era : this.storeEra;
@@ -905,26 +895,23 @@ export default {
 
       // 構造（幅/高さ/バージョン）に影響する完全再生成なのでビルドバージョンを上げてiframe差し替えを促す
       this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
-      this.generateSignal += 1;
     },
     onClickUpdate() {
       this.onClickTurnStop();
-      this._setRunContext('update');
-      // 中心点座標を保持して再生成（iframeの完全差し替えは行わない）
-      this.updateSignal += 1;
+      // Update: keep center coords
+      this._triggerRun('update', { preserveCenterCoordinates: true });
     },
     onClickReviseHighFrequency() {
       this.onClickTurnStop();
-      this._setRunContext('revise');
-      // Generate後のキャッシュを前提とした高頻度更新
-      this.reviseSignal += 1;
+      // Revise (high frequency)
+      this._triggerRun('revise', { emit: true });
     },
     onClickDrift() {
       this.onClickTurnStop();
-      this._setRunContext('drift');
+      // Drift
+      this._triggerRun('drift');
       // 中心点をドリフトさせてフル再生成（ノイズは全てランダム）
       this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
-      this.driftSignal += 1;
     },
     
     // ---------------------------
@@ -1033,7 +1020,7 @@ export default {
         if (calc && typeof calc.runReviseHighFrequency === 'function') {
           // turn tick 内の revise も必ず runContext を付与して payload を自己記述化する
           this._setRunContext('revise');
-          const revisedPayload = calc.runReviseHighFrequency({ emit: false });
+          const revisedPayload = calc.runReviseHighFrequency({ emit: false, runContext: this.runContext });
           if (revisedPayload) {
             await this._applyRevisedPayload(revisedPayload, { updatePlane: shouldUpdatePlane });
           }
@@ -1046,7 +1033,6 @@ export default {
       bestEffort(() => {
         const v = getClimateVars(this.$store);
         const turn = getClimateTurn(this.$store);
-        const calc = this.$refs?.calc || null;
         if (v && typeof v.averageTemperature === 'number') {
           storeUpdateAverageTemperature(this.$store, v.averageTemperature);
           // 氷河行数は平均気温に連動するので、UI側ローカルも更新
@@ -1065,10 +1051,8 @@ export default {
         // 120ターンごとに update（中心点保持の再生成）
         bestEffort(() => {
           if (turn && typeof turn.Time_turn === 'number' && (turn.Time_turn % TURN_REGENERATE_EVERY_TURNS === 0)) {
-            const calc = this.$refs?.calc || null;
             // turn中の自動 regenerate は 'update' として扱う（climate turn state を初期化しない）
-            this._setRunContext('update');
-            calc?.runGenerate?.({ preserveCenterCoordinates: true, runContext: this.runContext });
+            this._triggerRun('update', { preserveCenterCoordinates: true });
           }
         });
         // drift は "2000000/Turn_yr" ターンごと（最小1ターン）
@@ -1076,8 +1060,7 @@ export default {
           if (turn && typeof turn.Time_turn === 'number' && typeof turn.Turn_yr === 'number') {
             const interval = Math.max(1, Math.round(DRIFT_INTERVAL_YEARS / Math.max(1, turn.Turn_yr)));
             if (interval > 0 && (turn.Time_turn % interval === 0)) {
-              this._setRunContext('drift');
-              calc?.runDrift?.();
+              this._triggerRun('drift');
             }
           }
         });
