@@ -1,6 +1,5 @@
 <template>
   <div v-if="localParams && localParams.length > 0" class="center-params">
-    <div class="title">各中心点のパラメーター:</div>
     <div v-for="(param, idx) in localParams" :key="idx" class="card">
       <div class="card-title">中心点 {{ idx + 1 }}:</div>
 
