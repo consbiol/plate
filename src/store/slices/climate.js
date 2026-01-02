@@ -188,6 +188,17 @@ export function createClimateSlice() {
                 const cur = state.climate || buildDefaultClimateState();
                 state.climate = { ...cur, isRunning: !!value };
             }
+            ,
+            // 永続的に sol_event を加算/減算する（generateSignal でのみリセットされる設計）
+            adjustSolEvent(state, delta) {
+                const cur = state.climate || buildDefaultClimateState();
+                const ev = { ...(cur.events || {}) };
+                const prev = Number(ev.sol_event || 0);
+                const d = Number(delta || 0);
+                if (!isFinite(d)) return;
+                ev.sol_event = prev + d;
+                state.climate = { ...cur, events: ev };
+            }
         },
         actions: {
             // generateSignal 実行時にのみ初期化（revise/update/drift では初期化しない）

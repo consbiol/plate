@@ -40,7 +40,6 @@
  * @property {number} y
  * @property {number} [influenceMultiplier]
  * @property {number} [kDecayVariation]
- * @property {number} [directionAngle]  // radian
  *
  * @typedef {Object} TerrainEventPayload
  * @property {TerrainEventType} eventType

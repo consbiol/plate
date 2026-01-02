@@ -548,25 +548,21 @@ export default {
         localCenterParameters = centers.map((c) => {
           if (seededRng) {
             const u1 = seededRng() * 2 - 1; // [-1,1)
-            const u2 = seededRng();         // [0,1)
             return {
               x: c.x,
               y: c.y,
               // さらにばらつきを縮小（影響は狭いレンジ、減衰は強め）
               influenceMultiplier: 0.9 + u1 * 0.05, // [0.85, 0.95]
-              kDecayVariation: this.kDecay * (1.3 + u1 * 0.1), // [1.2, 1.4] × kDecay
-              directionAngle: (u2 * 2 * Math.PI * 1.5)
+              kDecayVariation: this.kDecay * (1.3 + u1 * 0.1) // [1.2, 1.4] × kDecay
             };
           } else {
             const n1 = this.noise2D(c.x * 0.1, c.y * 0.1);
-            const n2 = this.noise2D(c.x * 0.15, c.y * 0.15);
             return {
               x: c.x,
               y: c.y,
               // さらにばらつきを縮小（影響は狭いレンジ、減衰は強め）
               influenceMultiplier: 0.9 + n1 * 0.05,
-              kDecayVariation: this.kDecay * (1.3 + n1 * 0.1),
-              directionAngle: n2 * Math.PI * 2 * 1.5
+              kDecayVariation: this.kDecay * (1.3 + n1 * 0.1)
             };
           }
         });
@@ -980,13 +976,11 @@ export default {
       }
       return centers.map((c) => {
         const u1 = Math.random() * 2 - 1;
-        const u2 = Math.random();
         return {
           x: c.x,
           y: c.y,
           influenceMultiplier: 0.9 + u1 * 0.05,
-          kDecayVariation: this.kDecay * (1.3 + u1 * 0.1),
-          directionAngle: (u2 * 2 * Math.PI * 1.5)
+          kDecayVariation: this.kDecay * (1.3 + u1 * 0.1)
         };
       });
     },

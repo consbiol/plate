@@ -62,7 +62,6 @@ export function computeScoresForCenters(vm, centers, centerParameters) {
     return {
       influenceMultiplier: param ? param.influenceMultiplier : 1.0,
       kDecayVariation: param ? param.kDecayVariation : vm.kDecay,
-      directionAngle: param ? param.directionAngle : 0
     };
   });
   // 各中心ごとの角度プロファイル（尖り/凹み）をシードで決定

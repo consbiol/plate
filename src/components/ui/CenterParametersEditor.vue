@@ -19,19 +19,7 @@
         <input class="input" type="number" min="0.5" max="5.0" step="0.1" v-model.number="param.kDecayVariation" @input="emitUpdate" />
       </div>
 
-      <div class="row">
-        <label class="label">方向角度 (direction):</label>
-        <input
-          class="input"
-          type="number"
-          min="0"
-          max="360"
-          step="1"
-          :value="toDeg(param.directionAngle)"
-          @input="updateDirection(idx, $event && $event.target ? $event.target.value : 0)"
-        />
-        <span>°</span>
-      </div>
+      
     </div>
   </div>
 </template>
@@ -48,7 +36,6 @@ export default {
     // - item.y: number（表示のみ）
     // - item.influenceMultiplier: number（編集）
     // - item.kDecayVariation: number（編集）
-    // - item.directionAngle: number (radian)（編集: 入力はdeg→内部はradに変換）
     modelValue: { type: Array, required: true },
   },
   emits: ['update:modelValue'],
@@ -67,24 +54,11 @@ export default {
     },
   },
   methods: {
-    toDeg(rad) {
-      const r = Number(rad || 0);
-      const deg = (r * 180) / Math.PI;
-      return ((Math.round(deg) % 360) + 360) % 360;
-    },
     emitUpdate() {
       // 親へ確定値を通知（ローカル配列自体を渡すと参照共有になりうるのでclone）
       this.$emit('update:modelValue', deepClone(this.localParams || []));
     },
-    updateDirection(idx, degVal) {
-      const degRaw = Number(degVal);
-      const deg = isFinite(degRaw) ? (((degRaw % 360) + 360) % 360) : 0;
-      const rad = (deg * Math.PI) / 180;
-      if (this.localParams && this.localParams[idx]) {
-        this.localParams[idx].directionAngle = rad;
-        this.emitUpdate();
-      }
-    },
+    
   },
 };
 </script>
