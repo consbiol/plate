@@ -7,6 +7,14 @@
 <script>
 import Parameters_Display from './components/Parameters_Display.vue'
 
+/**
+ * Payload emitted by `Parameters_Display`'s `generated` event.
+ * The payload follows the unified TerrainEventPayload shape (plus grid size for convenience).
+ *
+ * @typedef {import('./types/index.js').TerrainEventPayload} TerrainEventPayload
+ * @typedef {TerrainEventPayload & {gridWidth?: number, gridHeight?: number}} GeneratedEventPayload
+ */
+
 export default {
   name: 'App',
   components: {
@@ -20,6 +28,7 @@ export default {
     };
   },
   methods: {
+    /** @param {GeneratedEventPayload} payload */
     onGenerated(payload) {
       // gridData を優先して受け取り、width/height が提供されていれば適用
       if (payload && Array.isArray(payload.gridData)) {

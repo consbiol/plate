@@ -10,8 +10,14 @@ Vueコンポーネント側（例: `src/components/Parameters_Display.vue`）は
 - `parametersOutputHtml.js`
   - 生成パラメータの出力ビュー（Parameters Output）用の HTML を生成
 
+- `htmlPopupController.js`
+  - HTML popup の open/reuse/write を共通化（Window を直接触る部分を集約）
+
 - `planeHtml.js`
   - 平面マップ（Plane Map）用の HTML を生成
+
+- `planeSpherePopupController.js`
+  - Plane+Sphere popup の open/update（iframe 差分更新も含む）を担当
 
 - `planeSphereShellHtml.js`
   - 平面＋球シェル（Plane / Sphere Shell）用の HTML を生成

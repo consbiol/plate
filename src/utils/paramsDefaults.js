@@ -74,7 +74,6 @@ export function createLocalParams(vm) {
         minCenterDistance: vm.minCenterDistance,
         baseSeaDistanceThreshold: vm.baseSeaDistanceThreshold,
         baseLandDistanceThreshold: vm.baseLandDistanceThreshold,
-        // greenIndex is managed by the climate model; UI control removed
         greenIndex: undefined,
         landDistanceThresholdAuto: vm.landDistanceThresholdAuto,
         tundraExtraRows: vm.tundraExtraRows,

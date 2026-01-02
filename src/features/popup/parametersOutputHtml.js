@@ -1,21 +1,21 @@
 function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-    }[c]));
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[c]));
 }
 
 function fmtPct(num, den) {
-    if (!den || den <= 0) return '0.00%';
-    return (num * 100 / den).toFixed(2) + '%';
+  if (!den || den <= 0) return '0.00%';
+  return (num * 100 / den).toFixed(2) + '%';
 }
 
 function buildCentersHtml(centers) {
-    const escape = (v) => escapeHtml(v);
-    return (centers || []).map((p, i) => `
+  const escape = (v) => escapeHtml(v);
+  return (centers || []).map((p, i) => `
     <div style="margin-bottom:8px;padding:8px;border:1px solid #ddd;border-radius:4px;">
       <div style="font-weight:bold;margin-bottom:4px;">中心点 ${i + 1}:</div>
       <div>座標 (x, y): (${escape(p.x)}, ${escape(p.y)}) <span style="color:#666">（シード固定）</span></div>
@@ -27,16 +27,16 @@ function buildCentersHtml(centers) {
       <div>高地クラスター（開始セル/サイズ）:</div>
       <ul style="margin:4px 0 6px 16px;">
         ${(Array.isArray(p.seededHighlandClusters) && p.seededHighlandClusters.length > 0)
-            ? p.seededHighlandClusters.map(c => `<li>start=(${escape(c.x)}, ${escape(c.y)}), size=${escape(c.size)}</li>`).join('')
-            : '<li>(なし)</li>'
-        }
+      ? p.seededHighlandClusters.map(c => `<li>start=(${escape(c.x)}, ${escape(c.y)}), size=${escape(c.size)}</li>`).join('')
+      : '<li>(なし)</li>'
+    }
       </ul>
       <div>湖の開始セル（シード）:</div>
       <ul style="margin:4px 0 0 16px;">
         ${(Array.isArray(p.seededLakeStarts) && p.seededLakeStarts.length > 0)
-            ? p.seededLakeStarts.map(c => `<li>(${escape(c.x)}, ${escape(c.y)})</li>`).join('')
-            : '<li>(なし)</li>'
-        }
+      ? p.seededLakeStarts.map(c => `<li>(${escape(c.x)}, ${escape(c.y)})</li>`).join('')
+      : '<li>(なし)</li>'
+    }
       </ul>
     </div>
   `).join('');
@@ -45,27 +45,29 @@ function buildCentersHtml(centers) {
 /**
  * Parameters Output popup 用のHTMLを生成する（副作用なし）。
  * `Parameters_Display.vue` の buildOutputHtml と互換の出力になるように維持する。
+ *
+ * @typedef {import('../../types/index.js').ParametersStats} ParametersStats
  */
 export function buildParametersOutputHtml({
-    localParams,
-    centerParams,
-    stats,
-    gridWidth,
-    gridHeight,
-    landDistanceThresholdAverage,
-    topTundraRowsComputed,
-    topGlacierRowsDisplayed
+  localParams,
+  centerParams,
+  stats,
+  gridWidth,
+  gridHeight,
+  landDistanceThresholdAverage,
+  topTundraRowsComputed,
+  topGlacierRowsDisplayed
 }) {
-    const params = localParams || {};
-    const centers = centerParams || [];
-    const pre = (stats && stats.preGlacier) ? stats.preGlacier : null;
-    const drift = (stats && stats.driftMetrics) ? stats.driftMetrics : null;
-    const typeCounts = (stats && stats.gridTypeCounts) ? stats.gridTypeCounts : null;
-    const totalN = typeCounts ? (typeCounts.total || (gridWidth * gridHeight)) : (gridWidth * gridHeight);
-    const centersHtml = buildCentersHtml(centers);
-    const escape = (v) => escapeHtml(v);
+  const params = localParams || {};
+  const centers = centerParams || [];
+  const pre = (stats && stats.preGlacier) ? stats.preGlacier : null;
+  const drift = (stats && stats.driftMetrics) ? stats.driftMetrics : null;
+  const typeCounts = (stats && stats.gridTypeCounts) ? stats.gridTypeCounts : null;
+  const totalN = typeCounts ? (typeCounts.total || (gridWidth * gridHeight)) : (gridWidth * gridHeight);
+  const centersHtml = buildCentersHtml(centers);
+  const escape = (v) => escapeHtml(v);
 
-    return `
+  return `
 <!doctype html>
 <html>
   <head>
@@ -101,7 +103,7 @@ export function buildParametersOutputHtml({
     <div class="row"><label>グリッド幅×高さ:</label><span>${escape(gridWidth)} × ${escape(gridHeight)}</span></div>
     ${pre ? `<div class="row"><label>氷河上書き前 - 陸:</label><span>${escape(pre.landCount)} (${escape((pre.landRatio * 100).toFixed(2))}% )</span></div>
              <div class="row"><label>氷河上書き前 - 海:</label><span>${escape(pre.seaCount)} (${escape((100 - (pre.landRatio * 100)).toFixed(2))}% )</span></div>` : ''
-        }
+    }
     <div class="row"><label>湖の数（平均）:</label><span>${escape(params.averageLakesPerCenter)}</span></div>
     <div class="row"><label>superPloom_calc:</label><span>${drift ? escape(drift.superPloom_calc) : '-'}</span></div>
     <div class="row"><label>superPloom:</label><span>${drift ? escape(drift.superPloom) : '-'}</span></div>

@@ -5,6 +5,7 @@ import { createGeneratorSlice } from './slices/generator.js';
 import { createRenderSlice } from './slices/render.js';
 import { createWorldSlice } from './slices/world.js';
 import { createClimateSlice } from './slices/climate.js';
+import { bestEffort } from '../utils/bestEffort.js';
 
 const PERSISTED = safeLoadPersistedState();
 
@@ -63,7 +64,7 @@ export default createStore({
                 timer = setTimeout(flush, 100);
             });
             // 画面離脱時に最後の状態を確実に保存（可能な範囲で）
-            try {
+            bestEffort(() => {
                 if (typeof window !== 'undefined' && window && typeof window.addEventListener === 'function') {
                     window.addEventListener('beforeunload', () => {
                         if (!lastState) return;
@@ -74,7 +75,7 @@ export default createStore({
                         safePersistState(lastState);
                     });
                 }
-            } catch (e) { /* ignore */ }
+            });
         }
     ]
 });

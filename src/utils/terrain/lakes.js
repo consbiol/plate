@@ -5,6 +5,7 @@
 // - もともと Vue コンポーネントインスタンス（vm=this）を受け取っていたが、
 //   「必要な依存だけ」を受け取るための ctx 化を段階的に進める（挙動不変）。
 // - ctx は "vm と同じ形" でも良いし、必要な値/関数だけを持つ薄いオブジェクトでも良い。
+import { bestEffort } from '../bestEffort.js';
 export function generateLakes(ctx, centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog) {
     const N = ctx.gridWidth * ctx.gridHeight;
     const lakeMask = new Array(N).fill(false);
@@ -90,7 +91,7 @@ export function generateLakes(ctx, centers, centerLandCells, landMask, colors, s
     }
 
     // Apply lowland conversion using helper (exposed for reuse by Revise)
-    try {
+    bestEffort(() => {
         applyLowlandAroundLakes(ctx, {
             colors,
             lakesList,
@@ -99,10 +100,10 @@ export function generateLakes(ctx, centers, centerLandCells, landMask, colors, s
             desertColor,
             lowlandColor
         });
-    } catch (e) { /* ignore */ }
+    });
 
     // expose per-lake list to caller ctx for high-frequency revise use
-    try { ctx._lastLakesList = lakesList; } catch (e) { /* ignore */ }
+    bestEffort(() => { ctx._lastLakesList = lakesList; });
     return lakeMask;
 }
 

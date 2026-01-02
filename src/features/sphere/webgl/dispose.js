@@ -4,28 +4,17 @@
  * - 再オープン時（再 init する前）
  * などで呼ぶ想定。
  */
+import { bestEffort } from '../../../utils/bestEffort.js';
 export function disposeSphereWebGL(vm) {
     const gl = vm?._gl;
     if (!gl) return;
 
-    try {
-        if (vm._glTex) gl.deleteTexture(vm._glTex);
-    } catch (e) { /* ignore */ }
-    try {
-        if (vm._glClassTex) gl.deleteTexture(vm._glClassTex);
-    } catch (e) { /* ignore */ }
-    try {
-        if (vm._glPosBuf) gl.deleteBuffer(vm._glPosBuf);
-    } catch (e) { /* ignore */ }
-    try {
-        if (vm._glProg) gl.deleteProgram(vm._glProg);
-    } catch (e) { /* ignore */ }
-    try {
-        if (vm._glVs) gl.deleteShader(vm._glVs);
-    } catch (e) { /* ignore */ }
-    try {
-        if (vm._glFs) gl.deleteShader(vm._glFs);
-    } catch (e) { /* ignore */ }
+    bestEffort(() => { if (vm._glTex) gl.deleteTexture(vm._glTex); });
+    bestEffort(() => { if (vm._glClassTex) gl.deleteTexture(vm._glClassTex); });
+    bestEffort(() => { if (vm._glPosBuf) gl.deleteBuffer(vm._glPosBuf); });
+    bestEffort(() => { if (vm._glProg) gl.deleteProgram(vm._glProg); });
+    bestEffort(() => { if (vm._glVs) gl.deleteShader(vm._glVs); });
+    bestEffort(() => { if (vm._glFs) gl.deleteShader(vm._glFs); });
 
     // js側参照も切る
     vm._gl = null;

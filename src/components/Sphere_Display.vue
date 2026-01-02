@@ -11,6 +11,8 @@ import { rand2, valueNoiseTile, fbmTile } from '../features/sphere/cloudNoise.js
 import { getCellClassWeight, sampleClassWeightBilinear, sampleClassWeightSmooth } from '../features/sphere/classWeight.js';
 import { drawSphereCPU } from '../features/sphere/rendererCpu.js';
 import { initSphereWebGL, drawSphereWebGL, updateSphereTexturesWebGL, disposeSphereWebGL } from '../features/sphere/rendererWebgl.js';
+import { getGetter, getGetterPath } from '../utils/storeGetters.js';
+import { bestEffort } from '../utils/bestEffort.js';
 export default {
   name: 'Sphere_Display',
   // props を廃止し store に完全依存する（必要な設定は store または既定値から取得）
@@ -27,59 +29,49 @@ export default {
   },
   computed: {
     gridWidth() {
-      return this.$store?.getters?.gridWidth ?? 200;
+      return getGetter(this.$store, 'gridWidth', 200);
     },
     gridHeight() {
-      return this.$store?.getters?.gridHeight ?? 100;
+      return getGetter(this.$store, 'gridHeight', 100);
     },
     gridData() {
-      return this.$store?.getters?.gridData ?? [];
+      return getGetter(this.$store, 'gridData', []);
     },
     polarBufferRows() {
-      return (this.$store?.getters?.renderSettings?.polarBufferRows != null)
-        ? this.$store.getters.renderSettings.polarBufferRows
-        : 50;
+      return getGetterPath(this.$store, ['renderSettings', 'polarBufferRows'], 50);
     },
     polarAvgRows() {
-      return (this.$store?.getters?.renderSettings?.polarAvgRows != null)
-        ? this.$store.getters.renderSettings.polarAvgRows
-        : 3;
+      return getGetterPath(this.$store, ['renderSettings', 'polarAvgRows'], 3);
     },
     polarBlendRows() {
-      return (this.$store?.getters?.renderSettings?.polarBlendRows != null)
-        ? this.$store.getters.renderSettings.polarBlendRows
-        : 12;
+      return getGetterPath(this.$store, ['renderSettings', 'polarBlendRows'], 12);
     },
     polarNoiseStrength() {
-      return (this.$store?.getters?.renderSettings?.polarNoiseStrength != null)
-        ? this.$store.getters.renderSettings.polarNoiseStrength
-        : 0.3;
+      return getGetterPath(this.$store, ['renderSettings', 'polarNoiseStrength'], 0.3);
     },
     polarNoiseScale() {
-      return (this.$store?.getters?.renderSettings?.polarNoiseScale != null)
-        ? this.$store.getters.renderSettings.polarNoiseScale
-        : 0.01;
+      return getGetterPath(this.$store, ['renderSettings', 'polarNoiseScale'], 0.01);
     },
     landTintColor() {
-      return this.$store?.getters?.renderSettings?.landTintColor ?? null;
+      return getGetterPath(this.$store, ['renderSettings', 'landTintColor'], null);
     },
     landTintStrength() {
-      return this.$store?.getters?.renderSettings?.landTintStrength ?? 0.35;
+      return getGetterPath(this.$store, ['renderSettings', 'landTintStrength'], 0.35);
     },
     era() {
-      return this.$store?.getters?.era ?? null;
+      return getGetter(this.$store, 'era', null);
     },
     f_cloud() {
-      return this.$store?.getters?.f_cloud ?? 0.67;
+      return getGetter(this.$store, 'f_cloud', 0.67);
     },
     cloudPeriod() {
-      return this.$store?.getters?.renderSettings?.cloudPeriod ?? 16;
+      return getGetterPath(this.$store, ['renderSettings', 'cloudPeriod'], 16);
     },
     polarCloudBoost() {
-      return this.$store?.getters?.renderSettings?.polarCloudBoost ?? 1.0;
+      return getGetterPath(this.$store, ['renderSettings', 'polarCloudBoost'], 1.0);
     },
     planeGridCellPx() {
-      return this.$store?.getters?.planeGridCellPx ?? 3;
+      return getGetter(this.$store, 'planeGridCellPx', 3);
     }
   },
   // 破棄時にポップアップ/回転ループを確実に止める（メモリリーク・背景回転防止）
@@ -101,7 +93,7 @@ export default {
       // 参照が差し替わったタイミングでのみ発火（deep watchは重いので避ける）
       // 描画負荷軽減のため、表示更新は 5 ターンごとに限定する。
       try {
-        const turnObj = this.$store && this.$store.getters && this.$store.getters.climateTurn;
+        const turnObj = getGetter(this.$store, 'climateTurn', null);
         const turnNum = (turnObj && typeof turnObj.Time_turn === 'number') ? turnObj.Time_turn : null;
         const shouldUpdate = (turnNum === null) ? true : (turnNum % 5 === 0);
         if (shouldUpdate) this.scheduleWebGLTextureRefreshAndRedraw();
@@ -288,11 +280,11 @@ export default {
         this._isRotating = false;
       }
       // ボタン表示も可能なら同期
-      try {
+      bestEffort(() => {
         const doc = this._sphereWin && this._sphereWin.document;
         const btn = doc && doc.getElementById && doc.getElementById('rotate-btn');
         if (btn) btn.textContent = this.desiredRotationEnabled ? 'Stop' : 'Rotate';
-      } catch (e) { /* ignore */ }
+      });
     },
     bindWebGLContextEvents(canvas) {
       if (!canvas) return;
@@ -300,7 +292,7 @@ export default {
       this.unbindWebGLContextEvents();
       this._webglContextLost = false;
       this._onWebglContextLost = (e) => {
-        try { if (e && typeof e.preventDefault === 'function') e.preventDefault(); } catch (err) { /* ignore */ }
+        bestEffort(() => { if (e && typeof e.preventDefault === 'function') e.preventDefault(); });
         this._webglContextLost = true;
         // 描画ループが走っていると例外が出やすいので止める
         this.stopRotationLoop();
@@ -310,14 +302,12 @@ export default {
         // 復旧時はWebGLを再初期化し、テクスチャ/描画を復元
         try {
           // 念のためJS側参照を破棄してから再init（コンテキストロスト時はdelete不要だが安全）
-          try { disposeSphereWebGL(this); } catch (e) { /* ignore */ }
+          bestEffort(() => disposeSphereWebGL(this));
           this._useWebGL = this.initWebGL(canvas);
           if (this._useWebGL) {
             this.refreshWebGLTexturesIfNeeded();
           }
-        } catch (e) {
-          this._useWebGL = false;
-        }
+        } catch (e) { this._useWebGL = false; }
         this.requestRedraw();
       };
       canvas.addEventListener('webglcontextlost', this._onWebglContextLost, false);
@@ -326,16 +316,16 @@ export default {
     unbindWebGLContextEvents() {
       const canvas = this._sphereCanvas;
       if (!canvas) return;
-      try {
+      bestEffort(() => {
         if (this._onWebglContextLost) {
           canvas.removeEventListener('webglcontextlost', this._onWebglContextLost, false);
         }
-      } catch (e) { /* ignore */ }
-      try {
+      });
+      bestEffort(() => {
         if (this._onWebglContextRestored) {
           canvas.removeEventListener('webglcontextrestored', this._onWebglContextRestored, false);
         }
-      } catch (e) { /* ignore */ }
+      });
       this._onWebglContextLost = null;
       this._onWebglContextRestored = null;
       this._webglContextLost = false;
@@ -405,8 +395,6 @@ export default {
       // 描画
       const canvas = doc.getElementById('sphere-canvas');
       if (!canvas) return;
-      // compute buffer values for debug display
-      // (debug UI removed)
       this.attachToWindow(w, canvas);
       // ウィンドウクローズ時に停止
       this._onSphereBeforeUnload = () => {

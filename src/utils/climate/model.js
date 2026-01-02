@@ -346,7 +346,6 @@ export function computeNextClimateTurn(cur) {
     const { nextEra: eraByTime, didChange } = getNextEraByTime(era, nextTimeYr);
     if (didChange) {
         nextEra = eraByTime;
-        // 30ターン補正は削除（常に無効）
         transitionTurnsRemaining = 0;
         transitionNextTurnYr = null;
         baseAverageTemperature = buildEraInitialClimate(nextEra).averageTemperature;
@@ -442,7 +441,6 @@ export function computeRadiativeEquilibriumTempK(state, options = {}) {
     const f_CO2 = Math.max(Number(v0.f_CO2) || 0.000006, 0.000006);
     const f_CH4 = Math.max(Number(v0.f_CH4) || 0.0000001, 0.0000001);
     const Pressure = f_Ar + f_H2 + f_N2 + f_O2 + f_CO2 + f_CH4;
-    // previous cloud snapshot (unused here) removed
     const Meteo_eff = Number(events.Meteo_eff) || 1;
     const sol_event = Number(events.sol_event) || 0;
     const CosmicRay = (typeof events.CosmicRay === 'number') ? events.CosmicRay : 1;

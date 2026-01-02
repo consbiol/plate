@@ -62,7 +62,7 @@ export function buildPlaneHtml({ displayColors, cell, displayW, displayH, buildV
               }
               ctx.clearRect(0, 0, cvs.width, cvs.height);
               ctx.drawImage(back, 0, 0);
-            } catch (e) { /* ignore draw errors */ }
+            } catch (e) { /* swallowed draw errors */ }
           }
 
           // バージョン情報（親が比較して差し替え判断する）
@@ -116,7 +116,7 @@ export function buildPlaneHtml({ displayColors, cell, displayW, displayH, buildV
               try { window.__planePrograms = null; } catch(e){}
               try { window.__planeShaders = null; } catch(e){}
               try { window.__planeOnResize = null; } catch(e){}
-            } catch (e) { /* ignore */ }
+            } catch (e) { /* swallowed */ }
           };
 
           // 親から呼べる更新関数（iframeリロード不要）

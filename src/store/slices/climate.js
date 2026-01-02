@@ -4,6 +4,7 @@
 
 import { ERAS } from '../../utils/paramsDefaults.js';
 import { createDerivedRng } from '../../utils/rng.js';
+import { bestEffort } from '../../utils/bestEffort.js';
 import {
     buildEraInitialClimate,
     buildEraTurnYr
@@ -243,7 +244,7 @@ export function createClimateSlice() {
                 next.baseAverageTemperature = initial.averageTemperature;
                 // 放射平衡温度（初期化時点）は「時代デフォルトの平均気温」を優先して設定する。
                 // これにより、generate直後の averageTemperature_calc が時代初期値（例: 大森林時代20℃）から始まる。
-                try {
+                bestEffort(() => {
                     const out = computeRadiativeEquilibriumTempK(next, { conservative: true });
                     const initCalcK = (typeof initial.averageTemperature === 'number')
                         ? (initial.averageTemperature + 273.15)
@@ -256,7 +257,7 @@ export function createClimateSlice() {
                         H2O_eff: out && typeof out.H2O_eff === 'number' ? out.H2O_eff : next.vars.H2O_eff,
                         Radiation_cooling: out && typeof out.Radiation_cooling === 'number' ? out.Radiation_cooling : next.vars.Radiation_cooling
                     };
-                } catch (e) { /* ignore */ }
+                });
 
                 commit('setClimate', next);
             },

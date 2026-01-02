@@ -12,6 +12,7 @@
 <script>
 import { deriveDisplayColorsFromGridData } from '../utils/colors.js'
 import { getEraTerrainColors } from '../utils/colors.js'
+import { getEra, getGridWidth, getGridHeight, getGridData, getPlaneGridCellPx } from '../store/api.js'
 // このコンポーネントは「描画専用」です。
 // - 親から受け取ったgridDataを、gridWidth/gridHeightに合わせてグリッド表示します。
 // - 余白の黒枠は配列側で付与済み（上下左右+1）。ここでは純粋に描画のみを行います。
@@ -20,25 +21,23 @@ export default {
   // props を廃止し store に完全依存する（gridData / gridWidth / gridHeight / era は store 側で提供）
   computed: {
     gridWidth() {
-      return this.$store?.getters?.gridWidth ?? 200;
+      return getGridWidth(this.$store, 200);
     },
     gridHeight() {
-      return this.$store?.getters?.gridHeight ?? 100;
+      return getGridHeight(this.$store, 100);
     },
     gridData() {
-      return this.$store?.getters?.gridData ?? [];
+      return getGridData(this.$store, []);
     },
     // planeColors: もし将来 store に入れるならここで参照する。現状は未使用。
     planeColors() {
       return null;
     },
     era() {
-      return this.$store?.getters?.era ?? null;
+      return getEra(this.$store);
     },
     cellSizePx() {
-      const v = (typeof this.$store?.getters?.planeGridCellPx === 'number')
-        ? this.$store.getters.planeGridCellPx
-        : 3;
+      const v = getPlaneGridCellPx(this.$store, 3);
       const iv = Math.round(Number(v));
       if (!isFinite(iv)) return 3;
       if (iv < 1) return 1;

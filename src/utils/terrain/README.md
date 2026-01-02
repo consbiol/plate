@@ -30,7 +30,8 @@ Vueコンポーネント（主に `src/components/Grids_Calculation.vue`）は�
 - **`centerParams.js`**: `seededLog` を `centerParameters` に反映（`applySeededLogToCenterParameters()`）
 - **`output.js`**
   - `computePreGlacierStats(...)`: 氷河上書き前の陸/海比を算出
-  - `buildGeneratedPayload(...)`: emit payload の組み立て
+  - `buildTerrainEventPayload(...)`: emit payload の共通形を組み立て（generated/revised/driftedでキーを統一）
+  - `buildGeneratedPayload(...)`: `buildTerrainEventPayload` の薄いラッパ（generated/drifted用）
 - **`glacierRows.js`**: 平均気温→氷河行数（平滑化の状態は `vm` 側で保持）
 
 ## `features/`（文明要素の内部実装）
