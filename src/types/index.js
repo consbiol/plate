@@ -6,6 +6,9 @@
 /**
  * Terrain
  * @typedef {import('./terrain.js').TerrainEventType} TerrainEventType
+ * @typedef {import('./terrain.js').TerrainRunMode} TerrainRunMode
+ * @typedef {import('./terrain.js').TerrainRunContext} TerrainRunContext
+ * @typedef {import('./terrain.js').TerrainRunCommand} TerrainRunCommand
  * @typedef {import('./terrain.js').PreGlacierStats} PreGlacierStats
  * @typedef {import('./terrain.js').DriftMetrics} DriftMetrics
  * @typedef {import('./terrain.js').LowlandDistanceToSeaStats} LowlandDistanceToSeaStats

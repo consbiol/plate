@@ -12,6 +12,11 @@
  * @property {number|string|null} [runId]
  * @property {TerrainRunMode|null} [runMode]
  *
+ * @typedef {Object} TerrainRunCommand
+ * @property {TerrainRunMode|null} [mode]
+ * @property {any} [options]
+ * @property {TerrainRunContext|null} [runContext]
+ *
  * @typedef {Object} PreGlacierStats
  * @property {number} landCount
  * @property {number} seaCount

@@ -1,15 +1,18 @@
 <template>
   <div class="actions">
-    <button class="action-btn" @click="$emit('generate')">Generate (Popup + Render)</button>
-    <button class="action-btn" @click="$emit('update')">Update (中心点を保持して再生成)</button>
-    <button class="action-btn" @click="$emit('revise')">Revise 氷河・乾燥地</button>
-    <button class="action-btn" @click="$emit('drift')">Drift 大陸中心点 + ノイズ再抽選</button>
+    <button class="action-btn" @click="$emit('generate')" :disabled="disabled">Generate (Popup + Render)</button>
+    <button class="action-btn" @click="$emit('update')" :disabled="disabled">Update (中心点を保持して再生成)</button>
+    <button class="action-btn" @click="$emit('revise')" :disabled="disabled">Revise 氷河・乾燥地</button>
+    <button class="action-btn" @click="$emit('drift')" :disabled="disabled">Drift 大陸中心点 + ノイズ再抽選</button>
   </div>
 </template>
 
 <script>
 export default {
   name: 'GeneratorActions',
+  props: {
+    disabled: { type: Boolean, required: false, default: false }
+  }
 };
 </script>
 

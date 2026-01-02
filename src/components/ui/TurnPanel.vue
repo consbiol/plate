@@ -20,12 +20,15 @@
 
       <label class="control">
         <span>Turn_yr:</span>
-        <select
-          :value="selectedTurnYr"
-          @change="$emit('change-turn-yr', toNumber($event && $event.target ? $event.target.value : selectedTurnYr))"
-        >
-          <option v-for="v in turnYrOptions" :key="v" :value="v">{{ v }} yr</option>
-        </select>
+        <input
+          type="range"
+          :min="0"
+          :max="Math.max(0, (turnYrOptions && turnYrOptions.length ? turnYrOptions.length - 1 : 0))"
+          step="1"
+          :value="selectedIndex"
+          @input="onIndexInput($event && $event.target ? $event.target.value : 0)"
+        />
+        <span class="hint">{{ currentTurnYr }} yr</span>
       </label>
 
       <button @click="$emit('open-climate-popup')">気候パラメータ</button>
@@ -56,8 +59,23 @@ export default {
       if (!isFinite(v)) return '1.0';
       return v.toFixed(1);
     },
+    selectedIndex() {
+      if (!Array.isArray(this.turnYrOptions) || this.turnYrOptions.length === 0) return 0;
+      const idx = this.turnYrOptions.indexOf(this.selectedTurnYr);
+      return idx >= 0 ? idx : 0;
+    },
+    currentTurnYr() {
+      if (!Array.isArray(this.turnYrOptions) || this.turnYrOptions.length === 0) return this.selectedTurnYr || 0;
+      const idx = this.selectedIndex;
+      return this.turnYrOptions[idx] || this.selectedTurnYr || 0;
+    },
   },
   methods: {
+    onIndexInput(val) {
+      const idx = Math.max(0, Math.min((this.turnYrOptions || []).length - 1, Number(val || 0)));
+      const v = (this.turnYrOptions && this.turnYrOptions[idx]) ? this.turnYrOptions[idx] : this.selectedTurnYr;
+      this.$emit('change-turn-yr', Number(v));
+    },
     toNumber(v) {
       const n = Number(v);
       return isFinite(n) ? n : 0;

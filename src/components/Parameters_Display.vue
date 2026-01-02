@@ -1,6 +1,7 @@
 <template>
   <div class="parameters-display">
     <GeneratorActions
+      :disabled="!!(climateTurn && climateTurn.isRunning)"
       @generate="onClickGenerate"
       @update="onClickUpdate"
       @revise="onClickReviseHighFrequency"
@@ -165,7 +166,7 @@
     <Grids_Calculation
       ref="calc"
       :runSignal="runSignal"
-      :runCommand="runCommand"
+      :runQueue="runQueue"
       :gridWidth="gridWidth"
       :gridHeight="gridHeight"
       :seaLandRatio="local.seaLandRatio"
@@ -207,6 +208,9 @@
       :seaPollutedAreasCount="local.seaPollutedAreasCount"
       :showCentersRed="local.showCentersRed"
       :centerBias="local.centerBias"
+      @run-consumed="onRunConsumed"
+      @run-busy="onRunBusy"
+      @run-idle="onRunIdle"
       @generated="onGenerated"
       @revised="onRevised"
       @drifted="onGenerated"
@@ -223,6 +227,7 @@
 // このコンポーネントは「パラメータ入力／表示」と「計算トリガ」を担当します。
 // - 生成ボタンで非表示の計算子を起動し、結果は親(App)とポップアップへ出力します。
 // - 入力欄の値は内部state(local)に保持し、必要に応じて親へemitします。
+// NOTE: 地形生成トリガ（runQueue/runSignal）の契約は `src/components/README.md` を参照。
 import Grids_Calculation from './Grids_Calculation.vue';
 import Sphere_Display from './Sphere_Display.vue';
 import GeneratorActions from './ui/GeneratorActions.vue';
@@ -239,6 +244,7 @@ import { buildClimateOutputHtml } from '../features/popup/climateOutputHtml.js';
 import { buildPlaneHtml as buildPlaneHtmlUtil } from '../features/popup/planeHtml.js';
 import { deepClone } from '../utils/clone.js';
 import { bestEffort, bestEffortAsync } from '../utils/bestEffort.js';
+import { RUN_MODES, RUN_QUEUE_MAX } from '../constants/runQueue.js';
 import { recomputeAndPatchRadiativeEquilibrium, updateClimateTerrainFractionsFromStats } from '../features/climate/updateAfterTerrain.js';
 import {
   getEra,
@@ -287,6 +293,7 @@ import {
  * Keep in sync with `buildTerrainEventPayload` in `src/utils/terrain/output.js`.
  *
  * @typedef {import('../types/index.js').TerrainEventPayload} TerrainEventPayload
+ * @typedef {import('../types/index.js').TerrainRunCommand} TerrainRunCommand
  */
 
 /**
@@ -414,8 +421,10 @@ export default {
       run: {
         // single trigger counter
         runSignal: 0,
-        // latest command to execute on next runSignal tick
-      runCommand: { mode: null, options: null, runContext: null }
+        // queued commands (FIFO). Each item: TerrainRunCommand
+        runQueue: [],
+        // child busy/idle (debug/UX)
+        isBusy: false
       },
 
       // ---------------------------
@@ -477,9 +486,9 @@ export default {
       get() { return this.run.runSignal; },
       set(v) { this.run.runSignal = v; }
     },
-    runCommand: {
-      get() { return this.run.runCommand; },
-      set(v) { this.run.runCommand = v; }
+    runQueue: {
+      get() { return this.run.runQueue; },
+      set(v) { this.run.runQueue = v; }
     },
     turnTimer: {
       get() { return this.turn.turnTimer; },
@@ -808,20 +817,57 @@ export default {
         this.runContext = { runMode, runId: null };
       }
     },
-    _triggerRun(mode, options = null) {
+    _triggerRun(mode, options = null, { allowDuringTurn = false } = {}) {
+      // Safety: during turn ticking, block manual/enqueued runs to keep state consistent.
+      // (Turn loop uses direct revise call and explicit internal enqueues with allowDuringTurn=true.)
+      if (!allowDuringTurn && this.climateTurn && this.climateTurn.isRunning) return;
       this._setRunContext(mode);
-      // runCommand carries both the command and the runContext (single wire to child)
-      this.runCommand = { mode, options: options || null, runContext: this.runContext };
+      // enqueue (FIFO). child will drain on runSignal change.
+      /** @type {TerrainRunCommand} */
+      const item = { mode, options: options || null, runContext: this.runContext };
+
+      // Coalesce: reviseは「最新1件だけ」残せば十分（中間reviseを全消化する必要がない）
+      if (mode === RUN_MODES.REVISE && Array.isArray(this.runQueue)) {
+        let lastReviseIdx = -1;
+        for (let i = this.runQueue.length - 1; i >= 0; i--) {
+          if (this.runQueue[i] && this.runQueue[i].mode === RUN_MODES.REVISE) { lastReviseIdx = i; break; }
+        }
+        if (lastReviseIdx >= 0) {
+          this.runQueue.splice(lastReviseIdx, 1, item);
+          this.runSignal += 1;
+          return;
+        }
+      }
+
+      // Safety: cap queue size to avoid unbounded growth (e.g. repeated triggers during long generate).
+      if (Array.isArray(this.runQueue) && this.runQueue.length >= RUN_QUEUE_MAX) {
+        // drop oldest to keep latest commands responsive
+        const overflow = (this.runQueue.length - RUN_QUEUE_MAX) + 1;
+        this.runQueue.splice(0, Math.max(1, overflow));
+      }
+      this.runQueue.push(item);
       this.runSignal += 1;
+    },
+    onRunConsumed(n) {
+      const k = Number(n) || 0;
+      if (k <= 0) return;
+      if (!Array.isArray(this.runQueue) || this.runQueue.length === 0) return;
+      this.runQueue.splice(0, Math.min(k, this.runQueue.length));
+    },
+    onRunBusy() {
+      this.run.isBusy = true;
+    },
+    onRunIdle() {
+      this.run.isBusy = false;
     },
     _getRunModeFromPayload(payload) {
       // Prefer explicit runMode (new payload shape). Fallback to eventType mapping.
       const pMode = payload && payload.runMode ? payload.runMode : null;
       if (pMode) return pMode;
       const et = payload && payload.eventType ? String(payload.eventType) : '';
-      if (et === 'revised') return 'revise';
-      if (et === 'drifted') return 'drift';
-      return 'generate';
+      if (et === 'revised') return RUN_MODES.REVISE;
+      if (et === 'drifted') return RUN_MODES.DRIFT;
+      return RUN_MODES.GENERATE;
     },
     _applyTerrainPayloadToUi({ gridData }) {
       // 1.2) 平面表示色（+2枠）を計算してポップアップ用に保持
@@ -871,7 +917,7 @@ export default {
     onClickGenerate() {
       this.onClickTurnStop();
       // Generate
-      this._triggerRun('generate');
+      this._triggerRun(RUN_MODES.GENERATE);
       // 1) 気候を先に初期化（generate時の純粋な放射平衡温度に基づいた topGlacierRows を作るため）
       bestEffort(() => {
         const era = (this.local && this.local.era) ? this.local.era : this.storeEra;
@@ -899,17 +945,17 @@ export default {
     onClickUpdate() {
       this.onClickTurnStop();
       // Update: keep center coords
-      this._triggerRun('update', { preserveCenterCoordinates: true });
+      this._triggerRun(RUN_MODES.UPDATE, { preserveCenterCoordinates: true });
     },
     onClickReviseHighFrequency() {
       this.onClickTurnStop();
       // Revise (high frequency)
-      this._triggerRun('revise', { emit: true });
+      this._triggerRun(RUN_MODES.REVISE, { emit: true });
     },
     onClickDrift() {
       this.onClickTurnStop();
       // Drift
-      this._triggerRun('drift');
+      this._triggerRun(RUN_MODES.DRIFT);
       // 中心点をドリフトさせてフル再生成（ノイズは全てランダム）
       this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
     },
@@ -1005,10 +1051,8 @@ export default {
         this._runOneTurnTick();
       }, w);
     },
-    async _runOneTurnTick() {
-      if (!getClimateTurn(this.$store)?.isRunning) return;
-      const start = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-
+    // Turn tick step 1: terrain revise + apply (must happen before climate advance)
+    async _runTurnTerrainStep() {
       // Step8: ターンごとの地形更新（重要）
       // 要件: 「同一ターン内で最新地形の面積率を使って気候を計算」するため、
       // 1) 地形(Revise) → 2) 面積率(store)更新 → 3) 気候を1ターン進める の順序にする。
@@ -1019,14 +1063,16 @@ export default {
         const calc = this.$refs?.calc || null;
         if (calc && typeof calc.runReviseHighFrequency === 'function') {
           // turn tick 内の revise も必ず runContext を付与して payload を自己記述化する
-          this._setRunContext('revise');
+          this._setRunContext(RUN_MODES.REVISE);
           const revisedPayload = calc.runReviseHighFrequency({ emit: false, runContext: this.runContext });
           if (revisedPayload) {
             await this._applyRevisedPayload(revisedPayload, { updatePlane: shouldUpdatePlane });
           }
         }
       });
-
+    },
+    // Turn tick step 2: advance climate + reflect to store + schedule internal runs
+    async _runTurnClimateStep() {
       await advanceClimateOneTurn(this.$store);
 
       // 気候の出力を既存ストアへ統合（描画/地形UIが追従できるように）
@@ -1052,7 +1098,7 @@ export default {
         bestEffort(() => {
           if (turn && typeof turn.Time_turn === 'number' && (turn.Time_turn % TURN_REGENERATE_EVERY_TURNS === 0)) {
             // turn中の自動 regenerate は 'update' として扱う（climate turn state を初期化しない）
-            this._triggerRun('update', { preserveCenterCoordinates: true });
+            this._triggerRun(RUN_MODES.UPDATE, { preserveCenterCoordinates: true }, { allowDuringTurn: true });
           }
         });
         // drift は "2000000/Turn_yr" ターンごと（最小1ターン）
@@ -1060,11 +1106,18 @@ export default {
           if (turn && typeof turn.Time_turn === 'number' && typeof turn.Turn_yr === 'number') {
             const interval = Math.max(1, Math.round(DRIFT_INTERVAL_YEARS / Math.max(1, turn.Turn_yr)));
             if (interval > 0 && (turn.Time_turn % interval === 0)) {
-              this._triggerRun('drift');
+              this._triggerRun(RUN_MODES.DRIFT, null, { allowDuringTurn: true });
             }
           }
         });
       });
+    },
+    async _runOneTurnTick() {
+      if (!getClimateTurn(this.$store)?.isRunning) return;
+      const start = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+
+      await this._runTurnTerrainStep();
+      await this._runTurnClimateStep();
 
       // ポップアップを更新（開いていれば）
       this.openOrUpdateClimatePopup();

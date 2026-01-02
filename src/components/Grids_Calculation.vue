@@ -33,6 +33,7 @@ import { poissonSample } from '../utils/stats/poisson.js';
 import { PARAM_DEFAULTS } from '../utils/paramsDefaults.js';
 import { getClimateVars } from '../store/api.js';
 import { bestEffort } from '../utils/bestEffort.js';
+import { RUN_MODES } from '../constants/runQueue.js';
 
 /**
  * Public API payload contract:
@@ -41,6 +42,7 @@ import { bestEffort } from '../utils/bestEffort.js';
  * `runReviseHighFrequency` emits/produces `TerrainEventPayload` (revised).
  *
  * @typedef {import('../types/index.js').TerrainEventPayload} TerrainEventPayload
+ * @typedef {import('../types/index.js').TerrainRunCommand} TerrainRunCommand
  * @typedef {import('../types/terrainCache.js').TerrainHighFrequencyCache} TerrainHighFrequencyCache
  */
 // このコンポーネントは「計算専用」です（UIや描画は行いません）。
@@ -60,10 +62,11 @@ import { bestEffort } from '../utils/bestEffort.js';
 export default {
   name: 'Grids_Calculation',
   props: {
-    // 統合シグナル: runSignal が増えたら runCommand を解釈して処理する
+    // 統合シグナル: runSignal が増えたら runQueue を処理する
     runSignal: { type: Number, required: false, default: 0 },
-    // @type {{mode?: ('generate'|'update'|'revise'|'drift')|null, options?: any, runContext?: any}|null}
-    runCommand: { type: Object, required: false, default: null },
+    // キュー（FIFO）: 親が enqueue し、子が runSignal で順に処理する
+    // @type {TerrainRunCommand[]}
+    runQueue: { type: Array, required: false, default: () => [] },
     gridWidth: { type: Number, required: true },
     gridHeight: { type: Number, required: true },
     seaLandRatio: { type: Number, required: true },
@@ -150,38 +153,89 @@ export default {
       driftMetrics: null,
 
       // runContext が渡されないケースのフォールバック用（payloadを自己記述化する）
-      emitSeq: 0
+      emitSeq: 0,
+
+      // Parent UI hook: busy/idle (for debugging and safer UI gating)
+      isRunBusy: false
     };
   },
   watch: {
     runSignal() {
-      this._handleRunCommand();
+      this._drainRunQueue();
     }
   },
   methods: {
-    _handleRunCommand() {
-      const cmd = this.runCommand || null;
-      const mode = cmd && cmd.mode ? String(cmd.mode) : '';
-      const options = cmd && cmd.options ? cmd.options : null;
-      // runContext is carried in runCommand (single wire). Direct method calls can pass runContext explicitly.
-      const rc = cmd && cmd.runContext ? cmd.runContext : null;
+    _setRunBusy(busy, payload = null) {
+      const next = !!busy;
+      if (this.isRunBusy === next) return;
+      this.isRunBusy = next;
+      this.$emit(next ? 'run-busy' : 'run-idle', payload);
+    },
+    _normalizeRunCommand(cmd) {
+      const c = cmd || {};
+      const mode = c && c.mode ? String(c.mode) : '';
+      const rc = c && c.runContext ? c.runContext : null;
+      const rawOptions = (c && typeof c.options === 'object' && c.options) ? c.options : null;
 
-      if (mode === 'revise') {
-        this.runReviseHighFrequency({ ...(options || {}), runContext: rc });
-        return;
+      if (mode === RUN_MODES.REVISE) {
+        // default: emit true (button path). Turn-tick uses direct call with emit:false.
+        const emit =
+          rawOptions && typeof rawOptions.emit === 'boolean'
+            ? rawOptions.emit
+            : true;
+        return { mode, runContext: rc, options: { emit } };
       }
-      if (mode === 'drift') {
-        this.runDrift({ runContext: rc });
-        return;
+      if (mode === RUN_MODES.UPDATE) {
+        return { mode, runContext: rc, options: { preserveCenterCoordinates: true } };
       }
-      if (mode === 'update' || mode === 'generate') {
-        const preserve = (options && typeof options.preserveCenterCoordinates === 'boolean')
-          ? !!options.preserveCenterCoordinates
-          : (mode === 'update');
-        this._scheduleGenerate({ preserveCenterCoordinates: preserve, runContext: rc });
-        return;
+      if (mode === RUN_MODES.GENERATE) {
+        return { mode, runContext: rc, options: { preserveCenterCoordinates: false } };
       }
-      // unknown/empty command => ignore
+      if (mode === RUN_MODES.DRIFT) {
+        return { mode, runContext: rc, options: null };
+      }
+      return { mode: '', runContext: rc, options: null };
+    },
+    _drainRunQueue() {
+      const q = Array.isArray(this.runQueue) ? this.runQueue : [];
+      if (q.length === 0) return;
+
+      let consumed = 0;
+      this._setRunBusy(true, { queueLength: q.length });
+      try {
+        for (let i = 0; i < q.length; i++) {
+          const norm = this._normalizeRunCommand(q[i] || null);
+          const mode = norm.mode;
+          const options = norm.options;
+          const rc = norm.runContext;
+
+          if (!mode) { consumed++; continue; }
+
+          if (mode === RUN_MODES.REVISE) {
+            this.runReviseHighFrequency({ ...(options || {}), runContext: rc });
+            consumed++;
+            continue;
+          }
+          if (mode === RUN_MODES.DRIFT) {
+            this.runDrift({ runContext: rc });
+            consumed++;
+            continue;
+          }
+          if (mode === RUN_MODES.UPDATE || mode === RUN_MODES.GENERATE) {
+            const preserve = (options && typeof options.preserveCenterCoordinates === 'boolean')
+              ? !!options.preserveCenterCoordinates
+              : (mode === RUN_MODES.UPDATE);
+            this._scheduleGenerate({ preserveCenterCoordinates: preserve, runContext: rc });
+            consumed++;
+            continue;
+          }
+          // unknown => consume and ignore
+          consumed++;
+        }
+      } finally {
+        this._setRunBusy(false, { consumed });
+      }
+      if (consumed > 0) this.$emit('run-consumed', consumed);
     },
     _makeFallbackRunId() {
       this.emitSeq = (Number(this.emitSeq) || 0) + 1;
@@ -208,11 +262,13 @@ export default {
         this.pendingGenerateOptions = opts;
         return;
       }
+      this._setRunBusy(true, { mode: opts.preserveCenterCoordinates ? 'update' : 'generate' });
       this.isGenerateRunning = true;
       try {
         this.runGenerate(opts);
       } finally {
         this.isGenerateRunning = false;
+        this._setRunBusy(false, { mode: opts.preserveCenterCoordinates ? 'update' : 'generate' });
       }
       if (this.pendingGenerateOptions) {
         const next = this.pendingGenerateOptions;
