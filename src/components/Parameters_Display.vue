@@ -551,13 +551,15 @@ export default {
         const ts = Number(this.climateTurn.Turn_speed || 1.0);
         // avoid NaN
         const safeTs = (ts > 0) ? ts : 1.0;
-        return Math.log10(safeTs);
+        // UI slider operates on multiplier 'x' (larger x = faster).
+        // multiplier x = 1 / sec_per_turn, so exponent = log10(x) = -log10(sec)
+        return Math.log10(1.0 / safeTs);
       },
       set(val) {
         let exp = Number(val);
         if (!isFinite(exp)) exp = 0;
-        // map back to speed and dispatch (clamped + rounded to 0.1)
-        let v = Math.pow(10, exp);
+        // map back to seconds-per-turn: sec = 1 / (10^exp) = 10^-exp
+        let v = Math.pow(10, -exp);
         v = Math.max(0.1, Math.min(10, v));
         v = Math.round(v * 10) / 10;
         updateTurnSpeed(this.$store, v);
