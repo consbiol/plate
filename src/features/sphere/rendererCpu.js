@@ -15,7 +15,9 @@ export function drawSphereCPU(vm, canvas) {
     const H = canvas.height;
     const cx = Math.floor(W / 2);
     const cy = Math.floor(H / 2);
-    const R = Math.floor(Math.min(W, H) * 0.30);
+    // If popup set a fixed sphere radius on the canvas (dataset.fixedSphereR), use it
+    const datasetR = (canvas && canvas.dataset && canvas.dataset.fixedSphereR) ? parseInt(canvas.dataset.fixedSphereR, 10) : null;
+    const R = (datasetR && isFinite(datasetR)) ? datasetR : Math.floor(Math.min(W, H) * 0.30);
 
     const width = vm.gridWidth;
     const height = vm.gridHeight;

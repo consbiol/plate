@@ -1213,7 +1213,8 @@ export default {
             // Approach: centroid -> nearest -> random x2
             const dG = getDist(p, center, useYtorus);
             const stG = stepFromVector(dG.dx, dG.dy);
-            movePrimary(p, stG.dx * 1, stG.dy * 1, rngForMoves);
+            // 接近フェーズ1: 重心法で2グリッド接近に変更
+            movePrimary(p, stG.dx * 2, stG.dy * 2, rngForMoves);
 
             // nearest approach
             let nearest = null;

@@ -19,7 +19,8 @@ export function drawSphereWebGL(vm) {
 
     const cx = canvas.width / 2;
     const cy = canvas.height / 2;
-    const R = Math.floor(Math.min(canvas.width, canvas.height) * 0.30);
+    const datasetR = (canvas && canvas.dataset && canvas.dataset.fixedSphereR) ? parseInt(canvas.dataset.fixedSphereR, 10) : null;
+    const R = (datasetR && isFinite(datasetR)) ? datasetR : Math.floor(Math.min(canvas.width, canvas.height) * 0.30);
     gl.uniform1f(vm._glUniforms.u_cx, cx);
     gl.uniform1f(vm._glUniforms.u_cy, cy);
     gl.uniform1f(vm._glUniforms.u_R, R);

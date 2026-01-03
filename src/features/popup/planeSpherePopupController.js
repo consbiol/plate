@@ -56,7 +56,7 @@ export function openOrUpdatePlaneSpherePopup(vm) {
  * @param {PlaneSpherePopupVm} vm
  * @returns {void}
  */
-export function updatePlaneIframeOnly(vm) {
+export function updatePlaneIframeOnly(vm, { showSpinner = false } = {}) {
     const w = (vm.planePopupRef && !vm.planePopupRef.closed) ? vm.planePopupRef : null;
     if (!w) {
         openOrUpdatePlaneSpherePopup(vm);
@@ -90,9 +90,7 @@ export function updatePlaneIframeOnly(vm) {
                     pif.srcdoc = vm.buildPlaneHtml();
                     return;
                 }
-                fn(displayColors, displayW, displayH, cell);
-                if (typeof pw.__planeUpdateCount === 'number') pw.__planeUpdateCount++;
-                else pw.__planeUpdateCount = 1;
+                fn(displayColors, displayW, displayH, cell, !!showSpinner);
                 return;
             } catch (e) {
                 pif.srcdoc = vm.buildPlaneHtml();
@@ -113,7 +111,8 @@ export function updatePlaneIframeOnly(vm) {
  * @returns {void}
  */
 export function updatePlaneAndSphereIframes(vm) {
-    updatePlaneIframeOnly(vm);
+    // generate/update/drift 時はスピナー表示
+    updatePlaneIframeOnly(vm, { showSpinner: true });
     bestEffort(() => {
         const w = (vm.planePopupRef && !vm.planePopupRef.closed) ? vm.planePopupRef : null;
         if (!w) return;

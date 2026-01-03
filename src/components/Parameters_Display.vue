@@ -155,12 +155,7 @@
       <input type="number" min="0" max="3" step="0.1" v-model.number="local.centerBias" />
       <span class="hint">{{ (local.centerBias || 0).toFixed(2) }}</span>
     </div>
-
-    <CenterParametersEditor
-      :modelValue="mutableCenterParams"
-      @update:modelValue="mutableCenterParams = $event"
-    />
-    <StatsPanel :stats="stats" />
+    
 
     <!-- 非表示の計算コンポーネント（テンプレート内に配置することで使用済みとして認識される） -->
     <Grids_Calculation
@@ -232,8 +227,7 @@ import Grids_Calculation from './Grids_Calculation.vue';
 import Sphere_Display from './Sphere_Display.vue';
 import GeneratorActions from './ui/GeneratorActions.vue';
 import TurnPanel from './ui/TurnPanel.vue';
-import CenterParametersEditor from './ui/CenterParametersEditor.vue';
-import StatsPanel from './ui/StatsPanel.vue';
+/* CenterParametersEditor and StatsPanel removed from template; keep imports removed */
 import { deriveDisplayColorsFromGridData, getEraTerrainColors } from '../utils/colors.js';
 import { ERAS, GRID_DEFAULTS, PARAM_DEFAULTS, createLocalParams } from '../utils/paramsDefaults.js';
 import { computeGlacierBaseRowsFromTemperature } from '../utils/terrain/glacierAnchors.js';
@@ -302,7 +296,7 @@ import {
  */
 export default {
   name: 'Parameters_Display',
-  components: { Grids_Calculation, Sphere_Display, GeneratorActions, TurnPanel, CenterParametersEditor, StatsPanel },
+  components: { Grids_Calculation, Sphere_Display, GeneratorActions, TurnPanel },
   props: {
     // 陸の中心点の数: 地形生成の起点となる中心点の個数。多いほど複雑な地形になります。
     centersY: { type: Number, required: false, default: PARAM_DEFAULTS.centersY },
@@ -755,7 +749,8 @@ export default {
 
       // Plane iframe 更新は「外に見える部分」なので、必要なときだけ
       if (updatePlane) {
-        updatePlaneIframeOnly(this);
+        // Revise（turn中を含む）ではスピナー表示しない
+        updatePlaneIframeOnly(this, { showSpinner: false });
       }
     },
 
