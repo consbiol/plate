@@ -11,17 +11,28 @@ export function buildSpherePopupHtml() {
     <title>Sphere View</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      body{margin:0;padding:0;font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;background:#000;color:#fff}
-      h1{margin:0;font-size:14px}
+      html,body{height:100%}
+      body{margin:0;padding:0;font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;background:#000;color:#fff;display:flex;flex-direction:column;height:100vh;box-sizing:border-box;}
+      h1{margin:0 0 6px;font-size:16px}
       .row{margin:0}
       /* キャンバスのボーダ/角丸をなくして余白を最小化 */
       canvas{display:block;margin:0 auto;border:none;border-radius:0;background:#000}
-      .controls{display:flex;gap:6px;justify-content:center;align-items:center;margin-top:0}
+      .controls{display:flex;gap:6px;justify-content:center;align-items:center;margin:0 0 2px}
       button{padding:4px 6px;border:1px solid #ccc;border-radius:2px;background:#f7f7f7;cursor:pointer}
       button:hover{background:#eee}
 
       /* resize中だけ出すスピナー（再初期化はしない） */
-      .canvas-wrap{position:relative; width:100%; display:flex; justify-content:center; margin-top:0; padding:0}
+      .canvas-wrap{
+        position:relative;
+        width:100%;
+        display:flex;
+        justify-content:center;
+        align-items:center;
+        margin-top:0;
+        padding:0;
+        /* keep canvas centered but don't block vertical sizing */
+        flex:0 0 auto;
+      }
       .spinner-overlay{
         position:absolute;
         inset:0;
