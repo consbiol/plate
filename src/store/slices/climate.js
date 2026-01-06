@@ -29,6 +29,11 @@ function buildDefaultClimateState() {
         // 時代境界の「30ターンだけ Turn_yr=1000」用
         transitionTurnsRemaining: 0,
         transitionNextTurnYr: null,
+        // 永続的なイベントによる Turn_yr 強制用（例：Step2 の太陽活動イベントで使用）
+        // - forcedTurnsRemaining: 残り強制ターン数（0なら無効）
+        // - forcedOriginalTurnYr: 強制開始前の Turn_yr を保持（復帰時に使用）
+        forcedTurnsRemaining: 0,
+        forcedOriginalTurnYr: null,
 
         // generateSignal で固定される定数（seed固定）
         constants: {
@@ -49,6 +54,12 @@ function buildDefaultClimateState() {
         events: {
             Volcano_event: 1,
             Meteo_eff: 1,
+            // Meteo のワンショット残ターン（mutation で 1 に設定し、model 側でデクリメントして 0 で Meteo_eff を 1 に戻す）
+            Meteo_one_shot_remaining: 0,
+            // Fire のワンショット残ターン（mutation で 1 に設定し、model 側でデクリメントして 0 で Fire_event_CO2 を 0 に戻す）
+            Fire_one_shot_remaining: 0,
+            // Cosmic (超新星) のワンショット残ターン（mutation で 3 に設定し、model 側でデクリメントして 0 で CosmicRay を 1 に戻す）
+            Cosmic_one_shot_remaining: 0,
             Fire_event_CO2: 0,
             CH4_event: 0,
             sol_event: 0,
@@ -150,6 +161,33 @@ function buildSeededConstants({ deterministicSeed }) {
 export function createClimateSlice() {
     const defaults = buildDefaultClimateState();
 
+    // Step2 のイベント発火時に「20ターンだけ Turn_yr=1000 を強制」するための共通処理。
+    // 注意: 「永続」イベントは値（例: sol_event）が継続するため、判定を computeNextClimateTurn 側で
+    // `sol_event !== 0` のように書くと毎ターン延長されて永遠に戻らない。必ず「発火した瞬間」にここを呼ぶこと。
+    function startForcedTurnYrWindow(curClimate, { turns = 20, forcedTurnYr = 1000 } = {}) {
+        const cur = curClimate || buildDefaultClimateState();
+        const era = cur.era;
+        const isCivilEra = (era === '文明時代' || era === '海棲文明時代');
+        if (isCivilEra) return cur;
+
+        const nTurns = Math.max(0, Math.floor(Number(turns) || 0));
+        if (nTurns <= 0) return cur;
+
+        const original = (typeof cur.forcedOriginalTurnYr === 'number' && cur.forcedOriginalTurnYr > 0)
+            ? cur.forcedOriginalTurnYr
+            : (typeof cur.Turn_yr === 'number' && cur.Turn_yr > 0 ? cur.Turn_yr : null);
+
+        return {
+            ...cur,
+            // 強制開始前の Turn_yr を保持（UI変更値を含む）
+            forcedOriginalTurnYr: original,
+            // この瞬間から nTurns ターン強制（重複発火時はここで再スタートする）
+            forcedTurnsRemaining: nTurns,
+            // 即時反映（次ターン計算から強制されるが、UI表示を直ちに揃えたい場合に備えてここでも反映）
+            Turn_yr: Number(forcedTurnYr) || 1000
+        };
+    }
+
     return {
         state: {
             climate: defaults
@@ -197,7 +235,88 @@ export function createClimateSlice() {
                 const d = Number(delta || 0);
                 if (!isFinite(d)) return;
                 ev.sol_event = prev + d;
-                state.climate = { ...cur, events: ev };
+                // 「太陽活動の上昇（永続）」「太陽活動の下降（永続）」の発火点はここ。
+                // この瞬間から 20 ターンだけ Turn_yr=1000 を強制し、終了後に発火前の Turn_yr に戻す。
+                const withEvent = { ...cur, events: ev };
+                state.climate = startForcedTurnYrWindow(withEvent, { turns: 20, forcedTurnYr: 1000 });
+            }
+            ,
+            // 隕石落下イベント（ワンショット）
+            // payload: { level: 1..5 } - Lv1..Lv5 の強度を指定。Lv0(リセット)の場合は level=0。
+            triggerMeteoLevel(state, payload) {
+                const lvl = (payload && typeof payload.level === 'number') ? Math.floor(payload.level) : 0;
+                const cur = state.climate || buildDefaultClimateState();
+                const ev = { ...(cur.events || {}) };
+                // レベル -> Meteo_eff のマッピング
+                const mapping = {
+                    0: 1.00,
+                    1: 0.97,
+                    2: 0.93,
+                    3: 0.88,
+                    4: 0.80,
+                    5: 0.70
+                };
+                const val = Object.prototype.hasOwnProperty.call(mapping, lvl) ? mapping[lvl] : 1.00;
+                ev.Meteo_eff = Number(val);
+                // 1ターンだけ有効にするフラグ（model側でデクリメントして次ターンにリセットする）
+                ev.Meteo_one_shot_remaining = (lvl === 0) ? 0 : 1;
+
+                // 强制Turn_yrの開始（時代が文明系以外なら20ターン強制）
+                const withEvent = { ...cur, events: ev };
+                state.climate = startForcedTurnYrWindow(withEvent, { turns: 20, forcedTurnYr: 1000 });
+            }
+            ,
+            // 森林火災イベント（ワンショット）
+            // payload: { level: 1..5 } - Lv1..Lv5 の強度を指定。Lv0(リセット)の場合は level=0。
+            triggerFireLevel(state, payload) {
+                const lvl = (payload && typeof payload.level === 'number') ? Math.floor(payload.level) : 0;
+                const cur = state.climate || buildDefaultClimateState();
+                const ev = { ...(cur.events || {}) };
+                // レベル -> Fire_event_CO2 のマッピング (分圧 / bar)
+                const mapping = {
+                    0: 0,
+                    1: 0.000005,
+                    2: 0.00005,
+                    3: 0.00025,
+                    4: 0.0010,
+                    5: 0.0025
+                };
+                const val = Object.prototype.hasOwnProperty.call(mapping, lvl) ? mapping[lvl] : 0;
+                ev.Fire_event_CO2 = Number(val);
+                // 1ターンだけ有効にするフラグ（model側でデクリメントして次ターンにリセットする）
+                ev.Fire_one_shot_remaining = (lvl === 0) ? 0 : 1;
+
+                // 强制Turn_yrの開始（時代が文明系以外なら20ターン強制）
+                const withEvent = { ...cur, events: ev };
+                state.climate = startForcedTurnYrWindow(withEvent, { turns: 20, forcedTurnYr: 1000 });
+            }
+            ,
+            // 超新星イベント（ワンショット：CosmicRay を一時的に上げる）
+            // payload: { level: optional } - 現状 level は使わず固定値 1.3 を 3ターンセットする
+            triggerCosmicEvent(state) {
+                const cur = state.climate || buildDefaultClimateState();
+                const ev = { ...(cur.events || {}) };
+                // 発火：CosmicRay を 1.3 に、残ターンを 3 にセット
+                ev.CosmicRay = 1.3;
+                ev.Cosmic_one_shot_remaining = 3;
+
+                // 强制Turn_yrの開始（時代が文明系以外なら20ターン強制）
+                const withEvent = { ...cur, events: ev };
+                state.climate = startForcedTurnYrWindow(withEvent, { turns: 20, forcedTurnYr: 1000 });
+            }
+            ,
+            // ガンマ線バースト（ワンショット：CosmicRay を一時的に上げる）
+            // payload: none - 1ターンだけ CosmicRay = 1.5 にする
+            triggerGammaEvent(state) {
+                const cur = state.climate || buildDefaultClimateState();
+                const ev = { ...(cur.events || {}) };
+                // 発火：CosmicRay を 1.5 に、残ターンを 1 にセット
+                ev.CosmicRay = 1.5;
+                ev.Cosmic_one_shot_remaining = 1;
+
+                // 强制Turn_yrの開始（時代が文明系以外なら20ターン強制）
+                const withEvent = { ...cur, events: ev };
+                state.climate = startForcedTurnYrWindow(withEvent, { turns: 20, forcedTurnYr: 1000 });
             }
         },
         actions: {
@@ -245,6 +364,9 @@ export function createClimateSlice() {
                     isRunning: false,
                     transitionTurnsRemaining: 0,
                     transitionNextTurnYr: null,
+                    // 初期化時は強制補正は無効
+                    forcedTurnsRemaining: 0,
+                    forcedOriginalTurnYr: null,
                     constants,
                     terrain,
                     vars,

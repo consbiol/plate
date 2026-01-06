@@ -29,6 +29,38 @@
           <button @click="adjustSol(-100)">Lv5</button>
         </div>
       </div>
+      <div class="event-group">
+        <div class="event-label">隕石落下 (Meteo)</div>
+        <div class="event-buttons">
+          <button @click="triggerMeteo(1)">Lv1</button>
+          <button @click="triggerMeteo(2)">Lv2</button>
+          <button @click="triggerMeteo(3)">Lv3</button>
+          <button @click="triggerMeteo(4)">Lv4</button>
+          <button @click="triggerMeteo(5)">Lv5</button>
+        </div>
+      </div>
+      <div class="event-group">
+        <div class="event-label">森林火災 (Fire)</div>
+        <div class="event-buttons">
+          <button @click="triggerFire(1)">Lv1</button>
+          <button @click="triggerFire(2)">Lv2</button>
+          <button @click="triggerFire(3)">Lv3</button>
+          <button @click="triggerFire(4)">Lv4</button>
+          <button @click="triggerFire(5)">Lv5</button>
+        </div>
+      </div>
+      <div class="event-group">
+        <div class="event-label">近傍超新星 (Cosmic)</div>
+        <div class="event-buttons">
+          <button @click="triggerCosmic()">発火 (3ターン)</button>
+        </div>
+      </div>
+      <div class="event-group">
+        <div class="event-label">ガンマ線バースト (Gamma)</div>
+        <div class="event-buttons">
+          <button @click="triggerGamma()">発火 (1ターン)</button>
+        </div>
+      </div>
       <div class="sol-display">sol_event: {{ solEvent }}</div>
     </div>
   </div>
@@ -45,10 +77,41 @@ export default {
       const c = (this.$store && this.$store.state && this.$store.state.climate) ? this.$store.state.climate : null;
       return (c && c.events && typeof c.events.sol_event === 'number') ? c.events.sol_event : (c && c.events ? Number(c.events.sol_event || 0) : 0);
     }
+    ,
+    meteoEff() {
+      const c = (this.$store && this.$store.state && this.$store.state.climate) ? this.$store.state.climate : null;
+      return (c && c.events && typeof c.events.Meteo_eff === 'number') ? c.events.Meteo_eff : 1;
+    }
+    ,
+    fireCO2() {
+      const c = (this.$store && this.$store.state && this.$store.state.climate) ? this.$store.state.climate : null;
+      return (c && c.events && typeof c.events.Fire_event_CO2 === 'number') ? c.events.Fire_event_CO2 : 0;
+    }
+    ,
+    cosmicVal() {
+      const c = (this.$store && this.$store.state && this.$store.state.climate) ? this.$store.state.climate : null;
+      return (c && c.events && typeof c.events.CosmicRay === 'number') ? c.events.CosmicRay : 1;
+    }
   },
   methods: {
     adjustSol(delta) {
       this.$store.commit('adjustSolEvent', Number(delta));
+    }
+    ,
+    triggerMeteo(level) {
+      this.$store.commit('triggerMeteoLevel', { level: Number(level) });
+    }
+    ,
+    triggerFire(level) {
+      this.$store.commit('triggerFireLevel', { level: Number(level) });
+    }
+    ,
+    triggerCosmic() {
+      this.$store.commit('triggerCosmicEvent', {});
+    }
+    ,
+    triggerGamma() {
+      this.$store.commit('triggerGammaEvent', {});
     }
   }
 };

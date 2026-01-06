@@ -29,8 +29,9 @@ function categorizeGreenIndex(giRaw) {
 function tempZone(avgTempRaw) {
     const t = Number(avgTempRaw);
     if (t >= 32.5) return 'VeryHighTemp';
+    if (t >= 27.5) return 'HighTemp';
     if (t >= 17.5) return 'MiddleTemp';
-    if (t >= 12.5) return 'LowTemp';
+    if (t >= 7.5) return 'LowTemp';
     return 'VeryLowTemp';
 }
 
@@ -47,6 +48,18 @@ const TABLES = Object.freeze({
         H: [10, 11, 5, 3, 1, 0, -1, -2, -3, -3],
         I: [5, 3, 1, 1, 0, -1, -2, -3, -3, -3],
         J: [-1, -2, -3, -3, -3, -3, -3, -3, -3, -3]
+    },
+    HighTemp: {
+        A: [16, 20, 20, 14, 12, 10, 7, 12, 15, 20],
+        B: [13, 18, 18, 13, 11, 8, 5, 8, 12, 16],
+        C: [11, 15, 15, 10, 8, 4, 1, 4, 8, 15],
+        D: [11, 15, 15, 10, 7, 4, 0, 2, 6, 14],
+        E: [11, 15, 15, 9, 6, 4, 0, 2, 5, 13],
+        F: [11, 14, 13, 9, 5, 3, 0, 1, 3, 8],
+        G: [9, 11, 9, 6, 4, 1, -1, 0, 1, 4],
+        H: [8, 9, 5, 2, 1, 0, -2, -2, -2, 0],
+        I: [4, 3, 1, 1, 0, -2, -3, -3, -2, -1],
+        J: [-2, -3, -2, -3, -3, -3, -3, -3, -3, -2]
     },
     MiddleTemp: {
         A: [16, 20, 20, 14, 12, 10, 7, 12, 15, 20],

@@ -86,11 +86,25 @@ export function computeNextClimateTurn(cur) {
     let baseAverageTemperature = (typeof state.baseAverageTemperature === 'number') ? state.baseAverageTemperature : 15;
 
     // Turn_yr（UIで指定された値を優先。未設定なら era 既定値）
-    let Turn_yr = Number(state.Turn_yr) || buildEraTurnYr(era);
+    // ただし forcedTurnsRemaining が有効な間は、このターンの計算に限り Turn_yr=1000 を強制する。
+    const baseTurnYr = Number(state.Turn_yr) || buildEraTurnYr(era);
+    let Turn_yr = baseTurnYr;
     // NOTE: 以前あった「時代遷移の30ターン補正 (Turn_yr=1000)」は要件により削除。
     // 互換のため state に古い transition* が残っていても無視し、常に 0/null にクリアして返す。
     let transitionTurnsRemaining = 0;
     let transitionNextTurnYr = null;
+
+    // --- 強制 Turn_yr オーバーライド（Step2 の永続的太陽イベント用） ---
+    // - forcedTurnsRemaining: 残り強制ターン数（0: 無効）
+    // - forcedOriginalTurnYr: 強制開始前に保持しておく Turn_yr（復帰時に使用）
+    // 将来 Step2 に追加されるイベントでもこの機構を流用してください（下方に注釈あり）。
+    let forcedTurnsRemaining = Number(state.forcedTurnsRemaining) || 0;
+    let forcedOriginalTurnYr = (typeof state.forcedOriginalTurnYr === 'number') ? state.forcedOriginalTurnYr : null;
+
+    // 強制中は「このターンの計算」に使う Turn_yr を 1000 にする（alpha や nextTimeYr も含む）
+    if (forcedTurnsRemaining > 0) {
+        Turn_yr = 1000;
+    }
 
     const { GI_alpha, CO2_alpha, O2_alpha, Temp_alpha } = buildTurnAlphaParams(Turn_yr);
 
@@ -137,9 +151,21 @@ export function computeNextClimateTurn(cur) {
     const CosmicRay = (typeof events.CosmicRay === 'number') ? events.CosmicRay : 1;
     // 次 state が時代遷移で開始されるかを事前判定（時代変化直後の「初回ターン」扱いを検出するため）
     const eraWillChange = getNextEraByTime(era, Time_yr + Turn_yr).didChange;
+    // Temp_alpha の上書き制御用（隕石イベントなどで Meteo_eff != 1 の場合は即時 Temp_alpha=1）
+    let temp_Alpha_event = Temp_alpha;
+    if (Meteo_eff !== 1) {
+        temp_Alpha_event = 1;
+    }
+    // NOTE:
+    // 「永続」イベント（例: sol_event）が継続する間は値が非ゼロのままなので、
+    // `sol_event !== 0` をトリガーにすると毎ターン延長されて永遠に戻らない。
+    // 発火点（=ユーザー操作でイベント値が加算/減算された瞬間）で forcedTurnsRemaining をセットするのが正しい。
+    // そのため、発火処理は store の mutation 側で行い、ここでは forcedTurnsRemaining のみを参照する。
 
     // --- Step3: 植生 ---
-    const greenIndex_calc = 1.81 * Math.exp(-(sq(averageTemperature - 22.5)) / (2 * sq(12))) * f_cloud;
+    const co2Factor = (1.5 * f_CO2) / (0.0002 + f_CO2);
+    const co2FactorClamped = Math.max(0, Math.min(co2Factor, 1.5));
+    const greenIndex_calc = 1.81 * Math.exp(-(sq(averageTemperature - 22.5)) / (2 * sq(12))) * f_cloud * co2FactorClamped;
     // 最初のターン（または時代変化による次state開始ターン）では平滑化を行わず、生値を採用する
     if (Time_turn === 0 || eraWillChange) {
         greenIndex = greenIndex_calc;
@@ -334,7 +360,7 @@ export function computeNextClimateTurn(cur) {
     if (Time_turn === 0) {
         averageTemperature = averageTemperature_calc - 273.15;
     } else {
-        averageTemperature = Temp_alpha * (averageTemperature_calc - 273.15) + (1 - Temp_alpha) * averageTemperature;
+        averageTemperature = temp_Alpha_event * (averageTemperature_calc - 273.15) + (1 - temp_Alpha_event) * averageTemperature;
     }
 
     // --- Step8: ターン終了処理 ---
@@ -354,8 +380,21 @@ export function computeNextClimateTurn(cur) {
         nextTimeTurn = 0;
     }
 
-    // 次stateの Turn_yr は常に「現在の Turn_yr（=ユーザー指定）」を維持する
-    const nextTurnYrForState = Turn_yr;
+    // --- 強制 Turn_yr の継続/終了処理 ---
+    let nextForcedTurnsRemaining = Math.max(0, Number(forcedTurnsRemaining) - 1);
+    let nextTurnYrForState = Turn_yr;
+    if (forcedTurnsRemaining > 0) {
+        // 終了する次 state では元の Turn_yr に戻す（保存済み original がある場合）
+        if (nextForcedTurnsRemaining === 0 && (typeof forcedOriginalTurnYr === 'number' && forcedOriginalTurnYr > 0)) {
+            nextTurnYrForState = forcedOriginalTurnYr;
+            forcedOriginalTurnYr = null;
+        } else {
+            nextTurnYrForState = 1000;
+        }
+    } else {
+        // 強制なし：ユーザー指定（baseTurnYr）を維持
+        nextTurnYrForState = baseTurnYr;
+    }
 
     // 10ターンごとの平均気温履歴
     const history = state.history || { averageTemperatureEvery10: [] };
@@ -365,14 +404,53 @@ export function computeNextClimateTurn(cur) {
         nextHist.push({ turn: nextTimeTurn, yr: nextTimeYr, value: averageTemperature });
     }
 
+    // --- Meteo (隕石落下) と Fire (森林火災) のワンショット残ターン処理 ---
+    const nextEvents = { ...events };
+
+    // Meteo
+    const meteoRemaining = Number(events.Meteo_one_shot_remaining || 0);
+    const nextMeteoRemaining = Math.max(0, meteoRemaining - 1);
+    if (meteoRemaining > 0) {
+        nextEvents.Meteo_one_shot_remaining = nextMeteoRemaining;
+        if (nextMeteoRemaining === 0) {
+            // ワンショットが終了したら Meteo_eff を Lv0 (=1) に戻す
+            nextEvents.Meteo_eff = 1;
+        }
+    }
+
+    // Fire
+    const fireRemaining = Number(events.Fire_one_shot_remaining || 0);
+    const nextFireRemaining = Math.max(0, fireRemaining - 1);
+    if (fireRemaining > 0) {
+        nextEvents.Fire_one_shot_remaining = nextFireRemaining;
+        if (nextFireRemaining === 0) {
+            // ワンショットが終了したら Fire_event_CO2 を Lv0 (=0) に戻す
+            nextEvents.Fire_event_CO2 = 0;
+        }
+    }
+    // Cosmic (超新星)
+    const cosmicRemaining = Number(events.Cosmic_one_shot_remaining || 0);
+    const nextCosmicRemaining = Math.max(0, cosmicRemaining - 1);
+    if (cosmicRemaining > 0) {
+        nextEvents.Cosmic_one_shot_remaining = nextCosmicRemaining;
+        if (nextCosmicRemaining === 0) {
+            // ワンショットが終了したら CosmicRay を Lv0 (=1) に戻す
+            nextEvents.CosmicRay = 1;
+        }
+    }
+
     return {
         ...state,
+        events: nextEvents,
         era: nextEra,
         Time_turn: nextTimeTurn,
         Time_yr: nextTimeYr,
         Turn_yr: nextTurnYrForState,
         transitionTurnsRemaining,
         transitionNextTurnYr,
+        // 保存して次ターンに受け渡す（強制が継続している/終了したことを store 側で把握できる）
+        forcedTurnsRemaining: nextForcedTurnsRemaining,
+        forcedOriginalTurnYr: forcedOriginalTurnYr,
         vars: {
             ...state.vars,
             solarEvolution,
