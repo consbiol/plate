@@ -187,8 +187,8 @@ export function computeNextClimateTurn(cur) {
     );
 
     const CO2_abs_rock =
-        Turn_yr
-        * 0.00000001
+        Turn_yr ** 0.5
+        * 0.00000008
         * (f_land / 0.3)
         * Math.exp((averageTemperature - 15) / 17)
         * Math.pow((f_CO2 / 0.0004), 0.5)
@@ -197,8 +197,8 @@ export function computeNextClimateTurn(cur) {
     const Pland_t = computePland_t(era);
     const CO2_abs_plant =
         (f_CO2 < 0.0001) ? 0 : (
-            Turn_yr
-            * 0.00000005
+            Turn_yr ** 0.5
+            * 0.0000003
             * Pland_t
             * (f_green / 0.3)
             * Math.exp(-sq((averageTemperature - 22.5) / 15))
@@ -208,11 +208,12 @@ export function computeNextClimateTurn(cur) {
     const CO2_abs_total = CO2_abs_rock + CO2_abs_plant;
 
     const CO2_release_volcano =
-        Turn_yr
+        Turn_yr ** 0.5
         * 0.00000015
         * Volcano_event
         * ((1 + 4.55 / 2.5) / (1 + Time_yr / 2500000000))
-        * (1 + 0.5 * ((f_land_original - 0.3) / 0.3));
+        * (1 + 0.5 * ((f_land_original - 0.3) / 0.3))
+        * (0.5 + (Math.random() + Math.random()) / 2);
 
     const CO2_release_civil = 0; // 未実装
 
@@ -237,7 +238,7 @@ export function computeNextClimateTurn(cur) {
     const land_abs_eff = (100 * Math.exp(-Time_yr / 500000000)) * HighO2_abs_boost + 0.6 * land_abs_eff_planet;
 
     const O2_abs =
-        Turn_yr
+        Turn_yr ** 0.5
         * 0.00001
         * land_abs_eff
         * (f_land / 0.3)
@@ -250,7 +251,7 @@ export function computeNextClimateTurn(cur) {
     const fungal_factor = computeFungalFactor(era);
 
     const O2_prod =
-        Turn_yr
+        Turn_yr ** 0.5
         * 0.001
         * (
             0.6
@@ -426,16 +427,6 @@ export function computeNextClimateTurn(cur) {
         if (nextFireRemaining === 0) {
             // ワンショットが終了したら Fire_event_CO2 を Lv0 (=0) に戻す
             nextEvents.Fire_event_CO2 = 0;
-        }
-    }
-    // Cosmic (超新星)
-    const cosmicRemaining = Number(events.Cosmic_one_shot_remaining || 0);
-    const nextCosmicRemaining = Math.max(0, cosmicRemaining - 1);
-    if (cosmicRemaining > 0) {
-        nextEvents.Cosmic_one_shot_remaining = nextCosmicRemaining;
-        if (nextCosmicRemaining === 0) {
-            // ワンショットが終了したら CosmicRay を Lv0 (=1) に戻す
-            nextEvents.CosmicRay = 1;
         }
     }
 
