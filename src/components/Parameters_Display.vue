@@ -6,7 +6,18 @@
       @update="onClickUpdate"
       @revise="onClickReviseHighFrequency"
       @drift="onClickDrift"
-    />
+    >
+      <template v-slot:inline-views>
+        <div class="inline-views">
+          <div class="plane-wrap">
+            <iframe id="plane-iframe-main" title="Plane Map"></iframe>
+          </div>
+          <div class="sphere-wrap">
+            <iframe id="sphere-iframe-main" title="Sphere (front view)"></iframe>
+          </div>
+        </div>
+      </template>
+    </GeneratorActions>
 
     <TurnPanel
       :climateTurn="climateTurn"
@@ -271,7 +282,6 @@ import {
   syncLocalFromStoreGeneratorParams,
   syncLocalFromStoreRenderSettings
 } from '../features/storeSync/localStoreSync.js';
-import { openOrUpdatePlaneSpherePopup, updatePlaneIframeOnly, updatePlaneAndSphereIframes } from '../features/popup/planeSpherePopupController.js';
 import { openOrUpdatePopup as openOrUpdateHtmlPopup, openOrReusePopup, writePopupIfOpen } from '../features/popup/htmlPopupController.js';
 import {
   TURN_MIN_WAIT_MS,
@@ -279,7 +289,8 @@ import {
   TURN_PLANE_UPDATE_EVERY_TURNS,
   TURN_REGENERATE_EVERY_TURNS,
   DRIFT_INTERVAL_YEARS,
-  SPHERE_MAX_NON_RELOAD_UPDATES
+  SPHERE_MAX_NON_RELOAD_UPDATES,
+  PLANE_MAX_NON_RELOAD_UPDATES
 } from '../constants/sim.js';
 
 /**
@@ -750,7 +761,7 @@ export default {
       // Plane iframe 更新は「外に見える部分」なので、必要なときだけ
       if (updatePlane) {
         // Revise（turn中を含む）ではスピナー表示しない
-        updatePlaneIframeOnly(this, { showSpinner: false });
+        this._updateInlinePlaneIframeOnly({ showSpinner: false });
       }
     },
 
@@ -869,10 +880,10 @@ export default {
     _applyTerrainPayloadToUi({ gridData }) {
       // 1.2) 平面表示色（+2枠）を計算してポップアップ用に保持
       this._updatePlaneDisplayColorsFromGridData(gridData);
-      // 1.3) 平面地図専用ポップアップを更新（初回は作成、続きは差分更新）
-      openOrUpdatePlaneSpherePopup(this);
+      // 1.3) 平面地図 / 球表示をインラインに更新（初回は作成、続きは差分更新）
+      this._openOrUpdateInlinePlaneSphere();
       // 非リロードでの差分更新を試みる（Plane + Sphere）
-      updatePlaneAndSphereIframes(this);
+      this._updateInlinePlaneAndSphereIframes();
     },
     _applyTerrainPayloadToStoreAndState({ payload, gridData }) {
       // 2) 親へ伝搬（AppからTerrain_Displayへ受け渡し用）
@@ -1175,6 +1186,105 @@ export default {
         displayH,
         buildVersion
       });
+    },
+
+    /**
+     * Inline (main window) Plane+Sphere management
+     */
+    _openOrUpdateInlinePlaneSphere() {
+      try {
+        const pif = document.getElementById('plane-iframe-main');
+        if (pif) {
+          pif.srcdoc = this.buildPlaneHtml();
+        }
+        const sif = document.getElementById('sphere-iframe-main');
+        if (sif) {
+          const sphereHtml = this._getSphereHtmlForIframe();
+          sif.srcdoc = sphereHtml;
+          // attach when loaded
+          sif.onload = () => {
+            bestEffort(() => {
+              this._attachSphereToIframe(sif);
+            });
+          };
+        }
+      } catch (e) { void e; }
+    },
+
+    _updateInlinePlaneIframeOnly({ showSpinner = false } = {}) {
+      try {
+        const pif = document.getElementById('plane-iframe-main');
+        if (!pif) {
+          this._openOrUpdateInlinePlaneSphere();
+          return;
+        }
+        const pw = pif.contentWindow;
+        const fn = pw && typeof pw.__updatePlane === 'function' ? pw.__updatePlane : null;
+        const pv = pw && typeof pw.__planeVersion !== 'undefined' ? pw.__planeVersion : null;
+        const displayColors = Array.isArray(this.planeDisplayColors) ? this.planeDisplayColors : [];
+        const cell = Number(this.planeGridCellPx) || 3;
+        const displayW = this.gridWidth + 2;
+        const displayH = this.gridHeight + 2;
+
+        if (pv !== null && pv !== this.planeBuildVersion) {
+          pif.srcdoc = this.buildPlaneHtml();
+          return;
+        }
+        if (fn) {
+          try {
+            const updateCount = pw.__planeUpdateCount || 0;
+            if (updateCount >= PLANE_MAX_NON_RELOAD_UPDATES && typeof pw.__cleanupPlane === 'function') {
+              bestEffort(() => pw.__cleanupPlane());
+              pif.srcdoc = this.buildPlaneHtml();
+              return;
+            }
+            fn(displayColors, displayW, displayH, cell, !!showSpinner);
+            return;
+          } catch (e) {
+            pif.srcdoc = this.buildPlaneHtml();
+            return;
+          }
+        }
+        pif.srcdoc = this.buildPlaneHtml();
+      } catch (e) {
+        this._openOrUpdateInlinePlaneSphere();
+      }
+    },
+
+    _updateInlinePlaneAndSphereIframes() {
+      // show spinner for generate/update/drift
+      this._updateInlinePlaneIframeOnly({ showSpinner: true });
+      bestEffort(() => {
+        const sif = document.getElementById('sphere-iframe-main');
+        if (!sif) return;
+        const sphComp = (this.$refs && this.$refs.sphere) ? this.$refs.sphere : null;
+        if (sphComp) {
+          bestEffort(() => {
+            if (typeof sphComp.applyCloudSnapshot === 'function') sphComp.applyCloudSnapshot();
+          });
+          if ((this.sphereUpdateCount || 0) >= (this.sphereMaxUpdates || 200)) {
+            bestEffort(() => sphComp.cleanupSpherePopup());
+            bestEffort(() => { sif.srcdoc = this._getSphereHtmlForIframe(); });
+            this.sphereUpdateCount = 0;
+            return;
+          }
+          try {
+            sphComp.requestRedraw();
+            this.sphereUpdateCount = (this.sphereUpdateCount || 0) + 1;
+            // attempt attach in case iframe was recreated
+            bestEffort(() => this._attachSphereToIframe(sif));
+            return;
+          } catch (e) {
+            bestEffort(() => { sif.srcdoc = this._getSphereHtmlForIframe(); });
+            this.sphereUpdateCount = 0;
+            return;
+          }
+        } else {
+          bestEffort(() => { sif.srcdoc = this._getSphereHtmlForIframe(); });
+          this.sphereUpdateCount = 0;
+          return;
+        }
+      });
     }
   }
 }
@@ -1212,6 +1322,29 @@ export default {
 .band-footer {
   width: 100%;
   margin-top: 8px;
+}
+.inline-views {
+  display: flex;
+  gap: 8px;
+  margin: 8px;
+  align-items: stretch;
+}
+.inline-views .plane-wrap,
+.inline-views .sphere-wrap {
+  flex: 1 1 50%;
+  min-height: 160px;
+  height: 420px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #000;
+}
+.inline-views iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+  background: #000;
 }
 </style>
 

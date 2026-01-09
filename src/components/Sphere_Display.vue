@@ -380,28 +380,6 @@ export default {
       this._sphereWin = null;
     },
     // colors utils are imported
-    openSpherePopup() {
-      const w = window.open('', 'SphereView', 'width=700,height=900');
-      if (!w) return;
-      // 既存ポップアップがあれば、イベント解除と状態リセットを先に行う
-      // （連続openでbeforeunloadが多重登録されるのを防ぐ）
-      this.cleanupSpherePopup();
-      this._sphereWin = w;
-      const doc = w.document;
-      const html = this.buildSphereHtml();
-      doc.open();
-      doc.write(html);
-      doc.close();
-      // 描画
-      const canvas = doc.getElementById('sphere-canvas');
-      if (!canvas) return;
-      this.attachToWindow(w, canvas);
-      // ウィンドウクローズ時に停止
-      this._onSphereBeforeUnload = () => {
-        this.cleanupSpherePopup();
-      };
-      w.addEventListener('beforeunload', this._onSphereBeforeUnload);
-    },
     // color string like 'rgb(r,g,b)' or '#RRGGBB' -> [r,g,b]
     parseColorToRgb(s) {
       return parseColorToRgb(s);

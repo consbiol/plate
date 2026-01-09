@@ -6,8 +6,9 @@
       <button class="action-btn" @click="$emit('revise')" :disabled="disabled">Revise 氷河・乾燥地</button>
       <button class="action-btn" @click="$emit('drift')" :disabled="disabled">Drift 大陸中心点 + ノイズ再抽選</button>
     </div>
+  <slot name="inline-views"></slot>
 
-    <div class="events">
+  <div class="events">
       <div class="events-title">イベント</div>
       <div class="event-group">
         <div class="event-label">太陽活動の上昇</div>
