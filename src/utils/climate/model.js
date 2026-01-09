@@ -1,5 +1,3 @@
-// 指定の「大気ー平均気温モデル」を式そのままで実装する（Step1〜9）
-// - ここは純関数として設計（副作用なし）
 // - state構造は store/slices/climate.js の `climate` を前提
 
 import { clamp } from './math.js';
