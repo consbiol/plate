@@ -23,8 +23,23 @@ export function createSphereTextures(gl, vm) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-    const pixels = buildMapPixels({ vm, width, height });
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    // Build stretched row mapping (same rules as CPU renderer)
+    const expandedRowMapArr = [];
+    for (let y = 0; y < height; y++) {
+        const distTop = y;
+        const distBottom = height - 1 - y;
+        const minDist = Math.min(distTop, distBottom);
+        let factor = 1;
+        if (minDist <= 4) factor = 3;
+        else if (minDist <= 14) factor = 2;
+        for (let k = 0; k < factor; k++) expandedRowMapArr.push(y);
+    }
+    const stretchedHeight = expandedRowMapArr.length;
+    // create original (non-stretched) pixels for polar average calculation
+    const origPixels = buildMapPixels({ vm, width, height });
+    // create stretched pixels for texture upload
+    const pixels = buildMapPixels({ vm, width, height: stretchedHeight, expandedRowMap: expandedRowMapArr });
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, stretchedHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
     // --- class texture ---
     const classTex = gl.createTexture();
@@ -34,13 +49,15 @@ export function createSphereTextures(gl, vm) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-    const classPixels = buildClassPixels({ vm, width, height });
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, classPixels);
+    const classPixels = buildClassPixels({ vm, width, height: stretchedHeight, expandedRowMap: expandedRowMapArr });
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, stretchedHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, classPixels);
 
     // --- polar/buffer meta ---
-    const { topBuf, bottomBuf, effHeight } = computePolarBuffers(height, vm.polarBufferRows);
+    // compute polar buffers based on stretched height
+    const { topBuf, bottomBuf, effHeight } = computePolarBuffers(stretchedHeight, vm.polarBufferRows);
+    // compute polar average from original (non-stretched) pixels so colours reflect original map rows
     const { polarTopRgb, polarBottomRgb } = computePolarAverageRgbFromPixels({
-        pixels,
+        pixels: origPixels,
         width,
         height,
         polarAvgRows: vm.polarAvgRows
@@ -48,7 +65,7 @@ export function createSphereTextures(gl, vm) {
 
     return {
         width,
-        height,
+        height: stretchedHeight,
         tex,
         classTex,
         topBuf,
@@ -88,18 +105,30 @@ export function updateSphereTextures(gl, vm, { tex = null, classTex = null, prev
 
     // --- map texture upload ---
     gl.bindTexture(gl.TEXTURE_2D, tex);
-    const pixels = buildMapPixels({ vm, width, height });
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    // Build stretched row mapping (same rules as CPU renderer)
+    const expandedRowMapArr = [];
+    for (let y = 0; y < height; y++) {
+        const distTop = y;
+        const distBottom = height - 1 - y;
+        const minDist = Math.min(distTop, distBottom);
+        let factor = 1;
+        if (minDist <= 4) factor = 3;
+        else if (minDist <= 14) factor = 2;
+        for (let k = 0; k < factor; k++) expandedRowMapArr.push(y);
+    }
+    const stretchedHeight = expandedRowMapArr.length;
+    const pixels = buildMapPixels({ vm, width, height: stretchedHeight, expandedRowMap: expandedRowMapArr });
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, stretchedHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
     // --- class texture upload ---
     gl.bindTexture(gl.TEXTURE_2D, classTex);
-    const classPixels = buildClassPixels({ vm, width, height });
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, classPixels);
+    const classPixels = buildClassPixels({ vm, width, height: stretchedHeight, expandedRowMap: expandedRowMapArr });
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, stretchedHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, classPixels);
 
     // --- polar/buffer meta ---
-    const { topBuf, bottomBuf, effHeight } = computePolarBuffers(height, vm.polarBufferRows);
+    const { topBuf, bottomBuf, effHeight } = computePolarBuffers(stretchedHeight, vm.polarBufferRows);
     const { polarTopRgb, polarBottomRgb } = computePolarAverageRgbFromPixels({
-        pixels,
+        pixels: buildMapPixels({ vm, width, height }), // original pixels for polar averaging
         width,
         height,
         polarAvgRows: vm.polarAvgRows
@@ -107,7 +136,7 @@ export function updateSphereTextures(gl, vm, { tex = null, classTex = null, prev
 
     return {
         width,
-        height,
+        height: stretchedHeight,
         tex,
         classTex,
         topBuf,

@@ -354,7 +354,6 @@ export default {
       this._accumMs = 0;
       this._sunShadowEnabled = false;
     },
-    // ポップアップ関連の後始末（イベント解除＋参照切り離し）
     cleanupSpherePopup() {
       this.resetRotationState();
       // WebGL リソースを明示的に破棄（popupのopen/closeを繰り返してもGPUメモリが増えないように）

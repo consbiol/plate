@@ -25,6 +25,19 @@ export function drawSphereCPU(vm, canvas) {
     const totalBuf = Math.max(0, Math.min(maxTotalBuf, vm.polarBufferRows));
     const topBuf = Math.floor(totalBuf / 2);
     const bottomBuf = totalBuf - topBuf;
+    // Build stretched row map: rows near both poles are repeated to simulate vertical stretching.
+    // Rules: distance from nearest pole 0..4 -> factor 3, 5..14 -> factor 2, else 1.
+    const expandedRowMapArr = [];
+    for (let y = 0; y < height; y++) {
+        const distTop = y;
+        const distBottom = height - 1 - y;
+        const minDist = Math.min(distTop, distBottom);
+        let factor = 1;
+        if (minDist <= 4) factor = 3;
+        else if (minDist <= 14) factor = 2;
+        for (let k = 0; k < factor; k++) expandedRowMapArr.push(y);
+    }
+    const stretchedHeight = expandedRowMapArr.length;
     const colShift = (vm._rotationColumns || 0);
     const cityRgb = vm._getCityLightRgb();
 
@@ -38,7 +51,7 @@ export function drawSphereCPU(vm, canvas) {
 
     if (!vm._precompute || vm._precompute.W !== W || vm._precompute.H !== H || vm._precompute.width !== width || vm._precompute.height !== height || vm._precompute.topBuf !== topBuf || vm._precompute.bottomBuf !== bottomBuf) {
         const displayStride = width + 2;
-        const effHeight = height + topBuf + bottomBuf;
+        const effHeight = stretchedHeight + topBuf + bottomBuf;
         const expectedDisplayLen2 = (width + 2) * (height + 2);
         if (!displayColors || displayColors.length < expectedDisplayLen2) {
             displayColors = new Array(expectedDisplayLen2);
@@ -77,32 +90,54 @@ export function drawSphereCPU(vm, canvas) {
                 const mercY = 0.5 - (Math.log(Math.tan(Math.PI / 4 + phi / 2)) / (2 * Math.PI));
                 const xNorm = (lambda + Math.PI) / (2 * Math.PI);
                 let ix0 = Math.floor(xNorm * width);
-                let iyExt = Math.floor(mercY * effHeight);
+                const vPos = mercY * effHeight;
+                let iyExt = Math.floor(vPos);
                 if (ix0 < 0) ix0 = 0;
                 if (ix0 >= width) ix0 = width - 1;
-                if (iyExt < 0) iyExt = 0;
-                if (iyExt >= effHeight) iyExt = effHeight - 1;
-                if (iyExt < topBuf || iyExt >= topBuf + height) {
-                    // keep ix0 so we can sample nearest map column for blending
+                if (iyExt < 0) { iyExt = 0; }
+                if (iyExt >= effHeight) { iyExt = effHeight - 1; }
+                if (iyExt < topBuf || iyExt >= topBuf + stretchedHeight) {
+                    // polar region: keep ix0 for nearest column sampling
                     baseIxArr.push(ix0);
                     iyMapArr.push(0);
                     isPolarArr.push(1);
                     // polarSide: 1 = top, 2 = bottom
                     if (iyExt < topBuf) {
-                        // top polar
                         polarSideArr.push(1);
                     } else {
-                        // bottom polar
                         polarSideArr.push(2);
                     }
                 } else {
+                    // inside stretched map region: map stretched index back to original row
+                    const stretchedIndex = iyExt - topBuf;
+                    const origRow = expandedRowMapArr[stretchedIndex];
                     baseIxArr.push(ix0);
-                    iyMapArr.push(iyExt - topBuf);
+                    iyMapArr.push(origRow);
+                    // store fractional offset within the stretched slot for smoother vCoord
+                    // (we'll create fracArr below)
                     isPolarArr.push(0);
                     polarSideArr.push(0);
                 }
                 mercYArr.push(mercY);
                 pixels.push({ px, py });
+            }
+        }
+        // create fractional array mapping if not existing
+        const fracArrFinal = new Float32Array(pixels.length);
+        // We need to recompute fractional parts consistently — recompute using mercY and effHeight
+        for (let i = 0, pi = 0; i < pixels.length; i++, pi++) {
+            const mercYval = mercYArr[i];
+            const vPos2 = mercYval * effHeight;
+            let iyExt2 = Math.floor(vPos2);
+            let frac2 = vPos2 - iyExt2;
+            if (iyExt2 < 0) { iyExt2 = 0; frac2 = 0; }
+            if (iyExt2 >= effHeight) { iyExt2 = effHeight - 1; frac2 = 0; }
+            // if polar, frac not used; leave as 0
+            if (iyExt2 >= topBuf && iyExt2 < topBuf + stretchedHeight) {
+                // fraction within the repeated block: frac2 remains as is
+                fracArrFinal[i] = frac2;
+            } else {
+                fracArrFinal[i] = 0;
             }
         }
         vm._precompute = {
@@ -112,6 +147,9 @@ export function drawSphereCPU(vm, canvas) {
             isPolar: Uint8Array.from(isPolarArr),
             polarSide: Uint8Array.from(polarSideArr),
             mercY: Float32Array.from(mercYArr),
+            frac: fracArrFinal,
+            expandedRowMap: Int16Array.from(expandedRowMapArr),
+            stretchedHeight,
             palette, displayStride
         };
     }
@@ -183,15 +221,16 @@ export function drawSphereCPU(vm, canvas) {
             // 極近傍でも陸（氷河除く）なら軽くトーンを足す（近似）
             if (vm.gridData && vm.gridData.length === width * height) {
                 // 連続uv（map域）を算出し、uvオフセットに基づく9サンプル平均を取得
-                const effHeight = height + topBuf + bottomBuf;
-                const uTopFrac = topBuf / effHeight;
-                const uHeightFrac = height / effHeight;
+                const effHeightLocal = pc.stretchedHeight + topBuf + bottomBuf;
+                const uTopFrac = topBuf / effHeightLocal;
+                const uHeightFrac = pc.stretchedHeight / effHeightLocal;
                 const sx = p.px / R;
                 const sy = -p.py / R;
                 const sq = sx * sx + sy * sy;
                 const sz = Math.sqrt(Math.max(0, 1 - Math.min(1, sq)));
                 const lambda = Math.atan2(sx, sz);
                 const uCoord = (((lambda + Math.PI) / (2 * Math.PI)) + (vm._rotationColumns || 0) / Math.max(1, width)) % 1;
+                // For polar-region pixels we map mercY into stretched space; clamp into [0,1]
                 const vCoord = Math.max(0, Math.min(1, (vEff - uTopFrac) / Math.max(1e-6, uHeightFrac)));
                 const cloudPeriod = (typeof vm._getCloudPeriodForRender === 'function') ? vm._getCloudPeriodForRender() : vm.cloudPeriod;
                 const rUV = 0.75 / Math.max(1, cloudPeriod || 16);
@@ -209,11 +248,11 @@ export function drawSphereCPU(vm, canvas) {
             }
             // blending weight based on vertical distance (mercY) and polarBlendRows
             const mercY = (pc.mercY && pc.mercY[i] != null) ? pc.mercY[i] : ((side === 1) ? 0 : 1);
-            const effHeight = height + topBuf + bottomBuf;
-            const uTopFrac = topBuf / effHeight;
-            const uHeightFrac = height / effHeight;
-            const blendRows = Math.max(0, Math.min(vm.polarBlendRows || 3, Math.floor(effHeight)));
-            const blendFrac = blendRows / effHeight;
+            const effHeightLocal = pc.stretchedHeight + topBuf + bottomBuf;
+            const uTopFrac = topBuf / effHeightLocal;
+            const uHeightFrac = pc.stretchedHeight / effHeightLocal;
+            const blendRows = Math.max(0, Math.min(vm.polarBlendRows || 3, Math.floor(effHeightLocal)));
+            const blendFrac = blendRows / effHeightLocal;
             let delta = 0;
             if (side === 1) delta = uTopFrac - mercY;
             else delta = mercY - (uTopFrac + uHeightFrac);
@@ -309,16 +348,16 @@ export function drawSphereCPU(vm, canvas) {
             // 分類重み（UV基準の9タップ平滑・バイリニア補間）
             let classW = 1.0;
             if (vm.gridData && vm.gridData.length === width * height) {
-                const effHeight = height + topBuf + bottomBuf;
-                const uTopFrac = topBuf / effHeight;
-                const uHeightFrac = height / effHeight;
+                // compute continuous vCoord using precomputed original row and fractional offset
+                const iyOrig = pc.iyMap[i];
+                const frac = pc.frac ? pc.frac[i] || 0 : 0;
+                const vCoord = Math.max(0, Math.min(1, (iyOrig + frac) / Math.max(1, height)));
                 const sx = p.px / R;
                 const sy = -p.py / R;
                 const sq = sx * sx + sy * sy;
                 const sz = Math.sqrt(Math.max(0, 1 - Math.min(1, sq)));
                 const lambda = Math.atan2(sx, sz);
                 const uCoord = (((lambda + Math.PI) / (2 * Math.PI)) + (vm._rotationColumns || 0) / Math.max(1, width)) % 1;
-                const vCoord = Math.max(0, Math.min(1, (vEff - uTopFrac) / Math.max(1e-6, uHeightFrac)));
                 const cloudPeriod = (typeof vm._getCloudPeriodForRender === 'function') ? vm._getCloudPeriodForRender() : vm.cloudPeriod;
                 const rUV = 0.75 / Math.max(1, cloudPeriod || 16);
                 classW = vm._sampleClassWeightSmooth(uCoord, vCoord, width, height, vm.gridData, rUV);

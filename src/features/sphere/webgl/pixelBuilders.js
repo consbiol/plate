@@ -44,11 +44,13 @@ export function computePolarAverageRgbFromPixels({ pixels, width, height, polarA
     return { polarTopRgb, polarBottomRgb };
 }
 
-export function buildMapPixels({ vm, width, height }) {
-    const expectedDisplayLen = (width + 2) * (height + 2);
+export function buildMapPixels({ vm, width, height, expandedRowMap = null }) {
+    // original map height (from gridData) if available, otherwise fall back to provided height
+    const origHeight = (vm.gridData && vm.gridData.length % width === 0) ? (vm.gridData.length / width) : height;
+    const expectedDisplayLen = (width + 2) * (origHeight + 2);
     const eraColors = getEraTerrainColors(vm.era);
-    const displayColorsFromGridData = (vm.gridData && vm.gridData.length === width * height)
-        ? deriveDisplayColorsFromGridData(vm.gridData, width, height, undefined, eraColors, /*preferPalette*/ true)
+    const displayColorsFromGridData = (vm.gridData && vm.gridData.length === width * origHeight)
+        ? deriveDisplayColorsFromGridData(vm.gridData, width, origHeight, undefined, eraColors, /*preferPalette*/ true)
         : [];
 
     let displayColors = displayColorsFromGridData;
@@ -60,7 +62,8 @@ export function buildMapPixels({ vm, width, height }) {
 
     const displayStride = width + 2;
     const pixels = new Uint8Array(width * height * 4);
-    for (let y = 0; y < height; y++) {
+    for (let sy = 0; sy < height; sy++) {
+        const y = expandedRowMap ? expandedRowMap[sy] : sy;
         for (let x = 0; x < width; x++) {
             const displayX = x + 1;
             const displayY = y + 1;
@@ -68,7 +71,7 @@ export function buildMapPixels({ vm, width, height }) {
             const s = displayColors[idx];
             let rgb = vm.parseColorToRgb(s);
             // 陸（氷河除く）にトーン（color.js）を適用（事後的フィルタ）
-            if (vm.gridData && vm.gridData.length === width * height) {
+            if (vm.gridData && vm.gridData.length === width * origHeight) {
                 const cell = vm.gridData[y * width + x];
                 if (cell && cell.terrain && cell.terrain.type === 'land' && cell.terrain.land !== 'glacier') {
                     const tint = vm.parseColorToRgb(vm.landTintColor || getEraLandTint(vm.era));
@@ -80,7 +83,7 @@ export function buildMapPixels({ vm, width, height }) {
                     ];
                 }
             }
-            const p = (y * width + x) * 4;
+            const p = (sy * width + x) * 4;
             pixels[p] = rgb[0];
             pixels[p + 1] = rgb[1];
             pixels[p + 2] = rgb[2];
@@ -90,13 +93,15 @@ export function buildMapPixels({ vm, width, height }) {
     return pixels;
 }
 
-export function buildClassPixels({ vm, width, height }) {
+export function buildClassPixels({ vm, width, height, expandedRowMap = null }) {
     const classPixels = new Uint8Array(width * height * 4);
-    for (let y = 0; y < height; y++) {
+    const origHeight = (vm.gridData && vm.gridData.length % width === 0) ? (vm.gridData.length / width) : height;
+    for (let sy = 0; sy < height; sy++) {
+        const y = expandedRowMap ? expandedRowMap[sy] : sy;
         for (let x = 0; x < width; x++) {
             let wgt = 1.0; // default 海
             let isCity = 0;
-            if (vm.gridData && vm.gridData.length === width * height) {
+            if (vm.gridData && vm.gridData.length === width * origHeight) {
                 const cell = vm.gridData[y * width + x];
                 wgt = getCellClassWeight(cell);
                 const city =
@@ -106,7 +111,7 @@ export function buildClassPixels({ vm, width, height }) {
                 if (city) isCity = 255;
             }
             const vv = Math.max(0, Math.min(255, Math.round(wgt * 255)));
-            const p = (y * width + x) * 4;
+            const p = (sy * width + x) * 4;
             classPixels[p] = vv;          // R: class weight (cloud weighting)
             classPixels[p + 1] = isCity;  // G: city mask (night lights)
             classPixels[p + 2] = 0;       // B: unused
