@@ -16,7 +16,6 @@ const WORLD = createWorldSlice({ persisted: PERSISTED });
 const CLIMATE = createClimateSlice({ persisted: PERSISTED });
 
 export default createStore({
-    // Vuex modules にせず「ファイル分割」で整理（既存の action/getter 名を維持するため）
     state: {
         ...UI.state,
         ...GENERATOR.state,
