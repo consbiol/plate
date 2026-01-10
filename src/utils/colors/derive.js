@@ -8,17 +8,37 @@ function cellToColor(cell, tc, preferPalette) {
     if (!preferPalette && cell && typeof cell.colorHex === 'string') {
         return cell.colorHex;
     }
+    // center(red) は最優先
+    if (cell && cell.center) {
+        return '#FF0000';
+    }
+    // 氷河は land/sea で分離して最優先で上書きする
+    // - landGlacier: 陸域（低地/乾燥/高地/高山/ツンドラ/都市/農耕/苔/汚染 など）を上書き
+    // - seaGlacier : 海域（深海/浅瀬/湖/海棲都市/海棲耕作/海棲汚染 など）を上書き
+    if (cell && cell.terrain) {
+        const isGlacier =
+            (cell.terrain.type === 'sea' && cell.terrain.sea === 'glacier') ||
+            (cell.terrain.type === 'land' && cell.terrain.land === 'glacier');
+        if (isGlacier) {
+            const landGl = (tc && (tc.landGlacier || tc.glacier)) || '#FFFFFF';
+            const seaGl = (tc && (tc.seaGlacier || '#AFDFE4')) || '#AFDFE4';
+            // gridData に glacierKind があればそれを優先（例: 湖上の氷河は sea 扱いにする）
+            const kind = cell.glacierKind;
+            if (kind === 'sea') return seaGl;
+            if (kind === 'land') return landGl;
+            // フォールバック: terrain の sea/land に従う
+            return (cell.terrain.type === 'sea') ? seaGl : landGl;
+        }
+    }
     // 基礎色（地形種）を決定
     let base = tc.lowland;
     if (cell && cell.terrain) {
         if (cell.terrain.type === 'sea') {
             if (cell.terrain.sea === 'shallow') base = tc.shallowSea;
-            else if (cell.terrain.sea === 'glacier') base = tc.glacier;
             else base = tc.deepSea;
         } else if (cell.terrain.type === 'land') {
             const l = cell.terrain.land;
             if (l === 'tundra') base = tc.tundra;
-            else if (l === 'glacier') base = tc.glacier;
             else if (l === 'lake') base = (tc && tc.lake) ? tc.lake : tc.shallowSea;
             else if (l === 'highland') base = tc.highland;
             else if (l === 'alpine') base = tc.alpine;
@@ -26,10 +46,7 @@ function cellToColor(cell, tc, preferPalette) {
             else base = tc.lowland;
         }
     }
-    // 上書き優先度: center(red) > seaPolluted > seaCity > seaCultivated > polluted > city > cultivated
-    if (cell && cell.center) {
-        return '#FF0000';
-    }
+    // 上書き優先度: seaPolluted > seaCity > seaCultivated > polluted > city > cultivated
     // 海棲グリッドの処理（浅瀬の場合）
     if (cell && cell.terrain && cell.terrain.type === 'sea' && cell.terrain.sea === 'shallow') {
         if (cell.seaPolluted) {

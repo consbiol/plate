@@ -26,27 +26,42 @@ export function buildGridData(vm, {
       const idx = gy * vm.gridWidth + gx;
       const temperature = null;
       const precipitation = null;
+      const isLand = !!landMask[idx];
+      const isLake = (typeof lakeMask !== 'undefined') ? !!lakeMask[idx] : false;
+      const isSeaCity = !!seaCityMask[idx];
+      const isSeaCultivated = !!seaCultivatedMask[idx];
+      const isSeaPolluted = !!seaPollutedMask[idx];
       let terrain = { type: 'sea', sea: 'deep' };
       const col = colors[idx];
-      if (!landMask[idx]) {
+      if (!isLand) {
         if (col === glacierColor) terrain = { type: 'sea', sea: 'glacier' };
         else if (col === shallowSeaColor) terrain = { type: 'sea', sea: 'shallow' };
         else terrain = { type: 'sea', sea: 'deep' };
       } else {
         if (col === glacierColor) terrain = { type: 'land', land: 'glacier' };
         else if (col === tundraColor) terrain = { type: 'land', land: 'tundra' };
-        else if (typeof lakeMask !== 'undefined' && lakeMask[idx]) terrain = { type: 'land', land: 'lake' };
+        else if (isLake) terrain = { type: 'land', land: 'lake' };
         else if (col === lowlandColor) terrain = { type: 'land', land: 'lowland' };
         else if (col === highlandColor) terrain = { type: 'land', land: 'highland' };
         else if (col === alpineColor) terrain = { type: 'land', land: 'alpine' };
         else if (col === desertColor) terrain = { type: 'land', land: 'desert' };
         else terrain = { type: 'land', land: 'lowland' };
       }
+      // 氷河の“上書き元”種別（描画用）
+      // - landGlacier: 低地/乾燥/高地/高山/ツンドラ/都市/耕作/苔/汚染 など陸域を上書き
+      // - seaGlacier : 深海/浅瀬/湖/海棲都市/海棲耕作/海棲汚染 など水域を上書き
+      // NOTE: terrain 自体の sea/land は既存仕様のまま（面積計算/既存ロジック互換のため）。
+      let glacierKind = null;
+      if (col === glacierColor) {
+        // “水域扱い”にしたい条件: 海セル / 湖 / 海棲フラグ
+        glacierKind = (!isLand || isLake || isSeaCity || isSeaCultivated || isSeaPolluted) ? 'sea' : 'land';
+      }
       gridData[idx] = {
         temperature,
         precipitation,
         terrain,
         colorHex: col,
+        glacierKind,
         // 都市/耕作地/汚染地フラグ（色は colors.js でパレットから解決）
         city: !!cityMask[idx],
         // 苔類進出地フラグ（苔類進出時代のみ生成）
@@ -54,9 +69,9 @@ export function buildGridData(vm, {
         cultivated: !!cultivatedMask[idx],
         polluted: !!pollutedMask[idx],
         // 海棲都市/海棲耕作地/海棲汚染地フラグ（色は colors.js でパレットから解決）
-        seaCity: !!seaCityMask[idx],
-        seaCultivated: !!seaCultivatedMask[idx],
-        seaPolluted: !!seaPollutedMask[idx]
+        seaCity: isSeaCity,
+        seaCultivated: isSeaCultivated,
+        seaPolluted: isSeaPolluted
       };
     }
   }

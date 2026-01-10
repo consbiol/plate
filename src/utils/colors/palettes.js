@@ -11,6 +11,8 @@ export function getDefaultTerrainColors() {
         highland: '#91644B',
         alpine: '#5F5046',
         tundra: '#7ea836',
+        landGlacier: '#FFFFFF',
+        seaGlacier: '#AFDFE4',
         glacier: '#FFFFFF',
         border: '#000000',
         city: '#F15A22',
@@ -29,13 +31,15 @@ export function getEraColors_Bombardment() {
     return {
         deepSea: '#0f3b2e',
         shallowSea: '#2a6461',
-        // 爆撃時代: 湖をマグマ色に
+
         lake: '#FF4500',
         lowland: '#3b3b3b',
         desert: '#4A4A4A',
         highland: '#3E2F1F',
         alpine: '#2B2B2B',
         tundra: '#474747',
+        landGlacier: '#a1a58a',
+        seaGlacier: '#AFDFE4',
         glacier: '#A59A8A',
         border: '#000000'
     };
@@ -51,6 +55,8 @@ export function getEraColors_PreLife() {
         highland: '#3E2F1F',
         alpine: '#2B2B2B',
         tundra: '#474747',
+        landGlacier: '#e0dac5',
+        seaGlacier: '#dce0c5',
         glacier: '#e0dac5',
         border: '#000000'
     };
@@ -66,6 +72,8 @@ export function getEraColors_AnaerobicBacteria() {
         highland: '#3E2F1F',
         alpine: '#2B2B2B',
         tundra: '#474747',
+        landGlacier: '#E6EEF2',
+        seaGlacier: '#F0F8FF',
         glacier: '#E6EEF2',
         border: '#000000'
     };
@@ -81,6 +89,8 @@ export function getEraColors_PhotosyntheticBacteria() {
         highland: '#80421f',
         alpine: '#5a4a3a',
         tundra: '#a13c2f',
+        landGlacier: '#E6EEF2',
+        seaGlacier: '#F0F8FF',
         glacier: '#E6EEF2',
         border: '#000000'
     };
@@ -96,6 +106,8 @@ export function getEraColors_Eukaryotes() {
         highland: '#80421f',
         alpine: '#5a4a3a',
         tundra: '#a13c2f',
+        landGlacier: '#E6EEF2',
+        seaGlacier: '#F0F8FF',
         glacier: '#E6EEF2',
         border: '#000000'
     };
@@ -111,6 +123,8 @@ export function getEraColors_Multicellular() {
         highland: '#80421f',
         alpine: '#5a4a3a',
         tundra: '#B14A2F',
+        landGlacier: '#E6EEF2',
+        seaGlacier: '#F0F8FF',
         glacier: '#E6EEF2',
         border: '#000000'
     };
@@ -126,6 +140,8 @@ export function getEraColors_MarineDiversification() {
         highland: '#91644B',
         alpine: '#5F5046',
         tundra: '#b1742f',
+        landGlacier: '#E6EEF2',
+        seaGlacier: '#F0F8FF',
         glacier: '#E6EEF2',
         border: '#000000'
     };
@@ -142,6 +158,8 @@ export function getEraColors_BryophyteExpansion() {
         alpine: '#5F5046',
         tundra: '#b47700',
         bryophyte: '#7ea836',
+        landGlacier: '#E6EEF2',
+        seaGlacier: '#F0F8FF',
         glacier: '#E6EEF2',
         border: '#000000'
     };
@@ -157,6 +175,8 @@ export function getEraColors_PteridophyteExpansion() {
         highland: '#91644B',
         alpine: '#5F5046',
         tundra: '#7ea836',
+        landGlacier: '#E6EEF2',
+        seaGlacier: '#F0F8FF',
         glacier: '#E6EEF2',
         border: '#000000'
     };
@@ -172,6 +192,8 @@ export function getEraColors_GreatForest() {
         highland: '#91644B',
         alpine: '#5F5046',
         tundra: '#7ea836',
+        landGlacier: '#E6EEF2',
+        seaGlacier: '#F0F8FF',
         glacier: '#E6EEF2',
         border: '#000000'
     };
@@ -187,6 +209,8 @@ export function getEraColors_Civilization() {
         highland: '#91644B',
         alpine: '#5F5046',
         tundra: '#7ea836',
+        landGlacier: '#E6EEF2',
+        seaGlacier: '#F0F8FF',
         glacier: '#E6EEF2',
         border: '#000000',
         city: '#9a9a9a',
@@ -205,6 +229,8 @@ export function getEraColors_SeaCivilization() {
         highland: '#91644B',
         alpine: '#5F5046',
         tundra: '#7ea836',
+        landGlacier: '#E6EEF2',
+        seaGlacier: '#F0F8FF',
         glacier: '#E6EEF2',
         border: '#000000',
         seaCity: '#5C6B73',
