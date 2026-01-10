@@ -207,9 +207,9 @@ export function computeNextClimateTurn(cur) {
 
     const CO2_release_volcano =
         Turn_yr ** 0.5
-        * 0.00000015
+        * 0.0000004
         * Volcano_event
-        * ((1 + 4.55 / 2.5) / (1 + Time_yr / 2500000000))
+        * Math.pow(4550000000 / (Time_yr + 100000000), 3)
         * (1 + 0.5 * ((f_land_original - 0.3) / 0.3))
         * (0.5 + (Math.random() + Math.random()) / 2);
 
