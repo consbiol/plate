@@ -53,6 +53,10 @@ function buildDefaultClimateState() {
         // 突発イベント（現状は未実装のため固定値）
         events: {
             Volcano_event: 1,
+            // マニュアルで設定する火山係数（Step2 UI から一時的にセットされる、3ターン限定）
+            Volcano_event_manual: 0,
+            // Volcano_event_manual のワンショット残ターン数（mutation が 3 に設定し、model 側でデクリメントして 0 で 0 に戻す）
+            Volcano_manual_remaining: 0,
             Meteo_eff: 1,
             // Meteo のワンショット残ターン（mutation で 1 に設定し、model 側でデクリメントして 0 で Meteo_eff を 1 に戻す）
             Meteo_one_shot_remaining: 0,
@@ -285,6 +289,30 @@ export function createClimateSlice() {
                 ev.Fire_event_CO2 = Number(val);
                 // 1ターンだけ有効にするフラグ（model側でデクリメントして次ターンにリセットする）
                 ev.Fire_one_shot_remaining = (lvl === 0) ? 0 : 1;
+
+                // 强制Turn_yrの開始（時代が文明系以外なら20ターン強制）
+                const withEvent = { ...cur, events: ev };
+                state.climate = startForcedTurnYrWindow(withEvent, { turns: 20, forcedTurnYr: 1000 });
+            }
+            ,
+            // 火山イベント（マニュアル：Step2 UI からトリガー。Lv1..Lv5 を 3 ターンセット）
+            // payload: { level: 0..5 } - Lv0 はリセット
+            triggerVolcanoManualLevel(state, payload) {
+                const lvl = (payload && typeof payload.level === 'number') ? Math.floor(payload.level) : 0;
+                const cur = state.climate || buildDefaultClimateState();
+                const ev = { ...(cur.events || {}) };
+                const mapping = {
+                    0: 0,
+                    1: 0.5,
+                    2: 1.5,
+                    3: 3.0,
+                    4: 4.0,
+                    5: 6.0
+                };
+                const val = Object.prototype.hasOwnProperty.call(mapping, lvl) ? mapping[lvl] : 0;
+                ev.Volcano_event_manual = Number(val);
+                // 3ターンだけ有効（model 側でデクリメントして 0 に戻す）
+                ev.Volcano_manual_remaining = (lvl === 0) ? 0 : 3;
 
                 // 强制Turn_yrの開始（時代が文明系以外なら20ターン強制）
                 const withEvent = { ...cur, events: ev };

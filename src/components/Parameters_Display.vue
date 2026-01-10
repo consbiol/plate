@@ -908,6 +908,17 @@ export default {
           initClimateFromGenerate(this.$store, { era, deterministicSeed: seed, resetTurnYrToEraDefault: true });
         }
         // 地形面積率は常に最新に更新（同期で commit される）
+        // また、payload が driftMetrics を含む場合は climate.terrain に保持して
+        // 気候モデルが参照できるようにする（computeNextClimateTurn で使用する）。
+        try {
+          if (payload && payload.driftMetrics) {
+            const curClimate = getClimate(this.$store) || {};
+            const curTerrain = (curClimate && curClimate.terrain) ? curClimate.terrain : {};
+            patchClimate(this.$store, { terrain: { ...curTerrain, driftMetrics: payload.driftMetrics } });
+          }
+        } catch (e) {
+          // ignore patch failures
+        }
         updateClimateTerrainFractionsFromStats(this.$store, {
           gridTypeCounts: this.stats.gridTypeCounts,
           preGlacierStats: payload.preGlacierStats || null,
@@ -1143,6 +1154,10 @@ export default {
       this.popupRef = openOrUpdateHtmlPopup(this.popupRef, 'ParametersOutput', 'width=520,height=700,scrollbars=yes', html);
     },
     buildOutputHtml() {
+      const curClimate = getClimate(this.$store) || {};
+      const volcanoEvent = (curClimate && curClimate.events && typeof curClimate.events.Volcano_event !== 'undefined')
+        ? curClimate.events.Volcano_event
+        : null;
       return buildParametersOutputHtml({
         localParams: this.local,
         centerParams: this.mutableCenterParams || [],
@@ -1151,7 +1166,8 @@ export default {
         gridHeight: this.gridHeight,
         landDistanceThresholdAverage: this.landDistanceThresholdAverage,
         topTundraRowsComputed: this.topTundraRowsComputed,
-        topGlacierRowsDisplayed: this.topGlacierRowsDisplayed
+        topGlacierRowsDisplayed: this.topGlacierRowsDisplayed,
+        volcanoEvent
       });
     },
     _getSphereHtmlForIframe() {

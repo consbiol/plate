@@ -140,13 +140,43 @@ export function computeNextClimateTurn(cur) {
     f_H2 = initial_H2 * Math.exp(-Time_yr / 500000000);
     if (f_H2 < 0.0001) f_H2 = 0;
 
+    // Volcano_event は terrain.driftMetrics.superPloom / phase によって上書きされる場合がある。
+    let Volcano_event = Number(events.Volcano_event) || 1;
+    // Drift metrics 経由で superPloom を参照し、火山係数を段階的に増減する
+    try {
+        const driftMetrics = (terrain && terrain.driftMetrics) ? terrain.driftMetrics : null;
+        const superPloom = driftMetrics && typeof driftMetrics.superPloom !== 'undefined' ? Number(driftMetrics.superPloom) : null;
+        const phaseName = driftMetrics && typeof driftMetrics.phase === 'string' ? driftMetrics.phase : null;
+        if (phaseName === 'Approach') {
+            if (superPloom > 30) {
+                Volcano_event = 4.0; // Lv3
+            } else if (superPloom > 20 && superPloom < 30) {
+                Volcano_event = 2.5; // Lv2
+            }
+        } else if (phaseName === 'Repel') {
+            if (superPloom > 30) {
+                Volcano_event = 5.0; // Lv4
+            } else if (superPloom > 20 && superPloom < 30) {
+                Volcano_event = 4.0; // Lv3
+            } else if (superPloom > 10 && superPloom < 20) {
+                Volcano_event = 2.5; // Lv2
+            } else if (superPloom > 0 && superPloom < 10) {
+                Volcano_event = 1.5; // Lv1
+            } else if (superPloom === 0) {
+                Volcano_event = 1.0; // Lv0
+            }
+        }
+    } catch (e) {
+        // ignore and keep Volcano_event as-is
+    }
+
     // --- Step2: イベント ---
-    const Volcano_event = Number(events.Volcano_event);
     const Meteo_eff = Number(events.Meteo_eff);
     const Fire_event_CO2 = Number(events.Fire_event_CO2);
     const CH4_event = Number(events.CH4_event);
     const sol_event = Number(events.sol_event);
     const CosmicRay = (typeof events.CosmicRay === 'number') ? events.CosmicRay : 1;
+    const Volcano_event_manual = Number(events.Volcano_event_manual) || 0;
     // 次 state が時代遷移で開始されるかを事前判定（時代変化直後の「初回ターン」扱いを検出するため）
     const eraWillChange = getNextEraByTime(era, Time_yr + Turn_yr).didChange;
     // Temp_alpha の上書き制御用（隕石イベントなどで Meteo_eff != 1 の場合は即時 Temp_alpha=1）
@@ -208,7 +238,7 @@ export function computeNextClimateTurn(cur) {
     const CO2_release_volcano =
         Turn_yr ** 0.5
         * 0.0000004
-        * Volcano_event
+        * (Volcano_event + Volcano_event_manual)
         * Math.pow(4550000000 / (Time_yr + 100000000), 3)
         * (1 + 0.5 * ((f_land_original - 0.3) / 0.3))
         * (0.5 + (Math.random() + Math.random()) / 2);
@@ -425,6 +455,17 @@ export function computeNextClimateTurn(cur) {
         if (nextFireRemaining === 0) {
             // ワンショットが終了したら Fire_event_CO2 を Lv0 (=0) に戻す
             nextEvents.Fire_event_CO2 = 0;
+        }
+    }
+
+    // Volcano manual (ワンショット: Volcano_event_manual)
+    const volcanoRemaining = Number(events.Volcano_manual_remaining || 0);
+    const nextVolcanoRemaining = Math.max(0, volcanoRemaining - 1);
+    if (volcanoRemaining > 0) {
+        nextEvents.Volcano_manual_remaining = nextVolcanoRemaining;
+        if (nextVolcanoRemaining === 0) {
+            // ワンショットが終了したら Volcano_event_manual を Lv0 (=0) に戻す
+            nextEvents.Volcano_event_manual = 0;
         }
     }
 

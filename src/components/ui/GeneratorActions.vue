@@ -31,7 +31,7 @@
         </div>
       </div>
       <div class="event-group">
-        <div class="event-label">隕石落下 (Meteo)</div>
+        <div class="event-label">隕石落下</div>
         <div class="event-buttons">
           <button @click="triggerMeteo(1)">Lv1</button>
           <button @click="triggerMeteo(2)">Lv2</button>
@@ -41,7 +41,7 @@
         </div>
       </div>
       <div class="event-group">
-        <div class="event-label">森林火災 (Fire)</div>
+        <div class="event-label">森林火災</div>
         <div class="event-buttons">
           <button @click="triggerFire(1)">Lv1</button>
           <button @click="triggerFire(2)">Lv2</button>
@@ -51,15 +51,25 @@
         </div>
       </div>
       <div class="event-group">
-        <div class="event-label">近傍超新星 (Cosmic)</div>
+        <div class="event-label">近傍超新星</div>
         <div class="event-buttons">
           <button @click="triggerCosmic()">発火 (3ターン)</button>
         </div>
       </div>
       <div class="event-group">
-        <div class="event-label">ガンマ線バースト (Gamma)</div>
+        <div class="event-label">ガンマ線バースト</div>
         <div class="event-buttons">
           <button @click="triggerGamma()">発火 (1ターン)</button>
+        </div>
+      </div>
+      <div class="event-group">
+        <div class="event-label">火山イベント</div>
+        <div class="event-buttons">
+          <button @click="triggerVolcano(1)">Lv1</button>
+          <button @click="triggerVolcano(2)">Lv2</button>
+          <button @click="triggerVolcano(3)">Lv3</button>
+          <button @click="triggerVolcano(4)">Lv4</button>
+          <button @click="triggerVolcano(5)">Lv5</button>
         </div>
       </div>
       <div class="sol-display">sol_event: {{ solEvent }}</div>
@@ -113,6 +123,10 @@ export default {
     ,
     triggerGamma() {
       this.$store.commit('triggerGammaEvent', {});
+    }
+    ,
+    triggerVolcano(level) {
+      this.$store.commit('triggerVolcanoManualLevel', { level: Number(level) });
     }
   }
 };

@@ -56,6 +56,7 @@ export function buildParametersOutputHtml({
   landDistanceThresholdAverage,
   topTundraRowsComputed,
   topGlacierRowsDisplayed
+  , volcanoEvent
 }) {
   const params = localParams || {};
   const centers = centerParams || [];
@@ -106,6 +107,26 @@ export function buildParametersOutputHtml({
     <div class="row"><label>湖の数（平均）:</label><span>${escape(params.averageLakesPerCenter)}</span></div>
     <div class="row"><label>superPloom_calc:</label><span>${drift ? escape(drift.superPloom_calc) : '-'}</span></div>
     <div class="row"><label>superPloom:</label><span>${drift ? escape(drift.superPloom) : '-'}</span></div>
+  <div class="row"><label>Volcano_event (store):</label><span>${typeof volcanoEvent !== 'undefined' && volcanoEvent !== null ? escape(volcanoEvent) : '-'}</span></div>
+    ${(() => {
+      // Compute displayed Volcano_event according to same rules as climate model.
+      if (!drift) return '';
+      const sp = (typeof drift.superPloom === 'number') ? drift.superPloom : Number(drift.superPloom);
+      const phase = drift.phase;
+      let ve = null;
+      if (phase === 'Approach') {
+        if (sp > 30) ve = 4.0; // Lv3
+        else if (sp > 20 && sp < 30) ve = 2.5; // Lv2
+      } else if (phase === 'Repel') {
+        if (sp > 30) ve = 5.0; // Lv4
+        else if (sp > 20 && sp < 30) ve = 4.0; // Lv3
+        else if (sp > 10 && sp < 20) ve = 2.5; // Lv2
+        else if (sp > 0 && sp < 10) ve = 1.5; // Lv1
+        else if (sp === 0) ve = 1.0; // Lv0
+      }
+      if (ve === null) ve = 1.0;
+      return `<div class="row"><label>Volcano_event:</label><span>${escape(ve)}</span></div>`;
+    })()}
     <div class="row"><label>フェーズ:</label><span>${drift ? escape(drift.phase) : '-'}</span></div>
     <div class="row"><label>平均距離:</label><span>${drift ? escape(Number(drift.avgDist).toFixed(2)) : '-'}</span></div>
 
