@@ -27,17 +27,20 @@
 
       <label class="control">
         <input type="checkbox" :checked="turnYrEnabled" @change="onToggleTurnYrEnabled($event)" />
-        <span>Turn_yr:</span>
-        <input
-          type="range"
-          :min="0"
-          :max="Math.max(0, (turnYrOptions && turnYrOptions.length ? turnYrOptions.length - 1 : 0))"
-          step="1"
-          :value="selectedIndex"
-          :disabled="!turnYrEnabled"
-          @input="onIndexInput($event && $event.target ? $event.target.value : 0)"
-        />
-        <span class="hint">{{ currentTurnYr }} yr</span>
+        <span>Turn_yr 設定を操作可能</span>
+        <div class="turn-buttons" :aria-disabled="!turnYrEnabled">
+          <button
+            v-for="opt in turnYrOptions"
+            :key="opt"
+            type="button"
+            class="turn-btn"
+            :class="{ active: Number(opt) === currentTurnYr }"
+            :disabled="!turnYrEnabled || isDisabledByEra(opt)"
+            @click="onTurnBtnClick(opt)"
+          >
+            {{ renderBtnLabel(opt) }}
+          </button>
+        </div>
       </label>
 
       <button @click="$emit('open-climate-popup')">気候パラメータ</button>
@@ -53,6 +56,7 @@
 </template>
 
 <script>
+import { buildEraTurnYr } from '../../utils/climate/eraPresets.js';
 export default {
   name: 'TurnPanel',
   props: {
@@ -99,18 +103,36 @@ export default {
       });
       return bestIdx;
     },
-    selectedIndex() {
-      if (!Array.isArray(this.turnYrOptions) || this.turnYrOptions.length === 0) return 0;
-      const idx = this.turnYrOptions.indexOf(this.selectedTurnYr);
-      return idx >= 0 ? idx : 0;
-    },
     currentTurnYr() {
-      if (!Array.isArray(this.turnYrOptions) || this.turnYrOptions.length === 0) return this.selectedTurnYr || 0;
-      const idx = this.selectedIndex;
-      return this.turnYrOptions[idx] || this.selectedTurnYr || 0;
+      const n = Number(this.selectedTurnYr);
+      return isFinite(n) ? n : 0;
     },
   },
   methods: {
+    // Determine era default and other helpers
+    eraDefaultTurnYr() {
+      try {
+        const era = (this.climateTurn && this.climateTurn.era) ? this.climateTurn.era : null;
+        return Number(buildEraTurnYr(era) || 0);
+      } catch (e) {
+        return 0;
+      }
+    },
+    renderBtnLabel(opt) {
+      const n = Number(opt);
+      const def = this.eraDefaultTurnYr();
+      const isDef = (n === def);
+      return `${n} yr${isDef ? ' (default)' : ''}`;
+    },
+    isDisabledByEra(opt) {
+      // For '文明時代' and '海棲文明時代', only allow 10,20,100
+      const era = (this.climateTurn && this.climateTurn.era) ? this.climateTurn.era : null;
+      if (era === '文明時代' || era === '海棲文明時代') {
+        const allowed = [10, 20, 100];
+        return !allowed.includes(Number(opt));
+      }
+      return false;
+    },
     onToggleTurnYrEnabled(ev) {
       const enabled = !!(ev && ev.target && ev.target.checked);
       this.turnYrEnabled = enabled;
@@ -123,10 +145,11 @@ export default {
       // emit exponent value so parent maps to speed
       this.$emit('update-turn-slider-exp', Number(opt.exp));
     },
-    onIndexInput(val) {
-      const idx = Math.max(0, Math.min((this.turnYrOptions || []).length - 1, Number(val || 0)));
-      const v = (this.turnYrOptions && this.turnYrOptions[idx]) ? this.turnYrOptions[idx] : this.selectedTurnYr;
-      this.$emit('change-turn-yr', Number(v));
+    onTurnBtnClick(opt) {
+      const n = Number(opt);
+      if (!isFinite(n)) return;
+      if (this.isDisabledByEra(opt) || !this.turnYrEnabled) return;
+      this.$emit('change-turn-yr', n);
     },
     toNumber(v) {
       const n = Number(v);
@@ -168,6 +191,29 @@ export default {
   gap: 8px;
   margin-left: 8px;
   align-items: center;
+}
+.turn-buttons {
+  display: flex;
+  gap: 6px;
+  margin-left: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.turn-btn {
+  padding: 4px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+.turn-btn.active {
+  background: #eef;
+  border-color: #88a;
+  font-weight: bold;
+}
+.turn-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .speed-label {
   font-size: 0.9em;

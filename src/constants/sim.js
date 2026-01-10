@@ -5,11 +5,11 @@
 // ---------------------------
 export const TURN_MIN_WAIT_MS = 100;
 export const TURN_LAG_FALLBACK_WAIT_MS = 100;
-export const TURN_PLANE_UPDATE_EVERY_TURNS = 5;
+export const TURN_PLANE_UPDATE_EVERY_TURNS = 2;
 export const TURN_SPHERE_UPDATE_EVERY_TURNS = 5;
-export const TURN_REGENERATE_EVERY_TURNS = 120;
+export const TURN_REGENERATE_EVERY_TURNS = 60;
 
-// Large interval constants (years)
+// Large interval constants (years) driftSingal every Turn_yr/2000000 years
 export const DRIFT_INTERVAL_YEARS = 2000000;
 
 // ---------------------------

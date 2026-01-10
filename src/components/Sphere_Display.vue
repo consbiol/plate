@@ -23,7 +23,7 @@ export default {
       renderFCloudSnapshot: null,
       renderCloudPeriodSnapshot: null,
       renderPolarCloudBoostSnapshot: null,
-      // 外部（ターン進行）からの回転ON/OFF要求を保持（popup未表示でも反映できるように）
+      // 外部（ターン進行）からの回転ON/OFF要求を保持
       desiredRotationEnabled: true
     };
   },

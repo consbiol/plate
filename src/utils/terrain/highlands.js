@@ -2,7 +2,6 @@
 // Grids_Calculation.vue から切り出し（機能不変）。
 
 // NOTE:
-// - もともと Vue コンポーネントインスタンス（vm=this）を受け取っていたが、
 //   「必要な依存だけ」を受け取るための ctx 化を段階的に進める（挙動不変）。
 // - ctx は "vm と同じ形" でも良いし、必要な値/関数だけを持つ薄いオブジェクトでも良い。
 export function generateHighlands(ctx, centers, centerLandCellsPre, preLandMask, lakeMask, colors, highlandColor, seededRng, seededLog) {

@@ -47,7 +47,6 @@ export function generatePollutedAreas(ctx, {
                 if (acc >= r) {
                     const idx0 = eligible[ei];
                     if (chosen.has(idx0)) {
-                        // すでに選択済みならスキップしてやり直し
                         continue;
                     }
                     startIdx = idx0;
