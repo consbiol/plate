@@ -26,10 +26,10 @@ function computePland_t(era) {
 
 function computeOceanPlantO2Base(era) {
     switch (era) {
-        case '光合成細菌誕生時代': return 0.1;
-        case '真核生物誕生時代': return 0.2;
-        case '多細胞生物誕生時代': return 0.5;
-        case '海洋生物多様化時代': return 0.8;
+        case '光合成細菌誕生時代': return 0.05;
+        case '真核生物誕生時代': return 0.1;
+        case '多細胞生物誕生時代': return 0.2;
+        case '海洋生物多様化時代': return 0.35;
         case '苔類進出時代':
         case 'シダ植物時代':
         case '大森林時代':
@@ -170,7 +170,9 @@ export function computeNextClimateTurn(cur) {
     // --- Step3: 植生 ---
     const co2Factor = (1.5 * f_CO2) / (0.0002 + f_CO2);
     const co2FactorClamped = Math.max(0, Math.min(co2Factor, 1.5));
-    const greenIndex_calc = 1.81 * Math.exp(-(sq(averageTemperature - 22.5)) / (2 * sq(12))) * f_cloud * co2FactorClamped;
+    const f_O2_norm = f_O2 / 0.21;
+    const O2_suppression = 1 / (1 + Math.pow(f_O2_norm / 1.8, 4));
+    const greenIndex_calc = 1.81 * Math.exp(-(sq(averageTemperature - 22.5)) / (2 * sq(12))) * f_cloud * co2FactorClamped * O2_suppression;
     // 最初のターン（または時代変化による次state開始ターン）では平滑化を行わず、生値を採用する
     if (Time_turn === 0 || eraWillChange) {
         greenIndex = greenIndex_calc;
@@ -240,10 +242,10 @@ export function computeNextClimateTurn(cur) {
 
     const O2_abs =
         Turn_yr ** 0.5
-        * 0.00001
+        * 0.00008
         * land_abs_eff
         * (f_land / 0.3)
-        * Math.pow((f_O2_forAbs / 0.21), 0.5)
+        * (Math.pow((f_O2_forAbs / 0.21), 1.1) + 0.1)
         * Math.min(Math.exp((averageTemperature - 15) / 20), 3)
         * f_O2_forAbs;
 
@@ -260,15 +262,16 @@ export function computeNextClimateTurn(cur) {
             * Math.exp(-sq((averageTemperature - 20) / 10))
             * ocean_plantO2_base
             * (1 + 0.25 * f_green * land_plantO2)
+            * ((f_CO2 / (f_CO2 + 0.0004)) + 0.5)
             + 0.4
             * f_green
             * Math.exp(-sq((averageTemperature - 22.5) / 15))
             * land_plantO2
             * fungal_factor
+            * ((3 * f_CO2) / (f_CO2 + 0.0008))
         )
-        * ((3 * f_CO2) / (f_CO2 + 0.0008))
         * Math.pow((1 + f_O2 / 0.21), -0.25)
-        * Math.exp(-Math.pow((f_O2 / 0.35), 3));
+        * Math.exp(-Math.pow((f_O2 / 0.30), 8));
 
     const f_O2_calc = f_O2 - O2_abs + O2_prod;
     f_O2 = O2_alpha * f_O2_calc + (1 - O2_alpha) * f_O2;
@@ -452,7 +455,7 @@ export function computeRadiativeEquilibriumTempK(state, options = {}) {
 
     const f_N2 = Number(v0.f_N2) || 0.78;
     const f_O2 = Math.max(0, Number(v0.f_O2) || 0);
-    const f_CO2 = Math.max(Number(v0.f_CO2) || 0.000006, 0.000006);
+    const f_CO2 = Math.max(Number(v0.f_CO2) || 0.0000001, 0.0000001);
     const f_CH4 = Math.max(Number(v0.f_CH4) || 0.0000001, 0.0000001);
     const Pressure = f_Ar + f_H2 + f_N2 + f_O2 + f_CO2 + f_CH4;
     const Meteo_eff = Number(events.Meteo_eff) || 1;

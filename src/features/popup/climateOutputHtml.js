@@ -127,9 +127,9 @@ export function buildClimateOutputHtml({ climateTurn, climateVars, climateHistor
       <div class="row"><label>f_cloud:</label><span>${fmtNum(v.f_cloud, 6)}</span></div>
       <div class="row"><label>albedo:</label><span>${fmtNum(v.albedo, 6)}</span></div>
       <div class="row"><label>H2O_eff:</label><span>${fmtNum(v.H2O_eff, 6)}</span> <span class="muted">→地球現在1</span></div>
-      <div class="row"><label>T_sat (℃):</label><span>${fmtNum(constants.T_sat, 3)}</span> <span class="muted">→地球型40℃</span></div>
-      <div class="row"><label>dT (℃):</label><span>${fmtNum(constants.dT, 3)}</span> <span class="muted">→地球型5℃</span></div>
-      <div class="row"><label>H2O_max:</label><span>${fmtNum(constants.H2O_max, 6)}</span> <span class="muted">→地球型2.9</span></div>
+      <div class="row"><label>T_sat (℃):</label><span>${fmtNum(constants.T_sat, 3)}</span> <span class="muted">→地球型28℃</span></div>
+      <div class="row"><label>dT (℃):</label><span>${fmtNum(constants.dT, 3)}</span> <span class="muted">→地球型15℃</span></div>
+      <div class="row"><label>H2O_max:</label><span>${fmtNum(constants.H2O_max, 6)}</span> <span class="muted">→地球型1.65</span></div>
       <div class="row"><label>Sol (W/m2):</label><span>${fmtNum(v.Sol, 3)}</span> <span class="muted">(地球現在≈1361)</span></div>
       <div class="row"><label>Radiation_cooling:</label><span>${fmtNum(v.Radiation_cooling, 6)}</span></div>
       <div class="row"><label>solarFlareUpRate:</label><span>${fmtNum(constants.solarFlareUpRate, 6)}</span> <span class="muted">→地球型0.3</span></div>

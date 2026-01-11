@@ -153,9 +153,9 @@ function buildSeededConstants({ deterministicSeed }) {
         land_abs_eff_planet: sampleRange(rng, 0.8, 1.2),
         initial_CH4: sampleRange(rng, 0.003, 0.03),
         // Step6
-        T_sat: sampleRange(rng, 38, 42),
-        dT: sampleRange(rng, 4, 6),
-        H2O_max: sampleRange(rng, 2.7, 3.1)
+        T_sat: sampleRange(rng, 24, 32),
+        dT: sampleRange(rng, 12, 18),
+        H2O_max: sampleRange(rng, 1.5, 1.8)
     };
 }
 

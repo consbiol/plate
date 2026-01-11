@@ -25,33 +25,26 @@ export function computeSolarAndGases(Time_yr, constants = {}) {
     return { solarEvolution, f_Ar, f_H2 };
 }
 
-export function computeClouds({ Pressure, f_ocean, averageTemperature, CosmicRay = 1, mode = 'full', f_CH4 = 0, f_CO2 = 0 } = {}) {
-    // mode 'full' uses computeNext coefficients; mode 'init' uses init-side approx
+export function computeClouds({ Pressure, f_ocean, averageTemperature, CosmicRay = 1, f_CH4 = 0, f_CO2 = 0 } = {}) {
+    // Use a single unified coefficient set (previously differed between 'init' and 'full').
+    // Chosen coefficients use the more robust safeLn and slightly more conservative factors.
     let f_cloud_0;
     const avg = Number(averageTemperature) || 15;
-    if (mode === 'init') {
-        f_cloud_0 = Math.max(
-            0,
-            (
-                0.1
-                + 0.7 * f_ocean
-                + 0.15 * Math.log(Math.min(Pressure, 10))
-                + 0.02 * Math.min(50, (avg - 15))
-            )
-            * (1 / (1 + Math.exp((avg - 65) / 6)))
-        );
-    } else {
-        f_cloud_0 = Math.max(
-            0.01,
-            (
-                0.2
-                + 0.6 * f_ocean
-                + 0.15 * safeLn(Math.min(Pressure, 10))
-                + 0.04 * Math.min(50, (avg - 15))
-            )
-            * (1 / (1 + Math.exp((avg - 80) / 10)))
-        );
-    }
+    const base = 0.2;
+    const oceanCoef = 0.6;
+    const lnFn = safeLn;
+    const mulAvg = 0.02;
+    const shift = 80;
+    const scale = 10;
+    const minVal = 0.01;
+
+    const raw =
+        base
+        + oceanCoef * f_ocean
+        + 0.15 * lnFn(Math.min(Pressure, 10))
+        + mulAvg * Math.min(50, (avg - 15));
+    const sigmoid = 1 / (1 + Math.exp((avg - shift) / scale));
+    f_cloud_0 = Math.max(minVal, raw * sigmoid);
     const hazeFrac = ratio2Over1PlusRatio2(f_CH4, f_CO2);
     const f_cloud = Math.max(0.001, Math.min(1, f_cloud_0 * (1 - 0.3 * hazeFrac) * CosmicRay));
     return { f_cloud_0, hazeFrac, f_cloud };
@@ -64,7 +57,7 @@ export function computeH2Oeff(averageTemperature, f_ocean, constants = {}, optio
     const avg = Number(averageTemperature) || 15;
     let H2O_eff = H2O_max
         * (Math.exp((avg - 15) / 30) / (1 + Math.exp((avg - T_sat) / dT)))
-        * (f_ocean + 0.1 * (1 - f_ocean)) + 0.05;
+        * (f_ocean + 0.1 * (1 - f_ocean)) + 0.5;
     if (options.conservative) {
         H2O_eff = Math.min(H2O_eff, 1.0);
     }
@@ -79,7 +72,7 @@ export function computeLnGases(f_CO2, f_CH4) {
     return { lnCO2, lnCH4 };
 }
 
-export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, floor = 0.15) {
+export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, floor = 0.18) {
     let Radiation_cooling =
         1 / (1 + Math.pow(Pressure, 0.45) * (0.2 * lnCO2 + 0.3 * lnCH4 + 0.8 * H2O_eff + f_H2 * (0.4 * 0.78 + 0.2 * f_H2 + 0.1 * 0)));
     Radiation_cooling = Math.max(Radiation_cooling, floor);
@@ -120,7 +113,7 @@ export function computeAlbedo({ f_cloud, hazeFrac, terrain = {} } = {}) {
         // 高地+高山
         + (1 - f_cloud) * 0.22 * (f_highland + f_alpine) + (f_cloud) * (0.22 + 0.03) * (f_highland + f_alpine)
         // 海洋
-        + (1 - f_cloud) * 0.06 * f_ocean + (f_cloud) * (0.06 + 0.69) * f_ocean;
+        + (1 - f_cloud) * 0.06 * f_ocean + (f_cloud) * (0.06 + 0.25) * f_ocean;
 
     let albedo = albedo_0 + (1 - albedo_0) * 0.12 * hazeFrac;
     if (albedo < 0.15) albedo = 0.15;
