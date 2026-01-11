@@ -26,10 +26,10 @@ function computePland_t(era) {
 
 function computeOceanPlantO2Base(era) {
     switch (era) {
-        case '光合成細菌誕生時代': return 0.05;
-        case '真核生物誕生時代': return 0.1;
-        case '多細胞生物誕生時代': return 0.2;
-        case '海洋生物多様化時代': return 0.35;
+        case '光合成細菌誕生時代': return 0.1;
+        case '真核生物誕生時代': return 0.3;
+        case '多細胞生物誕生時代': return 0.5;
+        case '海洋生物多様化時代': return 0.8;
         case '苔類進出時代':
         case 'シダ植物時代':
         case '大森林時代':
@@ -235,17 +235,16 @@ export function computeNextClimateTurn(cur) {
     const f_O2_forAbs = Math.max(f_O2 - 0.00001, 0);
 
     const land_abs_eff_planet = Number(constants.land_abs_eff_planet) || 1.0;
-    let HighO2_abs_boost = 1 + Math.pow((f_O2_forAbs / 0.21), 1.5);
-    HighO2_abs_boost = Math.min(HighO2_abs_boost, 5);
 
-    const land_abs_eff = (100 * Math.exp(-Time_yr / 500000000)) * HighO2_abs_boost + 0.6 * land_abs_eff_planet;
+    const ReducingFactor = 1 / (1 + Math.pow((f_O2_forAbs / 0.05), 2));
+    const land_abs_eff = (40 * ReducingFactor) + 0.6 * land_abs_eff_planet;
 
     const O2_abs =
         Turn_yr ** 0.5
         * 0.00008
         * land_abs_eff
         * (f_land / 0.3)
-        * (Math.pow((f_O2_forAbs / 0.21), 1.1) + 0.1)
+        * (Math.pow((f_O2_forAbs / 0.21), 0.6) + 0.1)
         * Math.min(Math.exp((averageTemperature - 15) / 20), 3)
         * f_O2_forAbs;
 
@@ -271,7 +270,7 @@ export function computeNextClimateTurn(cur) {
             * ((3 * f_CO2) / (f_CO2 + 0.0008))
         )
         * Math.pow((1 + f_O2 / 0.21), -0.25)
-        * Math.exp(-Math.pow((f_O2 / 0.30), 8));
+        * (1 / (1 + Math.pow((f_O2 / 0.25), 3)));
 
     const f_O2_calc = f_O2 - O2_abs + O2_prod;
     f_O2 = O2_alpha * f_O2_calc + (1 - O2_alpha) * f_O2;
@@ -301,10 +300,8 @@ export function computeNextClimateTurn(cur) {
     let Radiation_cooling = computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, 0.15);
 
     // --- Step7: 平均気温 ---
-    const milankovitch = 1 + 0.00005 * Math.sin(2 * Math.PI * Time_yr / 100000);
-    const Sol = 950 * solarEvolution * milankovitch + sol_event;
-
-    const { averageTemperature_calc } = computeRadiativeEquilibriumCalc({ solarEvolution, Time_yr, Meteo_eff, sol_event, albedo, Radiation_cooling });
+    // Sol / milankovitch は radiative.js 内の computeRadiativeEquilibriumCalc で計算するため重複を削除
+    const { averageTemperature_calc, Sol } = computeRadiativeEquilibriumCalc({ solarEvolution, Time_yr, Meteo_eff, sol_event, albedo, Radiation_cooling });
 
     if (Time_turn === 0) {
         averageTemperature = averageTemperature_calc - 273.15;
