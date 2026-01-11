@@ -26,9 +26,6 @@ function buildDefaultClimateState() {
         Turn_speed: 1.0,
         isRunning: false,
 
-        // 時代境界の「30ターンだけ Turn_yr=1000」用
-        transitionTurnsRemaining: 0,
-        transitionNextTurnYr: null,
         // 永続的なイベントによる Turn_yr 強制用（例：Step2 の太陽活動イベントで使用）
         // - forcedTurnsRemaining: 残り強制ターン数（0なら無効）
         // - forcedOriginalTurnYr: 強制開始前の Turn_yr を保持（復帰時に使用）
@@ -390,8 +387,6 @@ export function createClimateSlice() {
                     Turn_yr,
                     Turn_speed: defaults.Turn_speed,
                     isRunning: false,
-                    transitionTurnsRemaining: 0,
-                    transitionNextTurnYr: null,
                     // 初期化時は強制補正は無効
                     forcedTurnsRemaining: 0,
                     forcedOriginalTurnYr: null,
