@@ -5,7 +5,7 @@
     <div class="controls">
       <button @click="$emit('turn-start')" :disabled="!!(climateTurn && climateTurn.isRunning)">ターン進行</button>
       <button @click="$emit('turn-stop')" :disabled="!(climateTurn && climateTurn.isRunning)">ターン停止</button>
-
+      <div class="controls-break" aria-hidden="true"></div>
       <label class="control">
         <input
           type="range"
@@ -17,6 +17,7 @@
         />
         <span>Turn_speed: <b>{{ safeSpeedLabel }}</b> sec/turn</span>
       </label>
+      <div class="controls-break" aria-hidden="true"></div>
       <div class="speed-labels">
         <span
           v-for="(opt, idx) in speedOptions"
@@ -27,7 +28,7 @@
 
       <label class="control">
         <input type="checkbox" :checked="turnYrEnabled" @change="onToggleTurnYrEnabled($event)" />
-        <span>Turn_yr 設定を操作可能</span>
+        <span>year/turn</span>
         <div class="turn-buttons" :aria-disabled="!turnYrEnabled">
           <button
             v-for="opt in turnYrOptions"
@@ -227,6 +228,10 @@ export default {
 .status {
   margin-top: 6px;
   color: #333;
+}
+.controls-break {
+  flex-basis: 100%;
+  height: 0;
 }
 </style>
 

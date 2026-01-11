@@ -637,7 +637,6 @@ export default {
         // フォールバック: 明示的なbaseがあればそれを返す、なければ0
         return (this.local && typeof this.local.baseLandDistanceThreshold === 'number') ? this.local.baseLandDistanceThreshold : 0;
       }
-      // 小数は四捨五入して整数で表示
       return Math.round(sum / cnt);
     },
     // 陸の割合 x に応じた中心間の排他距離（自動計算）
