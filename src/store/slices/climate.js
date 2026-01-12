@@ -123,10 +123,7 @@ function buildDefaultClimateState() {
         },
         baseAverageTemperature: 15,
 
-        // 10ターンごとの平均気温履歴（折れ線グラフ用）
-        history: {
-            averageTemperatureEvery10: [] // [{ turn, yr, value }]
-        }
+        
     };
 }
 
@@ -393,9 +390,7 @@ export function createClimateSlice() {
                     constants,
                     terrain,
                     vars,
-                    history: {
-                        averageTemperatureEvery10: [{ turn: 0, yr: initial.Time_yr, value: vars.averageTemperature }]
-                    }
+                    
                 };
                 next.baseAverageTemperature = initial.averageTemperature;
                 // 放射平衡温度（初期化時点）は「時代デフォルトの平均気温」を優先して設定する。

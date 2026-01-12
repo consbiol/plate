@@ -19,15 +19,12 @@ function fmtNum(v, digits = 6) {
   return n.toFixed(digits);
 }
 
-export function buildClimateOutputHtml({ climateTurn, climateVars, climateHistory, climate } = {}) {
+export function buildClimateOutputHtml({ climateTurn, climateVars, climate } = {}) {
   const t = climateTurn || {};
   const v = climateVars || {};
-  const h = climateHistory || {};
   const c = climate || {};
   const constants = c.constants || {};
-  const points = Array.isArray(h.averageTemperatureEvery10) ? h.averageTemperatureEvery10 : [];
-
-  const jsonPoints = escapeHtml(JSON.stringify(points.slice(-300)));
+ 
 
   return `
 <!doctype html>
@@ -138,97 +135,7 @@ export function buildClimateOutputHtml({ climateTurn, climateVars, climateHistor
       <div class="row"><label>initial_CH4:</label><span>${fmtNum(constants.initial_CH4, 8)}</span></div>
     </div>
 
-    <div class="section-title">averageTemperature（10ターンごと）</div>
-    <canvas id="tempChart" width="900" height="320"></canvas>
-    <div class="muted">表示点数: ${escapeHtml(points.slice(-300).length)}</div>
-
-    <script>
-      (function(){
-        const points = JSON.parse('${jsonPoints}');
-        const canvas = document.getElementById('tempChart');
-        if (!canvas || !canvas.getContext) return;
-        const ctx = canvas.getContext('2d');
-        const W = canvas.width, H = canvas.height;
-        ctx.clearRect(0,0,W,H);
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0,0,W,H);
-        const padL = 60, padR = 20, padT = 20, padB = 40;
-        const plotW = W - padL - padR;
-        const plotH = H - padT - padB;
-        if (!points || points.length < 2) {
-          ctx.fillStyle = '#666';
-          ctx.font = '14px system-ui, sans-serif';
-          ctx.fillText('データが不足しています（10ターン毎に記録）', padL, padT + 20);
-          return;
-        }
-        let minY = Infinity, maxY = -Infinity;
-        for (const p of points) {
-          const y = Number(p.value);
-          if (!isFinite(y)) continue;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
-        }
-        if (!isFinite(minY) || !isFinite(maxY)) return;
-        if (minY === maxY) { minY -= 1; maxY += 1; }
-
-        const x0 = Number(points[0].turn);
-        const x1 = Number(points[points.length - 1].turn);
-        const spanX = (x1 - x0) || 1;
-
-        const xToPx = (x) => padL + (Number(x) - x0) * plotW / spanX;
-        const yToPx = (y) => padT + (maxY - Number(y)) * plotH / (maxY - minY);
-
-        // axes
-        ctx.strokeStyle = '#999';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(padL, padT);
-        ctx.lineTo(padL, padT + plotH);
-        ctx.lineTo(padL + plotW, padT + plotH);
-        ctx.stroke();
-
-        // y ticks
-        ctx.fillStyle = '#444';
-        ctx.font = '12px system-ui, sans-serif';
-        const ticks = 5;
-        for (let i=0;i<=ticks;i++){
-          const ty = minY + (maxY - minY) * (i / ticks);
-          const py = yToPx(ty);
-          ctx.strokeStyle = '#eee';
-          ctx.beginPath();
-          ctx.moveTo(padL, py);
-          ctx.lineTo(padL + plotW, py);
-          ctx.stroke();
-          ctx.fillStyle = '#444';
-          ctx.fillText(ty.toFixed(1), 8, py + 4);
-        }
-
-        // line
-        ctx.strokeStyle = '#0b6';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        let started = false;
-        for (const p of points) {
-          const x = Number(p.turn);
-          const y = Number(p.value);
-          if (!isFinite(x) || !isFinite(y)) continue;
-          const px = xToPx(x);
-          const py = yToPx(y);
-          if (!started) { ctx.moveTo(px, py); started = true; }
-          else ctx.lineTo(px, py);
-        }
-        ctx.stroke();
-
-        // labels
-        ctx.fillStyle = '#333';
-        ctx.fillText('turn', padL + plotW/2 - 10, H - 10);
-        ctx.save();
-        ctx.translate(14, padT + plotH/2 + 10);
-        ctx.rotate(-Math.PI/2);
-        ctx.fillText('℃', 0, 0);
-        ctx.restore();
-      })();
-    </script>
+    
   </body>
 </html>`;
 }

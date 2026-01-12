@@ -99,21 +99,36 @@ export function computeAlbedo({ f_cloud, hazeFrac, terrain = {} } = {}) {
     const f_green = Number(terrain.f_green) || 0;
     const f_glacier = Number(terrain.f_glacier) || 0;
 
+    function glacierAlbedo(f_glacier) {
+        const A_min = 0.3;
+        const A_mid = 0.45;
+        const A_max = 0.6; // A_max は「全球平均氷床状態」であり、局所的新雪アルベドではない
+    
+        const x0 = 0.15;  // 氷が中緯度に到達する面積率
+        const k  = 10.0;  // 遷移の鋭さ
+    
+        const s = 1 / (1 + Math.exp(-k * (f_glacier - x0)));
+    
+        return A_mid + (A_max - A_mid) * s - (A_mid - A_min) * (1 - s);
+    }
+
+    const A_glacier = glacierAlbedo(f_glacier);
+
     const albedo_0 =
-        // 氷河
-        (1 - f_cloud) * 0.65 * f_glacier + (f_cloud) * (0.65 + 0.05) * f_glacier
+        // 氷河（氷河分布球面幾何＋緯度依存の日射重み付け）
+        (1 - f_cloud) * A_glacier * f_glacier + f_cloud * (A_glacier + (1 - A_glacier) * 0.05) * f_glacier
         // 緑地+ツンドラ
-        + (1 - f_cloud) * 0.13 * (f_green + f_tundra) + (f_cloud) * (0.13 + 0.15) * (f_green + f_tundra)
+        + (1 - f_cloud) * 0.13 * (f_green + f_tundra) + f_cloud * (0.13 + 0.15) * (f_green + f_tundra)
         // 都市
-        + (1 - f_cloud) * 0.14 * f_city + (f_cloud) * (0.14 + 0.06) * f_city
+        + (1 - f_cloud) * 0.14 * f_city + f_cloud * (0.14 + 0.06) * f_city
         // 砂漠
-        + (1 - f_cloud) * 0.38 * f_desert + (f_cloud) * (0.38 + 0.07) * f_desert
+        + (1 - f_cloud) * 0.38 * f_desert + f_cloud * (0.38 + 0.07) * f_desert
         // 農地+汚染地
-        + (1 - f_cloud) * 0.18 * (f_cultivated + f_polluted) + (f_cloud) * (0.18 + 0.12) * (f_cultivated + f_polluted)
+        + (1 - f_cloud) * 0.18 * (f_cultivated + f_polluted) + f_cloud * (0.18 + 0.12) * (f_cultivated + f_polluted)
         // 高地+高山
-        + (1 - f_cloud) * 0.22 * (f_highland + f_alpine) + (f_cloud) * (0.22 + 0.03) * (f_highland + f_alpine)
+        + (1 - f_cloud) * 0.22 * (f_highland + f_alpine) + f_cloud * (0.22 + 0.03) * (f_highland + f_alpine)
         // 海洋
-        + (1 - f_cloud) * 0.06 * f_ocean + (f_cloud) * (0.06 + 0.25) * f_ocean;
+        + (1 - f_cloud) * 0.06 * f_ocean + f_cloud * (0.06 + 0.25) * f_ocean;
 
     let albedo = albedo_0 + (1 - albedo_0) * 0.12 * hazeFrac;
     if (albedo < 0.15) albedo = 0.15;

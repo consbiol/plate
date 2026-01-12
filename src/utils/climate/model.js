@@ -340,13 +340,7 @@ export function computeNextClimateTurn(cur) {
         nextTurnYrForState = baseTurnYr;
     }
 
-    // 10ターンごとの平均気温履歴
-    const history = state.history || { averageTemperatureEvery10: [] };
-    const prevHist = Array.isArray(history.averageTemperatureEvery10) ? history.averageTemperatureEvery10 : [];
-    const nextHist = prevHist.slice(-500); // 念のため上限（約5000ターン分の10ターン間隔）
-    if (nextTimeTurn % 10 === 0) {
-        nextHist.push({ turn: nextTimeTurn, yr: nextTimeYr, value: averageTemperature });
-    }
+    
 
     // --- Meteo (隕石落下) と Fire (森林火災) のワンショット残ターン処理 ---
     const nextEvents = { ...events };
@@ -427,11 +421,7 @@ export function computeNextClimateTurn(cur) {
             Sol,
             averageTemperature
         },
-        baseAverageTemperature,
-        history: {
-            ...history,
-            averageTemperatureEvery10: nextHist
-        }
+        baseAverageTemperature
     };
 }
 
