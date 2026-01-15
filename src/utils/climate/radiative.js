@@ -14,6 +14,12 @@ function ratio2Over1PlusRatio2(a, b) {
     return r2 / (1 + r2);
 }
 
+// Helper: convert to finite number or use default (preserves 0)
+function toNum(x, def) {
+    const v = Number(x);
+    return Number.isFinite(v) ? v : def;
+}
+
 export function computeSolarAndGases(Time_yr, constants = {}) {
     const solarFlareUpRate = Number(constants.solarFlareUpRate) || 0.3;
     const argonCapacity = Number(constants.argonCapacity) || 0.0101;
@@ -56,10 +62,10 @@ export function computeH2Oeff(averageTemperature, f_ocean, constants = {}, optio
     const H2O_max = Number(constants.H2O_max) || 2.9;
     const avg = Number(averageTemperature) || 15;
     let H2O_eff = H2O_max
-        * (Math.exp((avg - 15) / 30) / (1 + Math.exp((avg - T_sat) / dT)))
+        * (Math.exp((avg - 15) / 50) / (1 + Math.exp((avg - T_sat) / dT)))
         * (f_ocean + 0.1 * (1 - f_ocean)) + 0.5;
     if (options.conservative) {
-        H2O_eff = Math.min(H2O_eff, 1.0);
+        H2O_eff = Math.min(H2O_eff, 1.5);
     }
     return H2O_eff;
 }
@@ -72,9 +78,20 @@ export function computeLnGases(f_CO2, f_CH4) {
     return { lnCO2, lnCH4 };
 }
 
-export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, floor = 0.18) {
-    let Radiation_cooling =
-        1 / (1 + Math.pow(Pressure, 0.45) * (0.2 * lnCO2 + 0.3 * lnCH4 + 0.8 * H2O_eff + f_H2 * (0.4 * 0.78 + 0.2 * f_H2 + 0.1 * 0)));
+export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, floor) {
+    // Normalize inputs while preserving explicit zeros
+    Pressure = toNum(Pressure, 0);
+    lnCO2 = toNum(lnCO2, 0);
+    lnCH4 = toNum(lnCH4, 0);
+    H2O_eff = toNum(H2O_eff, 0);
+    f_H2 = toNum(f_H2, 0);
+    f_N2 = toNum(f_N2, 0.78);
+    f_CO2 = toNum(f_CO2, 0.0004);
+    floor = toNum(floor, 0.18);
+
+    let tau = Math.pow(Pressure, 0.3) * (0.25 * lnCO2 + 0.35 * lnCH4 + 0.6 * H2O_eff + f_H2 * (0.4 * f_N2 + 0.2 * f_H2 + 0.1 * f_CO2));
+    tau = Math.min(tau, 1.2); // tau capped to avoid runaway greenhouse / numerical lock-in
+    let Radiation_cooling = 1 / (1 + tau);
     Radiation_cooling = Math.max(Radiation_cooling, floor);
     return Radiation_cooling;
 }
@@ -104,8 +121,8 @@ export function computeAlbedo({ f_cloud, hazeFrac, terrain = {} } = {}) {
         const A_mid = 0.45;
         const A_max = 0.6; // A_max は「全球平均氷床状態」であり、局所的新雪アルベドではない
     
-        const x0 = 0.15;  // 氷が中緯度に到達する面積率
-        const k  = 10.0;  // 遷移の鋭さ
+        const x0 = 0.35;
+        const k  = 4.0;
     
         const s = 1 / (1 + Math.exp(-k * (f_glacier - x0)));
     

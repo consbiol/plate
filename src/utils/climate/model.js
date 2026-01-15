@@ -43,12 +43,12 @@ function computeOceanPlantO2Base(era) {
 
 function computeLandPlantO2(era) {
     switch (era) {
-        case '苔類進出時代': return 0.075;
+        case '苔類進出時代': return 0.07;
         case 'シダ植物時代': return 1.2;
         case '大森林時代':
         case '文明時代':
         case '海棲文明時代':
-            return 1.0;
+            return 1;
         default:
             return 0;
     }
@@ -232,13 +232,14 @@ export function computeNextClimateTurn(cur) {
     f_CO2 = Math.max(f_CO2, 0.000006);
 
     // O2
-    const f_O2_forAbs = Math.max(f_O2 - 0.00001, 0);
+    const f_O2_forAbs = Math.max(f_O2 - 0.0001, 0);
 
     const land_abs_eff_planet = Number(constants.land_abs_eff_planet) || 1.0;
 
     const ReducingFactor = 1 / (1 + Math.pow((f_O2_forAbs / 0.05), 2));
     const land_abs_eff = (40 * ReducingFactor) + 0.6 * land_abs_eff_planet;
 
+    const gamma = 0.3;
     const O2_abs =
         Turn_yr ** 0.5
         * 0.00008
@@ -246,12 +247,15 @@ export function computeNextClimateTurn(cur) {
         * (f_land / 0.3)
         * (Math.pow((f_O2_forAbs / 0.21), 0.6) + 0.1)
         * Math.min(Math.exp((averageTemperature - 15) / 20), 3)
-        * f_O2_forAbs;
+        * f_O2_forAbs
+        + Turn_yr ** 0.5
+        * 0.0007
+        * Volcano_event
+        * Math.pow(f_O2, gamma);
 
     const ocean_plantO2_base = computeOceanPlantO2Base(era);
     const land_plantO2 = computeLandPlantO2(era);
     const fungal_factor = computeFungalFactor(era);
-
     const O2_prod =
         Turn_yr ** 0.5
         * 0.001
@@ -269,8 +273,7 @@ export function computeNextClimateTurn(cur) {
             * fungal_factor
             * ((3 * f_CO2) / (f_CO2 + 0.0008))
         )
-        * Math.pow((1 + f_O2 / 0.21), -0.25)
-        * (1 / (1 + Math.pow((f_O2 / 0.25), 3)));
+        * Math.pow((1 + f_O2 / 0.21), -0.25);
 
     const f_O2_calc = f_O2 - O2_abs + O2_prod;
     f_O2 = O2_alpha * f_O2_calc + (1 - O2_alpha) * f_O2;
@@ -297,7 +300,7 @@ export function computeNextClimateTurn(cur) {
     const H2O_eff = computeH2Oeff(averageTemperature, f_ocean, constants, { conservative: false });
 
     const { lnCO2, lnCH4 } = computeLnGases(f_CO2, f_CH4);
-    let Radiation_cooling = computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, 0.15);
+    let Radiation_cooling = computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, 0.15);
 
     // --- Step7: 平均気温 ---
     // Sol / milankovitch は radiative.js 内の computeRadiativeEquilibriumCalc で計算するため重複を削除
@@ -463,7 +466,7 @@ export function computeRadiativeEquilibriumTempK(state, options = {}) {
     let H2O_eff = computeH2Oeff(averageTemperature, f_ocean, constants, { conservative });
 
     const { lnCO2, lnCH4 } = computeLnGases(f_CO2, f_CH4);
-    let Radiation_cooling = computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, 0.15);
+    let Radiation_cooling = computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, 0.15);
 
     // compute albedo via shared helper
     const albedo = computeAlbedo({ f_cloud, hazeFrac, terrain });

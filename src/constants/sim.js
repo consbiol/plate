@@ -17,5 +17,3 @@ export const DRIFT_INTERVAL_YEARS = 2000000;
 // ---------------------------
 export const PLANE_MAX_NON_RELOAD_UPDATES = 200;
 export const SPHERE_MAX_NON_RELOAD_UPDATES = 200;
-
-

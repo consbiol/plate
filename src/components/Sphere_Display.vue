@@ -13,6 +13,7 @@ import { drawSphereCPU } from '../features/sphere/rendererCpu.js';
 import { initSphereWebGL, drawSphereWebGL, updateSphereTexturesWebGL, disposeSphereWebGL } from '../features/sphere/rendererWebgl.js';
 import { getGetter, getGetterPath } from '../utils/storeGetters.js';
 import { bestEffort } from '../utils/bestEffort.js';
+import { TURN_SPHERE_UPDATE_EVERY_TURNS } from '../constants/sim.js';
 export default {
   name: 'Sphere_Display',
   // props を廃止し store に完全依存する（必要な設定は store または既定値から取得）
@@ -91,12 +92,18 @@ export default {
     },
     gridData() {
       // 参照が差し替わったタイミングでのみ発火（deep watchは重いので避ける）
-      // 描画負荷軽減のため、表示更新は 5 ターンごとに限定する。
+      // 描画負荷軽減のため、表示更新は TURN_SPHERE_UPDATE_EVERY_TURNS ターンごとに限定する。
       try {
         const turnObj = getGetter(this.$store, 'climateTurn', null);
         const turnNum = (turnObj && typeof turnObj.Time_turn === 'number') ? turnObj.Time_turn : null;
-        const shouldUpdate = (turnNum === null) ? true : (turnNum % 5 === 0);
-        if (shouldUpdate) this.scheduleWebGLTextureRefreshAndRedraw();
+        const every = Math.max(1, Math.floor(Number(TURN_SPHERE_UPDATE_EVERY_TURNS) || 5));
+        const shouldUpdate = (turnNum === null) ? true : (turnNum % every === 0);
+        if (shouldUpdate) {
+          // Sphere の更新間隔と同じタイミングで、雲（f_cloud等）のスナップショットも更新する
+          // ※ store の f_cloud は毎ターン更新され得るが、描画へはスナップショットで反映させる設計のため
+          this.applyCloudSnapshot();
+          this.scheduleWebGLTextureRefreshAndRedraw();
+        }
       } catch (e) {
         // 万一取得に失敗したらフォールバックで更新する（安全策）
         this.scheduleWebGLTextureRefreshAndRedraw();
