@@ -172,8 +172,8 @@ export function computeNextClimateTurn(cur) {
     const co2FactorClamped = Math.max(0, Math.min(co2Factor, 1.5));
     const f_O2_norm = f_O2 / 0.21;
     const O2_suppression = 1 / (1 + Math.pow(f_O2_norm / 1.8, 4));
-    const tempSigmaColdSide = 8;
-    const tempSigmaHotSide = 5.5;
+    const tempSigmaColdSide = 12;
+    const tempSigmaHotSide = 8;
     const tempSigma =
         averageTemperature < 22.5
             ? tempSigmaColdSide
@@ -265,11 +265,11 @@ export function computeNextClimateTurn(cur) {
     const fungal_factor = computeFungalFactor(era);
     const O2_prod =
         Turn_yr ** 0.5
-        * 0.001
+        * 0.0005
         * (
             0.6
             * f_ocean
-            * Math.exp(-sq((averageTemperature - 20) / 10))
+            * Math.exp(-sq((averageTemperature - 20) / 18))
             * ocean_plantO2_base
             * (1 + 0.25 * f_green * land_plantO2)
             * ((f_CO2 / (f_CO2 + 0.0004)) + 0.5)
