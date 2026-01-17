@@ -172,8 +172,8 @@ export function computeNextClimateTurn(cur) {
     const co2FactorClamped = Math.max(0, Math.min(co2Factor, 1.5));
     const f_O2_norm = f_O2 / 0.21;
     const O2_suppression = 1 / (1 + Math.pow(f_O2_norm / 1.8, 4));
-    const tempSigmaColdSide = 12;
-    const tempSigmaHotSide = 8;
+    const tempSigmaColdSide = 18;
+    const tempSigmaHotSide = 12;
     const tempSigma =
         averageTemperature < 22.5
             ? tempSigmaColdSide

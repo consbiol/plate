@@ -83,8 +83,8 @@ export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f
     f_CO2 = toNum(f_CO2, 0.0004);
     floor = toNum(floor, 0.18);
 
-    let tau = Math.pow(Pressure, 0.3) * (0.25 * lnCO2 + 0.35 * lnCH4 + 0.6 * H2O_eff + f_H2 * (0.4 * f_N2 + 0.2 * f_H2 + 0.1 * f_CO2));
-    tau = Math.min(tau, 1.6); // tau capped to avoid runaway greenhouse / numerical lock-in
+    let tau = Math.pow(Pressure, 0.3) * (0.2 * lnCO2 + 0.3 * lnCH4 + 0.6 * H2O_eff + f_H2 * (0.4 * f_N2 + 0.2 * f_H2 + 0.1 * f_CO2));
+    tau = Math.min(tau, 1.2); // tau capped to avoid runaway greenhouse / numerical lock-in
     let Radiation_cooling = 1 / (1 + tau);
     Radiation_cooling = Math.max(Radiation_cooling, floor);
     return Radiation_cooling;
