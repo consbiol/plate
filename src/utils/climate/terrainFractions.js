@@ -39,9 +39,9 @@ export function buildTerrainFractionsFromTypeCounts({ typeCounts, preGlacierStat
 
     // 指定仕様:
     // - 爆撃時代/生命発生前時代/嫌気性細菌誕生時代/光合成細菌誕生時代/多細胞生物誕生時代/海洋生物多様化時代: f_green = 0
-    // - 苔類進出時代: f_green = 苔
-    // - シダ植物時代/大森林時代/文明時代/海棲文明時代: f_green = 低地
-    // - その他は既定で 低地（安全側）
+    // - 苔類進出時代: f_green = f_bryophyte
+    // - シダ植物時代/大森林時代/文明時代/海棲文明時代: f_green = f_lowland
+    // - その他は既定で 0
     const e = (typeof era === 'string') ? era : null;
     const GREEN_ZERO_ERAS = new Set([
         '爆撃時代',
@@ -51,9 +51,25 @@ export function buildTerrainFractionsFromTypeCounts({ typeCounts, preGlacierStat
         '多細胞生物誕生時代',
         '海洋生物多様化時代'
     ]);
-    const f_green = (e && GREEN_ZERO_ERAS.has(e))
-        ? 0
-        : (e === '苔類進出時代' ? f_bryophyte : f_lowland);
+    const GREEN_LOWLAND_ERAS = new Set([
+        'シダ植物時代',
+        '大森林時代',
+        '文明時代',
+        '海棲文明時代'
+    ]);
+
+    let f_green = 0;
+    if (e) {
+        if (GREEN_ZERO_ERAS.has(e)) {
+            f_green = 0;
+        } else if (e === '苔類進出時代') {
+            f_green = f_bryophyte;
+        } else if (GREEN_LOWLAND_ERAS.has(e)) {
+            f_green = f_lowland;
+        } else {
+            f_green = 0;
+        }
+    }
 
     // 氷河補正前の陸/海（湖は海扱い）を優先。なければ現行の陸/海から推定。
     const f_land_original = (preGlacierStats && typeof preGlacierStats.landRatio === 'number')

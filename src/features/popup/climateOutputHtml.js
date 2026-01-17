@@ -24,7 +24,7 @@ export function buildClimateOutputHtml({ climateTurn, climateVars, climate } = {
   const v = climateVars || {};
   const c = climate || {};
   const constants = c.constants || {};
- 
+
 
   return `
 <!doctype html>

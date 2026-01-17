@@ -172,7 +172,14 @@ export function computeNextClimateTurn(cur) {
     const co2FactorClamped = Math.max(0, Math.min(co2Factor, 1.5));
     const f_O2_norm = f_O2 / 0.21;
     const O2_suppression = 1 / (1 + Math.pow(f_O2_norm / 1.8, 4));
-    const greenIndex_calc = 1.81 * Math.exp(-(sq(averageTemperature - 22.5)) / (2 * sq(12))) * f_cloud * co2FactorClamped * O2_suppression;
+    const tempSigmaColdSide = 8;
+    const tempSigmaHotSide = 5.5;
+    const tempSigma =
+        averageTemperature < 22.5
+            ? tempSigmaColdSide
+            : tempSigmaHotSide
+
+    const greenIndex_calc = 1.81 * Math.exp(-(sq(averageTemperature - 22.5)) / (2 * sq(tempSigma))) * f_cloud * co2FactorClamped * O2_suppression;
     // 最初のターン（または時代変化による次state開始ターン）では平滑化を行わず、生値を採用する
     if (Time_turn === 0 || eraWillChange) {
         greenIndex = greenIndex_calc;
@@ -239,7 +246,7 @@ export function computeNextClimateTurn(cur) {
     const ReducingFactor = 1 / (1 + Math.pow((f_O2_forAbs / 0.05), 2));
     const land_abs_eff = (40 * ReducingFactor) + 0.6 * land_abs_eff_planet;
 
-    const gamma = 0.4;
+    const gamma = 0.5;
     const O2_abs =
         Turn_yr ** 0.5
         * 0.00008
@@ -343,7 +350,7 @@ export function computeNextClimateTurn(cur) {
         nextTurnYrForState = baseTurnYr;
     }
 
-    
+
 
     // --- Meteo (隕石落下) と Fire (森林火災) のワンショット残ターン処理 ---
     const nextEvents = { ...events };
@@ -474,5 +481,7 @@ export function computeRadiativeEquilibriumTempK(state, options = {}) {
     const { averageTemperature_calc, Sol } = computeRadiativeEquilibriumCalc({ solarEvolution, Time_yr, Meteo_eff, sol_event, albedo, Radiation_cooling });
     return { averageTemperature_calc, Sol, f_cloud, Radiation_cooling, H2O_eff };
 }
+
+
 
 

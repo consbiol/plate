@@ -32,25 +32,19 @@ export function computeSolarAndGases(Time_yr, constants = {}) {
 }
 
 export function computeClouds({ Pressure, f_ocean, averageTemperature, CosmicRay = 1, f_CH4 = 0, f_CO2 = 0 } = {}) {
-    // Use a single unified coefficient set (previously differed between 'init' and 'full').
-    // Chosen coefficients use the more robust safeLn and slightly more conservative factors.
     let f_cloud_0;
     const avg = Number(averageTemperature) || 15;
-    const base = 0.2;
+    const P = Math.max(Number(Pressure) || 1, 0.01);
+    const base = 0.4;
     const oceanCoef = 0.6;
-    const lnFn = safeLn;
-    const mulAvg = 0.02;
-    const shift = 80;
-    const scale = 10;
     const minVal = 0.01;
 
     const raw =
-        base
-        + oceanCoef * f_ocean
-        + 0.15 * lnFn(Math.min(Pressure, 10))
-        + mulAvg * Math.min(50, (avg - 15));
-    const sigmoid = 1 / (1 + Math.exp((avg - shift) / scale));
-    f_cloud_0 = Math.max(minVal, raw * sigmoid);
+        (base + oceanCoef * f_ocean)
+        * Math.exp(-Math.pow((avg - 25) / 20, 2))
+        * (1 / (1 + 0.03 * Math.max(avg - 30, 0)))
+        * (1 + 0.15 * Math.log(Math.min(P, 10)))
+    f_cloud_0 = Math.max(minVal, raw);
     const hazeFrac = ratio2Over1PlusRatio2(f_CH4, f_CO2);
     const f_cloud = Math.max(0.001, Math.min(1, f_cloud_0 * (1 - 0.3 * hazeFrac) * CosmicRay));
     return { f_cloud_0, hazeFrac, f_cloud };
@@ -120,12 +114,12 @@ export function computeAlbedo({ f_cloud, hazeFrac, terrain = {} } = {}) {
         const A_min = 0.3;
         const A_mid = 0.45;
         const A_max = 0.6; // A_max は「全球平均氷床状態」であり、局所的新雪アルベドではない
-    
+
         const x0 = 0.35;
-        const k  = 4.0;
-    
+        const k = 4.0;
+
         const s = 1 / (1 + Math.exp(-k * (f_glacier - x0)));
-    
+
         return A_mid + (A_max - A_mid) * s - (A_mid - A_min) * (1 - s);
     }
 
