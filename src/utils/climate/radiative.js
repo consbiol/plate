@@ -65,9 +65,9 @@ export function computeH2Oeff(averageTemperature, f_ocean, constants = {}, optio
 }
 
 export function computeLnGases(f_CO2, f_CH4) {
-    let lnCO2 = safeLn(f_CO2 * 15000);
+    let lnCO2 = safeLn(f_CO2 * 25000);
     if (!isFinite(lnCO2) || lnCO2 < 0.5) lnCO2 = 0.5;
-    let lnCH4 = safeLn(f_CH4 * 100000);
+    let lnCH4 = safeLn(f_CH4 * 150000);
     if (!isFinite(lnCH4) || lnCH4 < -1.5) lnCH4 = -1.5;
     return { lnCO2, lnCH4 };
 }
@@ -84,7 +84,7 @@ export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f
     floor = toNum(floor, 0.18);
 
     let tau = Math.pow(Pressure, 0.3) * (0.25 * lnCO2 + 0.35 * lnCH4 + 0.6 * H2O_eff + f_H2 * (0.4 * f_N2 + 0.2 * f_H2 + 0.1 * f_CO2));
-    tau = Math.min(tau, 1.2); // tau capped to avoid runaway greenhouse / numerical lock-in
+    tau = Math.min(tau, 1.6); // tau capped to avoid runaway greenhouse / numerical lock-in
     let Radiation_cooling = 1 / (1 + tau);
     Radiation_cooling = Math.max(Radiation_cooling, floor);
     return Radiation_cooling;
