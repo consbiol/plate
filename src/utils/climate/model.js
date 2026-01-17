@@ -56,8 +56,8 @@ function computeLandPlantO2(era) {
 
 function computeFungalFactor(era) {
     switch (era) {
-        case '苔類進出時代': return 1.50;
-        case 'シダ植物時代': return 1.35;
+        case '苔類進出時代': return 2;
+        case 'シダ植物時代': return 1.8;
         default: return 1.00;
     }
 }
@@ -239,7 +239,7 @@ export function computeNextClimateTurn(cur) {
     const ReducingFactor = 1 / (1 + Math.pow((f_O2_forAbs / 0.05), 2));
     const land_abs_eff = (40 * ReducingFactor) + 0.6 * land_abs_eff_planet;
 
-    const gamma = 0.3;
+    const gamma = 0.4;
     const O2_abs =
         Turn_yr ** 0.5
         * 0.00008
