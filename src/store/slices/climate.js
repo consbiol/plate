@@ -12,6 +12,10 @@ import {
 import { clamp } from '../../utils/climate/math.js';
 import { computeNextClimateTurn, computeRadiativeEquilibriumTempK } from '../../utils/climate/model.js';
 import { buildTerrainFractionsFromTypeCounts } from '../../utils/climate/terrainFractions.js';
+import {
+    VOLCANO_EVENT_MAG_DEFAULT_INDEX,
+    clampVolcanoEventMagIndex
+} from '../../utils/climate/volcanoEventMagnification.js';
 
 function buildDefaultClimateState() {
     return {
@@ -50,6 +54,9 @@ function buildDefaultClimateState() {
         // 突発イベント（現状は未実装のため固定値）
         events: {
             Volcano_event: 1,
+            // Volcano_event の倍率（13段階、UIはボタン操作のみ）
+            // index は 0..12 を想定し、倍率は utils/climate/volcanoEventMagnification.js で解決する
+            Volcano_event_mag_idx: VOLCANO_EVENT_MAG_DEFAULT_INDEX,
             // マニュアルで設定する火山係数（Step2 UI から一時的にセットされる、3ターン限定）
             Volcano_event_manual: 0,
             // Volcano_event_manual のワンショット残ターン数（mutation が 3 に設定し、model 側でデクリメントして 0 で 0 に戻す）
@@ -225,16 +232,27 @@ export function createClimateSlice() {
                 state.climate = { ...cur, isRunning: !!value };
             }
             ,
-            // 永続的に sol_event を加算/減算する（generateSignal でのみリセットされる設計）
-            adjustSolEvent(state, delta) {
+            // sol_event を UI から直接セットする（slider 用）
+            // NOTE: Turn_yr 強制は「+/- ボタンで発火した瞬間」のみ行う（slider 変更では行わない）
+            setSolEvent(state, value) {
+                const cur = state.climate || buildDefaultClimateState();
+                const ev = { ...(cur.events || {}) };
+                const v = Number(value);
+                if (!isFinite(v)) return;
+                // UI仕様: -500..+500
+                const snapped = Math.round(v);
+                ev.sol_event = clamp(snapped, -500, 500);
+                state.climate = { ...cur, events: ev };
+            }
+            ,
+            // sol_event を永続的に加算/減算する（+/- ボタン用）。この「発火点」でのみ Turn_yr=1000 を20ターン強制する。
+            bumpSolEvent(state, delta) {
                 const cur = state.climate || buildDefaultClimateState();
                 const ev = { ...(cur.events || {}) };
                 const prev = Number(ev.sol_event || 0);
                 const d = Number(delta || 0);
                 if (!isFinite(d)) return;
-                ev.sol_event = prev + d;
-                // 「太陽活動の上昇（永続）」「太陽活動の下降（永続）」の発火点はここ。
-                // この瞬間から 20 ターンだけ Turn_yr=1000 を強制し、終了後に発火前の Turn_yr に戻す。
+                ev.sol_event = clamp(prev + d, -500, 500);
                 const withEvent = { ...cur, events: ev };
                 state.climate = startForcedTurnYrWindow(withEvent, { turns: 20, forcedTurnYr: 1000 });
             }
@@ -307,6 +325,23 @@ export function createClimateSlice() {
                 ev.Volcano_event_manual = Number(val);
                 // 3ターンだけ有効（model 側でデクリメントして 0 に戻す）
                 ev.Volcano_manual_remaining = (lvl === 0) ? 0 : 3;
+
+                // 强制Turn_yrの開始（時代が文明系以外なら20ターン強制）
+                const withEvent = { ...cur, events: ev };
+                state.climate = startForcedTurnYrWindow(withEvent, { turns: 20, forcedTurnYr: 1000 });
+            }
+            ,
+            // マントル活動（Volcano_event倍率）: 13段階を +/- ボタンで上下させる
+            // payload: { delta: -1 | +1 }
+            bumpVolcanoEventMagIndex(state, payload) {
+                const cur = state.climate || buildDefaultClimateState();
+                const ev = { ...(cur.events || {}) };
+                const prevIdx = clampVolcanoEventMagIndex(ev.Volcano_event_mag_idx);
+                const d = payload ? Number(payload.delta) : 0;
+                if (!isFinite(d)) return;
+                const nextIdx = clampVolcanoEventMagIndex(prevIdx + Math.sign(d));
+                if (nextIdx === prevIdx) return;
+                ev.Volcano_event_mag_idx = nextIdx;
 
                 // 强制Turn_yrの開始（時代が文明系以外なら20ターン強制）
                 const withEvent = { ...cur, events: ev };

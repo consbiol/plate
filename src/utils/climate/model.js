@@ -2,6 +2,7 @@
 
 import { buildEraTurnYr, buildTurnAlphaParams, getNextEraByTime, buildEraInitialClimate } from './eraPresets.js';
 import { computeSolarAndGases, computeH2Oeff, computeLnGases, computeRadiationCooling, computeRadiativeEquilibriumCalc, computeClouds, computeAlbedo } from './radiative.js';
+import { volcanoEventMagFromIndex } from './volcanoEventMagnification.js';
 
 
 function sq(x) {
@@ -26,9 +27,9 @@ function computePland_t(era) {
 
 function computeOceanPlantO2Base(era) {
     switch (era) {
-        case '光合成細菌誕生時代': return 0.1;
+        case '光合成細菌誕生時代': return 0.15;
         case '真核生物誕生時代': return 0.3;
-        case '多細胞生物誕生時代': return 0.5;
+        case '多細胞生物誕生時代': return 0.6;
         case '海洋生物多様化時代': return 0.8;
         case '苔類進出時代':
         case 'シダ植物時代':
@@ -147,6 +148,12 @@ export function computeNextClimateTurn(cur) {
         // ignore and keep Volcano_event as-is
     }
 
+    // マントル活動（Volcano_event倍率）: 13段階の倍率を乗算
+    // NOTE: 漂移由来の段階値(1.5, 2.5, 4.0...)を「ベース」とし、ここで倍率を掛ける
+    const Volcano_event_mag_idx = events ? events.Volcano_event_mag_idx : null;
+    const Volcano_event_mag = volcanoEventMagFromIndex(Volcano_event_mag_idx);
+    Volcano_event = Volcano_event * Volcano_event_mag;
+
     // --- Step2: イベント ---
     const Meteo_eff = Number(events.Meteo_eff);
     const Fire_event_CO2 = Number(events.Fire_event_CO2);
@@ -193,8 +200,21 @@ export function computeNextClimateTurn(cur) {
     const f_green = Number(terrain.f_green) || 0;
     const f_land_original = Number(terrain.f_land_original) || 0.3;
 
-    // CO2吸収の調整項
-    const f_weather = 1 + 1 / (1 + Math.exp(-(averageTemperature - 100) / 10));
+    // CO2
+    const CO2_ocean_eq =
+        0.00028 * Math.exp((averageTemperature - 15) / 30);
+    const CO2_flux_ocean =
+        Turn_yr ** 0.5
+        * 0.00000025
+        * f_ocean
+        * (f_CO2 - CO2_ocean_eq)
+        / (1 + Math.log(1 + f_CO2 / 0.00028));
+
+    const CO2_flux_carbonate =
+        Turn_yr ** 0.5
+        * 0.0000003
+        * Math.exp(-sq((averageTemperature - 30) / 10))
+        * (f_CO2 - 0.00028);
 
     const CO2_abs_rock =
         Turn_yr ** 0.5
@@ -202,7 +222,7 @@ export function computeNextClimateTurn(cur) {
         * (f_land / 0.3)
         * Math.exp((averageTemperature - 15) / 12)
         * Math.pow((f_CO2 / 0.0004), 0.7)
-        * f_weather;
+        * Math.exp(-sq((averageTemperature - 30) / 25));
 
     const Pland_t = computePland_t(era);
     const CO2_abs_plant =
@@ -214,20 +234,26 @@ export function computeNextClimateTurn(cur) {
             * Math.exp(-sq((averageTemperature - 22.5) / 15))
             * ((3 * f_CO2) / (f_CO2 + 0.0008))
         );
+    
+    const CO2_abs_ocean = Math.max(-CO2_flux_ocean, 0);
+    const CO2_abs_carbonate = Math.max(-CO2_flux_carbonate, 0);
 
-    const CO2_abs_total = CO2_abs_rock + CO2_abs_plant;
+    const CO2_abs_total = CO2_abs_rock + CO2_abs_plant + CO2_abs_ocean + CO2_abs_carbonate;
 
     const CO2_release_volcano =
         Turn_yr ** 0.5
-        * 0.0000004
+        * 0.00000025
         * (Volcano_event + Volcano_event_manual)
         * Math.pow(4550000000 / (Time_yr + 100000000), 3)
         * (1 + 0.5 * ((f_land_original - 0.3) / 0.3))
         * (0.5 + (Math.random() + Math.random()) / 2);
 
+    const CO2_release_ocean = Math.max(CO2_flux_ocean, 0);
+    const CO2_release_carbonate = Math.max(CO2_flux_carbonate, 0);
+
     const CO2_release_civil = 0; // 未実装
 
-    const CO2_release_total = CO2_release_volcano + CO2_release_civil + Fire_event_CO2;
+    const CO2_release_total = CO2_release_volcano + CO2_release_ocean + CO2_release_carbonate + CO2_release_civil + Fire_event_CO2;
 
     const f_CO2_calc = f_CO2 - CO2_abs_total + CO2_release_total;
     // 最初のターン（または時代変化による次state開始ターン）では平滑化を行わず、収支計算結果をそのまま採用する
@@ -244,21 +270,21 @@ export function computeNextClimateTurn(cur) {
     const land_abs_eff_planet = Number(constants.land_abs_eff_planet) || 1.0;
 
     const ReducingFactor = 1 / (1 + Math.pow((f_O2_forAbs / 0.05), 2));
-    const land_abs_eff = (40 * ReducingFactor) + 0.6 * land_abs_eff_planet;
+    const land_abs_eff = (20 * ReducingFactor) + 0.6 * land_abs_eff_planet;
 
-    const gamma = 0.5;
+    const gamma = 0.6;
     const O2_abs =
         Turn_yr ** 0.5
         * 0.00008
         * land_abs_eff
         * (f_land / 0.3)
         * (Math.pow((f_O2_forAbs / 0.21), 0.6) + 0.1)
-        * Math.min(Math.exp((averageTemperature - 15) / 20), 3)
+        * Math.min(Math.exp(-sq((averageTemperature - 25) / 25)), 3)
         * f_O2_forAbs
         + Turn_yr ** 0.5
-        * 0.0007
+        * 0.0005
         * Volcano_event
-        * Math.pow(f_O2, gamma);
+        * Math.pow(f_O2 + 0.001, gamma);
 
     const ocean_plantO2_base = computeOceanPlantO2Base(era);
     const land_plantO2 = computeLandPlantO2(era);
@@ -405,9 +431,12 @@ export function computeNextClimateTurn(cur) {
             CO2_abs_total,
             CO2_abs_rock,
             CO2_abs_plant,
+            CO2_abs_ocean,
+            CO2_abs_carbonate,
             CO2_release_total,
+            CO2_release_ocean,
+            CO2_release_carbonate,
             CO2_release_volcano,
-            f_weather,
             land_abs_eff,
             ocean_plantO2_base,
             land_plantO2,

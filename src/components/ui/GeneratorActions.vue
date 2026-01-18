@@ -11,23 +11,37 @@
   <div class="events">
       <div class="events-title">イベント</div>
       <div class="event-group">
-        <div class="event-label">太陽活動の上昇</div>
-        <div class="event-buttons">
-          <button @click="adjustSol(10)">Lv1</button>
-          <button @click="adjustSol(20)">Lv2</button>
-          <button @click="adjustSol(40)">Lv3</button>
-          <button @click="adjustSol(60)">Lv4</button>
-          <button @click="adjustSol(100)">Lv5</button>
+        <div class="event-label">太陽活動 (sol_event)</div>
+        <div class="sol-event-controls">
+          <button class="sol-step-btn" @click="bumpSol(-10)" :disabled="disabled">-</button>
+          <input
+            class="sol-slider"
+            type="range"
+            min="-500"
+            max="500"
+            step="1"
+            :value="solEvent"
+            disabled
+          />
+          <button class="sol-step-btn" @click="bumpSol(10)" :disabled="disabled">+</button>
+          <div class="sol-value">sol_event: {{ solEvent }}</div>
         </div>
       </div>
       <div class="event-group">
-        <div class="event-label">太陽活動の下降</div>
-        <div class="event-buttons">
-          <button @click="adjustSol(-10)">Lv1</button>
-          <button @click="adjustSol(-20)">Lv2</button>
-          <button @click="adjustSol(-40)">Lv3</button>
-          <button @click="adjustSol(-60)">Lv4</button>
-          <button @click="adjustSol(-100)">Lv5</button>
+        <div class="event-label">マントル活動</div>
+        <div class="sol-event-controls">
+          <button class="sol-step-btn" @click="bumpVolcanoMag(-1)" :disabled="disabled || volcanoMagAtMin">-</button>
+          <input
+            class="sol-slider"
+            type="range"
+            min="0"
+            max="12"
+            step="1"
+            :value="volcanoMagIndex"
+            disabled
+          />
+          <button class="sol-step-btn" @click="bumpVolcanoMag(1)" :disabled="disabled || volcanoMagAtMax">+</button>
+          <div class="sol-value">Volcano_event x{{ volcanoMagLabel }}</div>
         </div>
       </div>
       <div class="event-group">
@@ -72,12 +86,17 @@
           <button @click="triggerVolcano(5)">Lv5</button>
         </div>
       </div>
-      <div class="sol-display">sol_event: {{ solEvent }}</div>
     </div>
   </div>
 </template>
 
 <script>
+import {
+  VOLCANO_EVENT_MAG_LABELS,
+  VOLCANO_EVENT_MAG_DEFAULT_INDEX,
+  clampVolcanoEventMagIndex
+} from '../../utils/climate/volcanoEventMagnification.js';
+
 export default {
   name: 'GeneratorActions',
   props: {
@@ -89,6 +108,26 @@ export default {
       return (c && c.events && typeof c.events.sol_event === 'number') ? c.events.sol_event : (c && c.events ? Number(c.events.sol_event || 0) : 0);
     }
     ,
+    volcanoMagIndex() {
+      const c = (this.$store && this.$store.state && this.$store.state.climate) ? this.$store.state.climate : null;
+      const idxRaw = (c && c.events) ? c.events.Volcano_event_mag_idx : VOLCANO_EVENT_MAG_DEFAULT_INDEX;
+      return clampVolcanoEventMagIndex(idxRaw);
+    }
+    ,
+    volcanoMagLabel() {
+      const i = this.volcanoMagIndex;
+      return VOLCANO_EVENT_MAG_LABELS[i] || '1';
+    }
+    ,
+    volcanoMagAtMin() {
+      return this.volcanoMagIndex <= 0;
+    }
+    ,
+    volcanoMagAtMax() {
+      return this.volcanoMagIndex >= (VOLCANO_EVENT_MAG_LABELS.length - 1);
+    }
+    ,
+ 
     meteoEff() {
       const c = (this.$store && this.$store.state && this.$store.state.climate) ? this.$store.state.climate : null;
       return (c && c.events && typeof c.events.Meteo_eff === 'number') ? c.events.Meteo_eff : 1;
@@ -105,8 +144,16 @@ export default {
     }
   },
   methods: {
-    adjustSol(delta) {
-      this.$store.commit('adjustSolEvent', Number(delta));
+    bumpSol(delta) {
+      if (!this.$store) return;
+      this.$store.commit('bumpSolEvent', Number(delta));
+    }
+    ,
+    bumpVolcanoMag(delta) {
+      if (!this.$store) return;
+      const d = Math.sign(Number(delta) || 0);
+      if (d === 0) return;
+      this.$store.commit('bumpVolcanoEventMagIndex', { delta: d });
     }
     ,
     triggerMeteo(level) {
@@ -163,9 +210,27 @@ export default {
 .event-buttons > button {
   margin-right: 6px;
 }
-.sol-display {
-  margin-top: 6px;
+.sol-event-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.sol-step-btn {
+  width: 28px;
+  height: 24px;
+  line-height: 22px;
+  padding: 0;
+}
+.sol-slider {
+  flex: 1;
+  min-width: 120px;
+}
+.sol-value {
+  margin-left: 6px;
   font-size: 12px;
   color: #333;
+  white-space: nowrap;
 }
 </style>
