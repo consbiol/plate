@@ -111,8 +111,10 @@ function buildDefaultClimateState() {
             CO2_abs_total: 0,
             CO2_release_volcano: 0,
             CO2_release_total: 0,
+            O2_abs: 0,
             O2_abs_total: 0,
-            O2_release_total: 0,
+            O2_prod: 0,
+            O2_release_hightemp: 0,
 
             Pressure: 1,
             f_N2: 0.78,
@@ -165,6 +167,7 @@ function buildSeededConstants({ deterministicSeed }) {
 
 export function createClimateSlice() {
     const defaults = buildDefaultClimateState();
+    const FORCED_TURN_WINDOW_DEFAULT = { turns: 20, forcedTurnYr: 1000 };
 
     // Step2 のイベント発火時に「20ターンだけ Turn_yr=1000 を強制」するための共通処理。
     // 注意: 「永続」イベントは値（例: sol_event）が継続するため、判定を computeNextClimateTurn 側で
@@ -191,6 +194,18 @@ export function createClimateSlice() {
             // 即時反映（次ターン計算から強制されるが、UI表示を直ちに揃えたい場合に備えてここでも反映）
             Turn_yr: Number(forcedTurnYr) || 1000
         };
+    }
+
+    function patchClimateEvents(state, updater, { forceTurnWindow = false, forceTurnWindowParams } = {}) {
+        const cur = state.climate || buildDefaultClimateState();
+        const ev = { ...(cur.events || {}) };
+        const ok = updater ? updater(ev, cur) : true;
+        if (ok === false) return;
+
+        const withEvent = { ...cur, events: ev };
+        state.climate = forceTurnWindow
+            ? startForcedTurnYrWindow(withEvent, forceTurnWindowParams || FORCED_TURN_WINDOW_DEFAULT)
+            : withEvent;
     }
 
     return {
@@ -235,145 +250,117 @@ export function createClimateSlice() {
             // sol_event を UI から直接セットする（slider 用）
             // NOTE: Turn_yr 強制は「+/- ボタンで発火した瞬間」のみ行う（slider 変更では行わない）
             setSolEvent(state, value) {
-                const cur = state.climate || buildDefaultClimateState();
-                const ev = { ...(cur.events || {}) };
-                const v = Number(value);
-                if (!isFinite(v)) return;
-                // UI仕様: -500..+500
-                const snapped = Math.round(v);
-                ev.sol_event = clamp(snapped, -500, 500);
-                state.climate = { ...cur, events: ev };
+                patchClimateEvents(state, (ev) => {
+                    const v = Number(value);
+                    if (!isFinite(v)) return false;
+                    // UI仕様: -500..+500
+                    ev.sol_event = clamp(Math.round(v), -500, 500);
+                });
             }
             ,
             // sol_event を永続的に加算/減算する（+/- ボタン用）。この「発火点」でのみ Turn_yr=1000 を20ターン強制する。
             bumpSolEvent(state, delta) {
-                const cur = state.climate || buildDefaultClimateState();
-                const ev = { ...(cur.events || {}) };
-                const prev = Number(ev.sol_event || 0);
-                const d = Number(delta || 0);
-                if (!isFinite(d)) return;
-                ev.sol_event = clamp(prev + d, -500, 500);
-                const withEvent = { ...cur, events: ev };
-                state.climate = startForcedTurnYrWindow(withEvent, { turns: 20, forcedTurnYr: 1000 });
+                patchClimateEvents(state, (ev) => {
+                    const prev = Number(ev.sol_event || 0);
+                    const d = Number(delta || 0);
+                    if (!isFinite(d)) return false;
+                    ev.sol_event = clamp(prev + d, -500, 500);
+                }, { forceTurnWindow: true });
             }
             ,
             // 隕石落下イベント（ワンショット）
             // payload: { level: 1..5 } - Lv1..Lv5 の強度を指定。Lv0(リセット)の場合は level=0。
             triggerMeteoLevel(state, payload) {
                 const lvl = (payload && typeof payload.level === 'number') ? Math.floor(payload.level) : 0;
-                const cur = state.climate || buildDefaultClimateState();
-                const ev = { ...(cur.events || {}) };
-                // レベル -> Meteo_eff のマッピング
-                const mapping = {
-                    0: 1.00,
-                    1: 0.97,
-                    2: 0.93,
-                    3: 0.88,
-                    4: 0.80,
-                    5: 0.70
-                };
-                const val = Object.prototype.hasOwnProperty.call(mapping, lvl) ? mapping[lvl] : 1.00;
-                ev.Meteo_eff = Number(val);
-                // 1ターンだけ有効にするフラグ（model側でデクリメントして次ターンにリセットする）
-                ev.Meteo_one_shot_remaining = (lvl === 0) ? 0 : 1;
-
-                // 强制Turn_yrの開始（時代が文明系以外なら20ターン強制）
-                const withEvent = { ...cur, events: ev };
-                state.climate = startForcedTurnYrWindow(withEvent, { turns: 20, forcedTurnYr: 1000 });
+                patchClimateEvents(state, (ev) => {
+                    // レベル -> Meteo_eff のマッピング
+                    const mapping = {
+                        0: 1.00,
+                        1: 0.97,
+                        2: 0.93,
+                        3: 0.88,
+                        4: 0.80,
+                        5: 0.70
+                    };
+                    const val = Object.prototype.hasOwnProperty.call(mapping, lvl) ? mapping[lvl] : 1.00;
+                    ev.Meteo_eff = Number(val);
+                    // 1ターンだけ有効にするフラグ（model側でデクリメントして次ターンにリセットする）
+                    ev.Meteo_one_shot_remaining = (lvl === 0) ? 0 : 1;
+                }, { forceTurnWindow: true });
             }
             ,
             // 森林火災イベント（ワンショット）
             // payload: { level: 1..5 } - Lv1..Lv5 の強度を指定。Lv0(リセット)の場合は level=0。
             triggerFireLevel(state, payload) {
                 const lvl = (payload && typeof payload.level === 'number') ? Math.floor(payload.level) : 0;
-                const cur = state.climate || buildDefaultClimateState();
-                const ev = { ...(cur.events || {}) };
-                // レベル -> Fire_event_CO2 のマッピング (分圧 / bar)
-                const mapping = {
-                    0: 0,
-                    1: 0.000005,
-                    2: 0.00005,
-                    3: 0.00025,
-                    4: 0.0010,
-                    5: 0.0025
-                };
-                const val = Object.prototype.hasOwnProperty.call(mapping, lvl) ? mapping[lvl] : 0;
-                ev.Fire_event_CO2 = Number(val);
-                // 1ターンだけ有効にするフラグ（model側でデクリメントして次ターンにリセットする）
-                ev.Fire_one_shot_remaining = (lvl === 0) ? 0 : 1;
-
-                // 强制Turn_yrの開始（時代が文明系以外なら20ターン強制）
-                const withEvent = { ...cur, events: ev };
-                state.climate = startForcedTurnYrWindow(withEvent, { turns: 20, forcedTurnYr: 1000 });
+                patchClimateEvents(state, (ev) => {
+                    // レベル -> Fire_event_CO2 のマッピング (分圧 / bar)
+                    const mapping = {
+                        0: 0,
+                        1: 0.000005,
+                        2: 0.00005,
+                        3: 0.00025,
+                        4: 0.0010,
+                        5: 0.0025
+                    };
+                    const val = Object.prototype.hasOwnProperty.call(mapping, lvl) ? mapping[lvl] : 0;
+                    ev.Fire_event_CO2 = Number(val);
+                    // 1ターンだけ有効にするフラグ（model側でデクリメントして次ターンにリセットする）
+                    ev.Fire_one_shot_remaining = (lvl === 0) ? 0 : 1;
+                }, { forceTurnWindow: true });
             }
             ,
             // 火山イベント（マニュアル：Step2 UI からトリガー。Lv1..Lv5 を 3 ターンセット）
             // payload: { level: 0..5 } - Lv0 はリセット
             triggerVolcanoManualLevel(state, payload) {
                 const lvl = (payload && typeof payload.level === 'number') ? Math.floor(payload.level) : 0;
-                const cur = state.climate || buildDefaultClimateState();
-                const ev = { ...(cur.events || {}) };
-                const mapping = {
-                    0: 0,
-                    1: 0.5,
-                    2: 1.5,
-                    3: 3.0,
-                    4: 4.0,
-                    5: 6.0
-                };
-                const val = Object.prototype.hasOwnProperty.call(mapping, lvl) ? mapping[lvl] : 0;
-                ev.Volcano_event_manual = Number(val);
-                // 3ターンだけ有効（model 側でデクリメントして 0 に戻す）
-                ev.Volcano_manual_remaining = (lvl === 0) ? 0 : 3;
-
-                // 强制Turn_yrの開始（時代が文明系以外なら20ターン強制）
-                const withEvent = { ...cur, events: ev };
-                state.climate = startForcedTurnYrWindow(withEvent, { turns: 20, forcedTurnYr: 1000 });
+                patchClimateEvents(state, (ev) => {
+                    const mapping = {
+                        0: 0,
+                        1: 0.5,
+                        2: 1.5,
+                        3: 3.0,
+                        4: 4.0,
+                        5: 6.0
+                    };
+                    const val = Object.prototype.hasOwnProperty.call(mapping, lvl) ? mapping[lvl] : 0;
+                    ev.Volcano_event_manual = Number(val);
+                    // 3ターンだけ有効（model 側でデクリメントして 0 に戻す）
+                    ev.Volcano_manual_remaining = (lvl === 0) ? 0 : 3;
+                }, { forceTurnWindow: true });
             }
             ,
             // マントル活動（Volcano_event倍率）: 13段階を +/- ボタンで上下させる
             // payload: { delta: -1 | +1 }
             bumpVolcanoEventMagIndex(state, payload) {
-                const cur = state.climate || buildDefaultClimateState();
-                const ev = { ...(cur.events || {}) };
-                const prevIdx = clampVolcanoEventMagIndex(ev.Volcano_event_mag_idx);
-                const d = payload ? Number(payload.delta) : 0;
-                if (!isFinite(d)) return;
-                const nextIdx = clampVolcanoEventMagIndex(prevIdx + Math.sign(d));
-                if (nextIdx === prevIdx) return;
-                ev.Volcano_event_mag_idx = nextIdx;
-
-                // 强制Turn_yrの開始（時代が文明系以外なら20ターン強制）
-                const withEvent = { ...cur, events: ev };
-                state.climate = startForcedTurnYrWindow(withEvent, { turns: 20, forcedTurnYr: 1000 });
+                patchClimateEvents(state, (ev) => {
+                    const prevIdx = clampVolcanoEventMagIndex(ev.Volcano_event_mag_idx);
+                    const d = payload ? Number(payload.delta) : 0;
+                    if (!isFinite(d)) return false;
+                    const nextIdx = clampVolcanoEventMagIndex(prevIdx + Math.sign(d));
+                    if (nextIdx === prevIdx) return false;
+                    ev.Volcano_event_mag_idx = nextIdx;
+                }, { forceTurnWindow: true });
             }
             ,
             // 超新星イベント（ワンショット：CosmicRay を一時的に上げる）
             // payload: { level: optional } - 現状 level は使わず固定値 1.3 を 3ターンセットする
             triggerCosmicEvent(state) {
-                const cur = state.climate || buildDefaultClimateState();
-                const ev = { ...(cur.events || {}) };
-                // 発火：CosmicRay を 1.3 に、残ターンを 3 にセット
-                ev.CosmicRay = 1.3;
-                ev.Cosmic_one_shot_remaining = 3;
-
-                // 强制Turn_yrの開始（時代が文明系以外なら20ターン強制）
-                const withEvent = { ...cur, events: ev };
-                state.climate = startForcedTurnYrWindow(withEvent, { turns: 20, forcedTurnYr: 1000 });
+                patchClimateEvents(state, (ev) => {
+                    // 発火：CosmicRay を 1.3 に、残ターンを 3 にセット
+                    ev.CosmicRay = 1.3;
+                    ev.Cosmic_one_shot_remaining = 3;
+                }, { forceTurnWindow: true });
             }
             ,
             // ガンマ線バースト（ワンショット：CosmicRay を一時的に上げる）
             // payload: none - 1ターンだけ CosmicRay = 1.5 にする
             triggerGammaEvent(state) {
-                const cur = state.climate || buildDefaultClimateState();
-                const ev = { ...(cur.events || {}) };
-                // 発火：CosmicRay を 1.5 に、残ターンを 1 にセット
-                ev.CosmicRay = 1.5;
-                ev.Cosmic_one_shot_remaining = 1;
-
-                // 强制Turn_yrの開始（時代が文明系以外なら20ターン強制）
-                const withEvent = { ...cur, events: ev };
-                state.climate = startForcedTurnYrWindow(withEvent, { turns: 20, forcedTurnYr: 1000 });
+                patchClimateEvents(state, (ev) => {
+                    // 発火：CosmicRay を 1.5 に、残ターンを 1 にセット
+                    ev.CosmicRay = 1.5;
+                    ev.Cosmic_one_shot_remaining = 1;
+                }, { forceTurnWindow: true });
             }
         },
         actions: {
@@ -441,6 +428,7 @@ export function createClimateSlice() {
                         Sol: out && typeof out.Sol === 'number' ? out.Sol : next.vars.Sol,
                         f_cloud: out && typeof out.f_cloud === 'number' ? out.f_cloud : next.vars.f_cloud,
                         H2O_eff: out && typeof out.H2O_eff === 'number' ? out.H2O_eff : next.vars.H2O_eff,
+                        f_H2O: out && typeof out.f_H2O === 'number' ? out.f_H2O : next.vars.f_H2O,
                         Radiation_cooling: out && typeof out.Radiation_cooling === 'number' ? out.Radiation_cooling : next.vars.Radiation_cooling
                     };
                 });

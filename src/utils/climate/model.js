@@ -271,8 +271,7 @@ export function computeNextClimateTurn(cur) {
 
     const ReducingFactor = 1 / (1 + Math.pow((f_O2_forAbs / 0.05), 2));
     const land_abs_eff = (20 * ReducingFactor) + 0.6 * land_abs_eff_planet;
-
-    const gamma = 0.6;
+    const volcGate = f_O2_forAbs / (f_O2_forAbs + 0.1); // 火山項のゲート
     const O2_abs =
         Turn_yr ** 0.5
         * 0.00008
@@ -282,9 +281,9 @@ export function computeNextClimateTurn(cur) {
         * Math.min(Math.exp(-sq((averageTemperature - 25) / 25)), 3)
         * f_O2_forAbs
         + Turn_yr ** 0.5
-        * 0.0005
+        * 0.0003
         * Volcano_event
-        * Math.pow(f_O2 + 0.001, gamma);
+        * volcGate;
 
     const ocean_plantO2_base = computeOceanPlantO2Base(era);
     const land_plantO2 = computeLandPlantO2(era);
@@ -307,22 +306,58 @@ export function computeNextClimateTurn(cur) {
             * ((3 * f_CO2) / (f_CO2 + 0.0008))
         )
         * Math.pow((1 + f_O2 / 0.21), -0.25);
+    
 
-    const f_O2_calc = f_O2 - O2_abs + O2_prod;
+    // NOTE: Step6 でも使用するため、ここで一度だけ計算して使い回す
+    // （高温O2放出式が H2O_eff を参照するため、先に定義して TDZ を避ける）
+    const H2O_eff = computeH2Oeff(averageTemperature, f_ocean, constants, { conservative: false });
+
+    // --- 高温時O2放出（簡易） ---
+    // NOTE:
+    // - 暴走温暖化（高温・高水蒸気）での「水の光解離→H逸散→O2残留」などを粗く表現する用途
+    // - 値が小さすぎ/大きすぎになりやすいので、係数・温度閾値・上限は constants で調整可能にする
+    const o2HighTempCoef = Number(constants.o2_high_temp_coef) || 0.00002;
+    const o2HighTempAgeTau = Number(constants.o2_high_temp_age_tau) || 1e7; // yr (default reduced so effect can appear on simulation timescales)
+    const o2HighTempTth = Number(constants.o2_high_temp_Tth) || 40; // ℃
+    const o2HighTempTscale = Number(constants.o2_high_temp_Tscale) || 15;
+    const o2HighTempProdThresh = Number(constants.o2_high_temp_prod_thresh) || 1e-6;
+    const o2HighTempMax = Number(constants.o2_high_temp_max) || 1e-4; // 上限値
+
+    const ageFactor = 1 - Math.exp(-Time_yr / o2HighTempAgeTau);
+    const tempSigmoid = 1 / (1 + Math.exp(-(averageTemperature - o2HighTempTth) / o2HighTempTscale));
+
+    let O2_release_hightemp = Turn_yr ** 0.5 * o2HighTempCoef * f_ocean * H2O_eff * tempSigmoid * ageFactor;
+    O2_release_hightemp = Math.max(0, Math.min(O2_release_hightemp, o2HighTempMax));
+
+    // 早期の時代（爆撃時代・生命発生前時代・嫌気性細菌誕生時代）では高温放出は無効化する
+    const _noHighTempEras = ['爆撃時代', '生命発生前時代', '嫌気性細菌誕生時代'];
+    if (_noHighTempEras.includes(era)) {
+        O2_release_hightemp = 0;
+    }
+
+    // トリガー：生産が閾値以下なら有効、そうでなければ無効化（設計次第で常時有効も可）
+    if (O2_prod > o2HighTempProdThresh) {
+        O2_release_hightemp = 0;
+    }
+
+    const f_O2_calc = f_O2 - O2_abs + O2_prod + O2_release_hightemp;
     f_O2 = O2_alpha * f_O2_calc + (1 - O2_alpha) * f_O2;
 
+    // CH4
     const initial_CH4 = Number(constants.initial_CH4) || 0.01;
     f_CH4 = initial_CH4 / (1 + sq(f_O2 / 0.003)) * 1 / (1 + Math.pow((f_O2 / 0.05), 4)) + CH4_event;
     f_CH4 = Math.max(f_CH4, 0.0000001);
 
+    // H2O
+    const f_H2O = H2O_eff * 0.01;
+
     f_O2 = Math.max(f_O2, 0);
     f_CO2 = Math.max(f_CO2, 0.000006);
-    Pressure = f_Ar + f_H2 + f_N2 + f_O2 + f_CO2 + f_CH4;
+    Pressure = f_Ar + f_H2 + f_N2 + f_O2 + f_CO2 + f_CH4 + f_H2O;
     Pressure = Math.max(Pressure, 0.001);
-    Pressure = Math.max(Pressure, 0.3);
 
     // --- Step5: 雲量・アルベド ---
-    const cloudRes = computeClouds({ Pressure, f_ocean, averageTemperature, CosmicRay, mode: 'full', f_CH4, f_CO2 });
+    const cloudRes = computeClouds({ Pressure, f_ocean, averageTemperature, CosmicRay, f_CH4, f_CO2 });
     const hazeFrac = cloudRes.hazeFrac;
     f_cloud = cloudRes.f_cloud;
     // compute albedo from shared helper
@@ -330,7 +365,7 @@ export function computeNextClimateTurn(cur) {
 
     // --- Step6: 有効放射率 ---
 
-    const H2O_eff = computeH2Oeff(averageTemperature, f_ocean, constants, { conservative: false });
+    // H2O_eff は Step4(O2) で計算済み（高温O2放出式で参照するため）
 
     const { lnCO2, lnCH4 } = computeLnGases(f_CO2, f_CH4);
     let Radiation_cooling = computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, 0.15);
@@ -442,8 +477,11 @@ export function computeNextClimateTurn(cur) {
             land_plantO2,
             fungal_factor,
 
+            // expose explicit naming for UI/debug
+            O2_abs: O2_abs,
             O2_abs_total: O2_abs,
-            O2_release_total: O2_prod,
+            O2_prod,
+            O2_release_hightemp,
             Pressure,
             f_N2,
             f_O2,
@@ -451,6 +489,7 @@ export function computeNextClimateTurn(cur) {
             f_CH4,
             f_Ar,
             f_H2,
+            f_H2O,
             f_cloud,
             albedo,
             H2O_eff,
@@ -483,16 +522,11 @@ export function computeRadiativeEquilibriumTempK(state, options = {}) {
     const f_O2 = Math.max(0, Number(v0.f_O2) || 0);
     const f_CO2 = Math.max(Number(v0.f_CO2) || 0.0000001, 0.0000001);
     const f_CH4 = Math.max(Number(v0.f_CH4) || 0.0000001, 0.0000001);
-    const Pressure = f_Ar + f_H2 + f_N2 + f_O2 + f_CO2 + f_CH4;
     const Meteo_eff = Number(events.Meteo_eff) || 1;
     const sol_event = Number(events.sol_event) || 0;
     const CosmicRay = (typeof events.CosmicRay === 'number') ? events.CosmicRay : 1;
 
     const f_ocean = Number(terrain.f_ocean) || 0.7;
-    // compute clouds using shared helper (init-mode for radiative estimate)
-    const cloudInit = computeClouds({ Pressure, f_ocean, averageTemperature: (typeof v0.averageTemperature === 'number') ? Number(v0.averageTemperature) : (Number(s.baseAverageTemperature) || 15), CosmicRay, mode: 'init', f_CH4, f_CO2 });
-    const hazeFrac = cloudInit.hazeFrac;
-    const f_cloud = cloudInit.f_cloud;
 
     // H2O_eff approximation (use v0.averageTemperature as driver)
     // NOTE: baseAverageTemperature は「時代初期値」なので、ここでは現在値（v0.averageTemperature）を優先する。
@@ -500,6 +534,13 @@ export function computeRadiativeEquilibriumTempK(state, options = {}) {
         ? Number(v0.averageTemperature)
         : (Number(s.baseAverageTemperature) || 15);
     let H2O_eff = computeH2Oeff(averageTemperature, f_ocean, constants, { conservative });
+    // f_H2O を H2O_eff から算出して Pressure に含める
+    const f_H2O = H2O_eff * 0.01;
+    const Pressure = f_Ar + f_H2 + f_N2 + f_O2 + f_CO2 + f_CH4 + f_H2O;
+    // compute clouds using shared helper (init-mode for radiative estimate)
+    const cloudInit = computeClouds({ Pressure, f_ocean, averageTemperature, CosmicRay, f_CH4, f_CO2 });
+    const hazeFrac = cloudInit.hazeFrac;
+    const f_cloud = cloudInit.f_cloud;
 
     const { lnCO2, lnCH4 } = computeLnGases(f_CO2, f_CH4);
     let Radiation_cooling = computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, 0.15);
@@ -508,7 +549,7 @@ export function computeRadiativeEquilibriumTempK(state, options = {}) {
     const albedo = computeAlbedo({ f_cloud, hazeFrac, terrain });
 
     const { averageTemperature_calc, Sol } = computeRadiativeEquilibriumCalc({ solarEvolution, Time_yr, Meteo_eff, sol_event, albedo, Radiation_cooling });
-    return { averageTemperature_calc, Sol, f_cloud, Radiation_cooling, H2O_eff };
+    return { averageTemperature_calc, Sol, f_cloud, Radiation_cooling, H2O_eff, f_H2O };
 }
 
 

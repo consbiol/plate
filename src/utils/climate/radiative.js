@@ -1,6 +1,6 @@
-// Pure radiative / atmosphere helper functions to consolidate duplicated logic
-// NOTE: model.js already defines safeLn and ratio2Over1PlusRatio2.
-// To avoid circular import at runtime, we reimplement minimal helpers here.
+// 放射・大気に関する「純粋関数」群（model.js から呼び出すユーティリティ）
+// ここは state を直接変更しない / 依存を増やさないことを優先する。
+// （循環import回避のため、必要な最小ヘルパーはこのファイル内で完結させる）
 function safeLn(x) {
     const v = Number(x);
     if (!isFinite(v) || v <= 0) return -Infinity;
@@ -84,7 +84,7 @@ export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f
     floor = toNum(floor, 0.18);
 
     let tau = Math.pow(Pressure, 0.3) * (0.2 * lnCO2 + 0.3 * lnCH4 + 0.6 * H2O_eff + f_H2 * (0.4 * f_N2 + 0.2 * f_H2 + 0.1 * f_CO2));
-    tau = Math.min(tau, 2); // tau capped to avoid runaway greenhouse / numerical lock-in
+    tau = Math.min(tau, 5); // tau capped to avoid runaway greenhouse / numerical lock-in
     let Radiation_cooling = 1 / (1 + tau);
     Radiation_cooling = Math.max(Radiation_cooling, floor);
     return Radiation_cooling;

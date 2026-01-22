@@ -6,8 +6,9 @@ Vueコンポーネント置き場です。
 
 - `Parameters_Display.vue`: **入力UI + 計算トリガ + popup/iframe 連携 + 生成結果の親へのemit**
 - `Grids_Calculation.vue`: **地形生成の計算専用コンポーネント**（UIは持たない）
-- `Terrain_Display.vue`: **平面グリッドの描画専用**
 - `Sphere_Display.vue`: **球体ビュー（popup/iframe 内 canvas）描画専用**
+
+※平面地図は現在 `Parameters_Display.vue` の iframe（`planeHtml.js`）で描画する構成です。
 
 ### 方針
 

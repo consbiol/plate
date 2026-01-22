@@ -238,7 +238,6 @@ import Grids_Calculation from './Grids_Calculation.vue';
 import Sphere_Display from './Sphere_Display.vue';
 import GeneratorActions from './ui/GeneratorActions.vue';
 import TurnPanel from './ui/TurnPanel.vue';
-/* CenterParametersEditor and StatsPanel removed from template; keep imports removed */
 import { deriveDisplayColorsFromGridData, getEraTerrainColors } from '../utils/colors.js';
 import { ERAS, GRID_DEFAULTS, PARAM_DEFAULTS, createLocalParams } from '../utils/paramsDefaults.js';
 import { computeGlacierBaseRowsFromTemperature } from '../utils/terrain/glacierAnchors.js';
@@ -302,7 +301,7 @@ import {
  */
 
 /**
- * Local UI stats shape used by StatsPanel + Parameters Output popup.
+ * Local UI stats shape used by Parameters Output popup.
  * @typedef {import('../types/index.js').ParametersStats} ParametersStats
  */
 export default {
@@ -885,11 +884,11 @@ export default {
       this._updateInlinePlaneAndSphereIframes();
     },
     _applyTerrainPayloadToStoreAndState({ payload, gridData }) {
-      // 2) 親へ伝搬（AppからTerrain_Displayへ受け渡し用）
+      // 2) 親へ伝搬（App へ結果を渡す）
       // NOTE: The parent event is still named 'generated' for backward compatibility,
       // but the payload itself follows the unified TerrainEventPayload shape (plus width/height).
       this.$emit('generated', { ...(payload || {}), gridWidth: this.gridWidth, gridHeight: this.gridHeight });
-      // 2.6) store にもグリッド結果を保存（Terrain_Display / Sphere_Display が store 依存になるため）
+      // 2.6) store にもグリッド結果を保存（Plane/Sphere の iframe 描画が store を参照するため）
       updateGridWidth(this.$store, Number(this.gridWidth) || getGridWidth(this.$store, this.gridWidth));
       updateGridHeight(this.$store, Number(this.gridHeight) || getGridHeight(this.$store, this.gridHeight));
       updateGridData(this.$store, gridData);

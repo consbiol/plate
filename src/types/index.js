@@ -22,6 +22,11 @@
  * @typedef {import('./stats.js').ParametersStats} ParametersStats
  */
 
+/**
+ * Cache
+ * @typedef {import('./terrainCache.js').TerrainHighFrequencyCache} TerrainHighFrequencyCache
+ */
+
 // Types-only token export for tooling.
 export const __types = null;
 

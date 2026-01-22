@@ -43,7 +43,7 @@ import { RUN_MODES } from '../constants/runQueue.js';
  *
  * @typedef {import('../types/index.js').TerrainEventPayload} TerrainEventPayload
  * @typedef {import('../types/index.js').TerrainRunCommand} TerrainRunCommand
- * @typedef {import('../types/terrainCache.js').TerrainHighFrequencyCache} TerrainHighFrequencyCache
+ * @typedef {import('../types/index.js').TerrainHighFrequencyCache} TerrainHighFrequencyCache
  */
 // このコンポーネントは「計算専用」です（UIや描画は行いません）。
 // 概要:

@@ -48,6 +48,23 @@ function fmtSig(v, sig = 3) {
   return rounded.toFixed(decimals);
 }
 
+function renderGasPartialPressureRow(key, raw) {
+  const n = Number(raw);
+  if (!isFinite(n)) {
+    return `<div class="row"><label>${escapeHtml(key)} (bar):</label><span>-</span></div>`;
+  }
+
+  // UI/説明用: 0.01 bar (= 10,000 ppm) 未満は ppm で表示
+  const isPpm = n <= 0.01;
+  if (isPpm) {
+    const ppm = n * 1e6;
+    const display = (Math.abs(ppm) < 100) ? String(Math.round(ppm)) : fmtSig(ppm, 3);
+    return `<div class="row"><label>${escapeHtml(key)} (ppm):</label><span>${escapeHtml(display)}</span></div>`;
+  }
+
+  return `<div class="row"><label>${escapeHtml(key)} (bar):</label><span>${escapeHtml(fmtSig(n, 3))}</span></div>`;
+}
+
 export function buildClimateOutputHtml({ climateTurn, climateVars, climate } = {}) {
   const t = climateTurn || {};
   const v = climateVars || {};
@@ -100,65 +117,19 @@ export function buildClimateOutputHtml({ climateTurn, climateVars, climate } = {
       <div class="row"><label>CO2_release_carbonate (bar/turn):</label><span>${fmtSig(v.CO2_release_carbonate, 3)}</span></div>
       <div class="row"><label>O2_abs (bar/turn):</label><span>${fmtSig((typeof v.O2_abs === 'number') ? v.O2_abs : v.O2_abs_total, 3)}</span></div>
       <div class="row"><label>land_abs_eff:</label><span>${fmtSig(v.land_abs_eff, 3)}</span></div>
-      <div class="row"><label>O2_prod (bar/turn):</label><span>${fmtSig((typeof v.O2_prod === 'number') ? v.O2_prod : v.O2_release_total, 3)}</span></div>
+      <div class="row"><label>O2_prod (bar/turn):</label><span>${fmtSig(v.O2_prod, 3)}</span></div>
+      <div class="row"><label>O2_release_hightemp (bar/turn):</label><span>${fmtSig(v.O2_release_hightemp, 3)}</span></div>
       <div class="row"><label>ocean_plantO2_base:</label><span>${fmtNum(v.ocean_plantO2_base, 6)}</span></div>
       <div class="row"><label>land_plantO2:</label><span>${fmtNum(v.land_plantO2, 6)}</span></div>
       <div class="row"><label>fungal_factor:</label><span>${fmtNum(v.fungal_factor, 6)}</span></div>
       <div class="row"><label>Pressure (bar):</label><span>${fmtSig(v.Pressure, 3)}</span></div>
-      ${(() => {
-      // N2
-      const raw = Number(v.f_N2);
-      const isPpm = (typeof raw === 'number') && raw <= 0.01;
-      const ppm = raw * 1e6;
-      const display = isPpm ? ((Math.abs(ppm) < 100) ? String(Math.round(ppm)) : fmtSig(ppm, 3)) : fmtSig(raw, 3);
-      const label = 'f_N2 ' + (isPpm ? '(ppm)' : '(bar)') + ':';
-      return `<div class="row"><label>${label}</label><span>${display}</span></div>`;
-    })()}
-      ${(() => {
-      // O2
-      const raw = Number(v.f_O2);
-      const isPpm = (typeof raw === 'number') && raw <= 0.01;
-      const ppm = raw * 1e6;
-      const display = isPpm ? ((Math.abs(ppm) < 100) ? String(Math.round(ppm)) : fmtSig(ppm, 3)) : fmtSig(raw, 3);
-      const label = 'f_O2 ' + (isPpm ? '(ppm)' : '(bar)') + ':';
-      return `<div class="row"><label>${label}</label><span>${display}</span></div>`;
-    })()}
-      ${(() => {
-      // CO2
-      const raw = Number(v.f_CO2);
-      const isPpm = (typeof raw === 'number') && raw <= 0.01;
-      const ppm = raw * 1e6;
-      const display = isPpm ? ((Math.abs(ppm) < 100) ? String(Math.round(ppm)) : fmtSig(ppm, 3)) : fmtSig(raw, 3);
-      const label = 'f_CO2 ' + (isPpm ? '(ppm)' : '(bar)') + ':';
-      return `<div class="row"><label>${label}</label><span>${display}</span></div>`;
-    })()}
-      ${(() => {
-      // CH4
-      const raw = Number(v.f_CH4);
-      const isPpm = (typeof raw === 'number') && raw <= 0.01;
-      const ppm = raw * 1e6;
-      const display = isPpm ? ((Math.abs(ppm) < 100) ? String(Math.round(ppm)) : fmtSig(ppm, 3)) : fmtSig(raw, 3);
-      const label = 'f_CH4 ' + (isPpm ? '(ppm)' : '(bar)') + ':';
-      return `<div class="row"><label>${label}</label><span>${display}</span></div>`;
-    })()}
-      ${(() => {
-      // Ar
-      const raw = Number(v.f_Ar);
-      const isPpm = (typeof raw === 'number') && raw <= 0.01;
-      const ppm = raw * 1e6;
-      const display = isPpm ? ((Math.abs(ppm) < 100) ? String(Math.round(ppm)) : fmtSig(ppm, 3)) : fmtSig(raw, 3);
-      const label = 'f_Ar ' + (isPpm ? '(ppm)' : '(bar)') + ':';
-      return `<div class="row"><label>${label}</label><span>${display}</span></div>`;
-    })()}
-      ${(() => {
-      // H2
-      const raw = Number(v.f_H2);
-      const isPpm = (typeof raw === 'number') && raw <= 0.01;
-      const ppm = raw * 1e6;
-      const display = isPpm ? ((Math.abs(ppm) < 100) ? String(Math.round(ppm)) : fmtSig(ppm, 3)) : fmtSig(raw, 3);
-      const label = 'f_H2 ' + (isPpm ? '(ppm)' : '(bar)') + ':';
-      return `<div class="row"><label>${label}</label><span>${display}</span></div>`;
-    })()}
+      ${renderGasPartialPressureRow('f_N2', v.f_N2)}
+      ${renderGasPartialPressureRow('f_O2', v.f_O2)}
+      ${renderGasPartialPressureRow('f_CO2', v.f_CO2)}
+      ${renderGasPartialPressureRow('f_H2O', v.f_H2O)}
+      ${renderGasPartialPressureRow('f_CH4', v.f_CH4)}
+      ${renderGasPartialPressureRow('f_Ar', v.f_Ar)}
+      ${renderGasPartialPressureRow('f_H2', v.f_H2)}
       <div class="row"><label>f_cloud:</label><span>${fmtSig(v.f_cloud, 3)}</span></div>
       <div class="row"><label>albedo:</label><span>${fmtSig(v.albedo, 3)}</span></div>
       <div class="row"><label>H2O_eff:</label><span>${fmtNum(v.H2O_eff, 6)}</span> <span class="muted">→地球現在1</span></div>

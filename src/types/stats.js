@@ -1,6 +1,6 @@
 /**
  * Shared stats-related types (JSDoc typedefs).
- * Used by Parameters_Display, StatsPanel, and popup HTML builders.
+ * Used by Parameters_Display and popup HTML builders.
  */
 
 /**
@@ -28,7 +28,7 @@
  */
 
 /**
- * Stats object kept on Parameters_Display for UI panels + popup output.
+ * Stats object kept on Parameters_Display for UI state + popup output.
  *
  * NOTE:
  * Some keys are projections of the unified terrain event payload (see `src/types/terrain.js`).

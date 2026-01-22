@@ -34,7 +34,7 @@
  * @property {number} seaNoiseAmplitude
  * @property {number} landNoiseAmplitude
  *
- * @property {import('./index.js').PreGlacierStats|null} preGlacierStats
+ * @property {import('./terrain.js').PreGlacierStats|null} preGlacierStats
  * @property {any[]} gridDataBase
  */
 
