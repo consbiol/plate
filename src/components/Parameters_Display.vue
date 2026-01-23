@@ -6,6 +6,9 @@
       @update="onClickUpdate"
       @revise="onClickReviseHighFrequency"
       @drift="onClickDrift"
+      :landRatioX="local.seaLandRatio"
+      :landRatioBase="landRatioEventBase"
+      @bump-land-ratio="onBumpLandRatio"
     >
       <template v-slot:inline-views>
         <div class="inline-views">
@@ -514,6 +517,12 @@ export default {
     storeEra() {
       return getEra(this.$store);
     },
+    // イベントパネルの Land Ratio slider は「base からの差分（±0.1）」なので、
+    // base は既定値（PARAM_DEFAULTS.seaLandRatio）を用いる。
+    landRatioEventBase() {
+      const b = Number(PARAM_DEFAULTS && PARAM_DEFAULTS.seaLandRatio);
+      return isFinite(b) ? b : 0.3;
+    },
     storeGeneratorParams() {
       return getGeneratorParams(this.$store);
     },
@@ -696,6 +705,20 @@ export default {
     }
   },
   methods: {
+    onBumpLandRatio(delta) {
+      const d = Number(delta || 0);
+      if (!isFinite(d) || d === 0) return;
+      const base = Number(this.landRatioEventBase);
+      const min = Math.max(0.01, base - 0.1);
+      const max = Math.min(0.99, base + 0.1);
+      const prev = Number(this.local && this.local.seaLandRatio);
+      const cur = isFinite(prev) ? prev : base;
+      let next = cur + d;
+      next = Math.max(min, Math.min(max, next));
+      // 0.01刻みにスナップ（浮動小数誤差対策）
+      next = Math.round(next * 100) / 100;
+      this.local.seaLandRatio = next;
+    },
     // ---------------------------
     // Popup / rendering helpers (side effects)
     // ---------------------------

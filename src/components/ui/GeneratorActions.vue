@@ -45,6 +45,23 @@
         </div>
       </div>
       <div class="event-group">
+        <div class="event-label">Land Ratio</div>
+        <div class="sol-event-controls">
+          <button class="sol-step-btn" @click="bumpLandRatio(-0.01)" :disabled="disabled || landRatioAtMin">-</button>
+          <input
+            class="sol-slider"
+            type="range"
+            min="-0.1"
+            max="0.1"
+            step="0.01"
+            :value="landRatioDelta"
+            disabled
+          />
+          <button class="sol-step-btn" @click="bumpLandRatio(0.01)" :disabled="disabled || landRatioAtMax">+</button>
+          <div class="sol-value">Δ land_ratio: {{ landRatioDeltaLabel }}</div>
+        </div>
+      </div>
+      <div class="event-group">
         <div class="event-label">隕石落下</div>
         <div class="event-buttons">
           <button @click="triggerMeteo(1)">Lv1</button>
@@ -100,7 +117,11 @@ import {
 export default {
   name: 'GeneratorActions',
   props: {
-    disabled: { type: Boolean, required: false, default: false }
+    disabled: { type: Boolean, required: false, default: false },
+    // Land Ratio (陸の割合 x): Parameters_Display.vue の local.seaLandRatio を受け取る
+    landRatioX: { type: Number, required: false, default: 0.3 },
+    // イベントパネルの slider は「base からの差分（±0.1）」として扱う
+    landRatioBase: { type: Number, required: false, default: 0.3 },
   },
   computed: {
     solEvent() {
@@ -127,6 +148,28 @@ export default {
       return this.volcanoMagIndex >= (VOLCANO_EVENT_MAG_LABELS.length - 1);
     }
     ,
+    landRatioDelta() {
+      const x = Number(this.landRatioX);
+      const base = Number(this.landRatioBase);
+      if (!isFinite(x) || !isFinite(base)) return 0;
+      let d = x - base;
+      // slider range: -0.10..+0.10
+      d = Math.max(-0.1, Math.min(0.1, d));
+      // 0.01刻みに寄せる（表示の安定化）
+      d = Math.round(d * 100) / 100;
+      return d;
+    },
+    landRatioAtMin() {
+      return this.landRatioDelta <= -0.1;
+    },
+    landRatioAtMax() {
+      return this.landRatioDelta >= 0.1;
+    },
+    landRatioDeltaLabel() {
+      const d = Number(this.landRatioDelta) || 0;
+      const sign = d > 0 ? '+' : '';
+      return `${sign}${d.toFixed(2)}`;
+    },
  
     meteoEff() {
       const c = (this.$store && this.$store.state && this.$store.state.climate) ? this.$store.state.climate : null;
@@ -154,6 +197,13 @@ export default {
       const d = Math.sign(Number(delta) || 0);
       if (d === 0) return;
       this.$store.commit('bumpVolcanoEventMagIndex', { delta: d });
+    }
+    ,
+    bumpLandRatio(delta) {
+      const d = Number(delta || 0);
+      if (!isFinite(d) || d === 0) return;
+      // 親（Parameters_Display.vue）へ通知して、陸の割合 x を更新してもらう
+      this.$emit('bump-land-ratio', d);
     }
     ,
     triggerMeteo(level) {
