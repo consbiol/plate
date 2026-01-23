@@ -27,10 +27,3 @@ export function isCityCell(cell) {
     // 「cityグリッド」または海棲都市をライト対象とする
     return !!(cell && (cell.city || cell.seaCity));
 }
-
-export function getCityLightRgb() {
-    // 宇宙から見た都市の光（明るい黄色）
-    return [255, 240, 140];
-}
-
-

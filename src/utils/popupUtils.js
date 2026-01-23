@@ -18,27 +18,3 @@ export function popupWriteHtml(doc, html) {
         doc.close();
     });
 }
-
-export function iframeSetSrcdoc(doc, iframeId, html) {
-    if (!doc) return;
-    bestEffort(() => {
-        const el = doc.getElementById(iframeId);
-        if (el) el.srcdoc = html;
-    });
-}
-
-export function iframeSetOnload(doc, iframeId, cb) {
-    if (!doc) return;
-    bestEffort(() => {
-        const el = doc.getElementById(iframeId);
-        if (el) el.onload = cb;
-    });
-}
-
-// Backward-compatible aliases (older imports)
-export const openWindow = popupOpenOrReuse;
-export const writeDoc = popupWriteHtml;
-export const setIframeSrcdoc = iframeSetSrcdoc;
-export const attachIframeOnload = iframeSetOnload;
-
-

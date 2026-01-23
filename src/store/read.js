@@ -1,4 +1,4 @@
-import { getGetter, getGetterPath } from '../utils/storeGetters.js';
+import { getGetter } from '../utils/storeGetters.js';
 import { GETTERS } from './keys.js';
 
 /**
@@ -36,11 +36,6 @@ export function getGridHeight(store, fallback = 100) {
     const v = getGetter(store, GETTERS.GRID_HEIGHT, fallback);
     return (typeof v === 'number') ? v : fallback;
 }
-/** @param {Store} store @param {any[]} [fallback=[]] @returns {any[]} */
-export function getGridData(store, fallback = []) {
-    const v = getGetter(store, GETTERS.GRID_DATA, fallback);
-    return Array.isArray(v) ? v : fallback;
-}
 
 // --- RENDER ---
 /** @param {Store} store @returns {Object|null} */
@@ -55,17 +50,6 @@ export function getRenderSettings(store) {
 export function getPlaneGridCellPx(store, fallback = 3) {
     const v = getGetter(store, GETTERS.PLANE_GRID_CELL_PX, fallback);
     return (typeof v === 'number') ? v : fallback;
-}
-/** @param {Store} store @param {number} [fallback=0.67] @returns {number} */
-export function getFCloud(store, fallback = 0.67) {
-    const v = getGetter(store, GETTERS.F_CLOUD, fallback);
-    return (typeof v === 'number') ? v : fallback;
-}
-
-// renderSettings path helpers used in Sphere_Display
-/** @param {Store} store @param {string} key @param {any} fallback @returns {any} */
-export function getRenderSetting(store, key, fallback) {
-    return getGetterPath(store, [GETTERS.RENDER_SETTINGS, key], fallback);
 }
 
 // --- CLIMATE ---

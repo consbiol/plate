@@ -23,16 +23,14 @@ export default {
   data() {
     return {
       gridWidth: 200,
-      gridHeight: 100,
-    gridData: []
+      gridHeight: 100
     };
   },
   methods: {
     /** @param {GeneratedEventPayload} payload */
     onGenerated(payload) {
-      // gridData を優先して受け取り、width/height が提供されていれば適用
+      // gridData が提供されていれば、width/height も追随して更新する
       if (payload && Array.isArray(payload.gridData)) {
-        this.gridData = payload.gridData;
         if (typeof payload.gridWidth === 'number') this.gridWidth = payload.gridWidth;
         if (typeof payload.gridHeight === 'number') this.gridHeight = payload.gridHeight;
       }

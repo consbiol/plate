@@ -1,7 +1,7 @@
 // 温度 → 氷河row（基準値）のアンカーと補間
 // - Parameters_Display.vue / glacierRows.js で共通利用する
 
-export const GLACIER_TEMP_ANCHORS = [
+const GLACIER_TEMP_ANCHORS = [
     { t: -25, val: 42 },
     { t: -15, val: 32 },
     { t: -5, val: 22 },

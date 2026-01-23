@@ -9,8 +9,8 @@ local ⇄ store 同期（入力値の永続化 / 複数コンポーネント間�
     - local → store（patch生成→dispatch）
   - `syncLocalFromStoreGeneratorParams(vm, generatorParams, { after })`
   - `syncLocalFromStoreRenderSettings(vm, renderSettings)`
-  - `withSyncGuard(vm, fn)`
-    - `isSyncingLocalFromStore` を立てて循環更新を防ぐ。
+  - （内部）`withSyncGuard(vm, fn)`
+    - `isSyncingLocalFromStore` を立てて循環更新を防ぐ（公開APIにはしない）。
 
 ## vm 契約（重要）
 

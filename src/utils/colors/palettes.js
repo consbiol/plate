@@ -27,7 +27,7 @@ export function getDefaultTerrainColors() {
 
 // --- Era-based color factories (each era has its own function to tweak later) ---
 // 爆撃時代時代
-export function getEraColors_Bombardment() {
+function getEraColors_Bombardment() {
     return {
         deepSea: '#0f3b2e',
         shallowSea: '#2a6461',
@@ -46,7 +46,7 @@ export function getEraColors_Bombardment() {
 }
 
 // 生命発生前時代（プリバイオティック期）
-export function getEraColors_PreLife() {
+function getEraColors_PreLife() {
     return {
         deepSea: '#0f3b2e',
         shallowSea: '#2a6461',
@@ -63,7 +63,7 @@ export function getEraColors_PreLife() {
 }
 
 // 嫌気性細菌誕生時代
-export function getEraColors_AnaerobicBacteria() {
+function getEraColors_AnaerobicBacteria() {
     return {
         deepSea: '#214237',
         shallowSea: '#3a4430',
@@ -80,7 +80,7 @@ export function getEraColors_AnaerobicBacteria() {
 }
 
 // 光合成細菌誕生時代
-export function getEraColors_PhotosyntheticBacteria() {
+function getEraColors_PhotosyntheticBacteria() {
     return {
         deepSea: '#1a4e84',
         shallowSea: '#226f8c',
@@ -97,7 +97,7 @@ export function getEraColors_PhotosyntheticBacteria() {
 }
 
 // 真核生物誕生時代
-export function getEraColors_Eukaryotes() {
+function getEraColors_Eukaryotes() {
     return {
         deepSea: '#1E508C',
         shallowSea: '#3070b0',
@@ -114,7 +114,7 @@ export function getEraColors_Eukaryotes() {
 }
 
 // 多細胞生物誕生時代
-export function getEraColors_Multicellular() {
+function getEraColors_Multicellular() {
     return {
         deepSea: '#1E508C',
         shallowSea: '#3070b0',
@@ -131,7 +131,7 @@ export function getEraColors_Multicellular() {
 }
 
 // 海洋生物多様化時代
-export function getEraColors_MarineDiversification() {
+function getEraColors_MarineDiversification() {
     return {
         deepSea: '#1E508C',
         shallowSea: '#1d777d',
@@ -148,7 +148,7 @@ export function getEraColors_MarineDiversification() {
 }
 
 // 苔類進出時代
-export function getEraColors_BryophyteExpansion() {
+function getEraColors_BryophyteExpansion() {
     return {
         deepSea: '#1E508C',
         shallowSea: '#3885ab',
@@ -166,7 +166,7 @@ export function getEraColors_BryophyteExpansion() {
 }
 
 // シダ植物時代(石炭紀)
-export function getEraColors_PteridophyteExpansion() {
+function getEraColors_PteridophyteExpansion() {
     return {
         deepSea: '#1E508C',
         shallowSea: '#3070b0',
@@ -183,7 +183,7 @@ export function getEraColors_PteridophyteExpansion() {
 }
 
 // 大森林時代
-export function getEraColors_GreatForest() {
+function getEraColors_GreatForest() {
     return {
         deepSea: '#1E508C',
         shallowSea: '#3070b0',
@@ -200,7 +200,7 @@ export function getEraColors_GreatForest() {
 }
 
 // 文明時代
-export function getEraColors_Civilization() {
+function getEraColors_Civilization() {
     return {
         deepSea: '#1E508C',
         shallowSea: '#3070b0',
@@ -220,7 +220,7 @@ export function getEraColors_Civilization() {
 }
 
 // 海棲文明時代
-export function getEraColors_SeaCivilization() {
+function getEraColors_SeaCivilization() {
     return {
         deepSea: '#1E508C',
         shallowSea: '#3070b0',

@@ -36,7 +36,7 @@ Sphere（球体ビュー）関連の **ロジック集約ディレクトリ**で
 
 - `nightShadow.js`
   - `getNightConfig()`, `nightAlphaForCol()`: 夜側の影（太陽影）係数
-  - `isCityCell()`, `getCityLightRgb()`: 都市ライトの判定/色
+  - `isCityCell()`: 都市ライト対象セルの判定
 
 - `classWeight.js`
   - `getCellClassWeight()` とサンプリング系: 雲の重み付け（海/陸/砂漠など）

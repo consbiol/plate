@@ -27,7 +27,7 @@ import {
  * @param {StoreSyncVm} vm
  * @param {Function} fn
  */
-export function withSyncGuard(vm, fn) {
+function withSyncGuard(vm, fn) {
     if (!vm) return;
     vm.isSyncingLocalFromStore = true;
     try { fn?.(); } finally { vm.isSyncingLocalFromStore = false; }

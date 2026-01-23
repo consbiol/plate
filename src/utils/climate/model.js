@@ -10,57 +10,60 @@ function sq(x) {
     return v * v;
 }
 
+// -----------------------------------------------------------------------------
+// Era-dependent coefficients
+// - Keep era strings centralized here for readability and easy auditing.
+// - `?? 0` / `?? 1` defaults match the previous switch fallbacks.
+// -----------------------------------------------------------------------------
+
+const ERA_PLAND_T = /** @type {Record<string, number>} */ ({
+    '苔類進出時代': 0.1,
+    'シダ植物時代': 1,
+    '大森林時代': 1,
+    '文明時代': 1,
+    '海棲文明時代': 1,
+});
+
+const ERA_OCEAN_PLANT_O2_BASE = /** @type {Record<string, number>} */ ({
+    '光合成細菌誕生時代': 0.15,
+    '真核生物誕生時代': 0.3,
+    '多細胞生物誕生時代': 0.6,
+    '海洋生物多様化時代': 0.8,
+    '苔類進出時代': 1.0,
+    'シダ植物時代': 1.0,
+    '大森林時代': 1.0,
+    '文明時代': 1.0,
+    '海棲文明時代': 1.0,
+});
+
+const ERA_LAND_PLANT_O2 = /** @type {Record<string, number>} */ ({
+    '苔類進出時代': 0.07,
+    'シダ植物時代': 1.2,
+    '大森林時代': 1.0,
+    '文明時代': 1.0,
+    '海棲文明時代': 1.0,
+});
+
+const ERA_FUNGAL_FACTOR = /** @type {Record<string, number>} */ ({
+    '苔類進出時代': 2.0,
+    'シダ植物時代': 1.8,
+});
 
 
 function computePland_t(era) {
-    switch (era) {
-        case '苔類進出時代': return 0.1;
-        case 'シダ植物時代':
-        case '大森林時代':
-        case '文明時代':
-        case '海棲文明時代':
-            return 1;
-        default:
-            return 0;
-    }
+    return ERA_PLAND_T[era] ?? 0;
 }
 
 function computeOceanPlantO2Base(era) {
-    switch (era) {
-        case '光合成細菌誕生時代': return 0.15;
-        case '真核生物誕生時代': return 0.3;
-        case '多細胞生物誕生時代': return 0.6;
-        case '海洋生物多様化時代': return 0.8;
-        case '苔類進出時代':
-        case 'シダ植物時代':
-        case '大森林時代':
-        case '文明時代':
-        case '海棲文明時代':
-            return 1.0;
-        default:
-            return 0;
-    }
+    return ERA_OCEAN_PLANT_O2_BASE[era] ?? 0;
 }
 
 function computeLandPlantO2(era) {
-    switch (era) {
-        case '苔類進出時代': return 0.07;
-        case 'シダ植物時代': return 1.2;
-        case '大森林時代':
-        case '文明時代':
-        case '海棲文明時代':
-            return 1;
-        default:
-            return 0;
-    }
+    return ERA_LAND_PLANT_O2[era] ?? 0;
 }
 
 function computeFungalFactor(era) {
-    switch (era) {
-        case '苔類進出時代': return 2;
-        case 'シダ植物時代': return 1.8;
-        default: return 1.00;
-    }
+    return ERA_FUNGAL_FACTOR[era] ?? 1.0;
 }
 
 export function computeNextClimateTurn(cur) {

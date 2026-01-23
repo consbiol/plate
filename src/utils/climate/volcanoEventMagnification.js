@@ -14,7 +14,7 @@ export const VOLCANO_EVENT_MAG_LABELS = Object.freeze([
   '10'
 ]);
 
-export const VOLCANO_EVENT_MAG_STAGES = Object.freeze(
+const VOLCANO_EVENT_MAG_STAGES = Object.freeze(
   VOLCANO_EVENT_MAG_LABELS.map((s) => Number(s))
 );
 

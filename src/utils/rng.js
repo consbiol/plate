@@ -5,7 +5,7 @@
 // 注意:
 // - 既存ロジックの乱数消費順を変えないため、呼び出し側で rng() の回数/順序を変えないこと。
 
-export function xmur3(str) {
+function xmur3(str) {
     const s = String(str);
     let h = 1779033703 ^ s.length;
     for (let i = 0; i < s.length; i++) {
@@ -20,7 +20,7 @@ export function xmur3(str) {
     };
 }
 
-export function mulberry32(a) {
+function mulberry32(a) {
     return function () {
         let t = (a += 0x6D2B79F5);
         t = Math.imul(t ^ (t >>> 15), t | 1);

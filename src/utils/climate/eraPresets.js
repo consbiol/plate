@@ -208,31 +208,6 @@ const ERA_ORDER = Object.freeze([
     // 海棲文明時代は現状「別ルート」想定のため自動遷移の最後に含めない
 ]);
 
-// 「次の時代の変わり目に30ターン分だけTurn_yr=1000yr」の適用有無（指定がある区間のみtrue）
-const ERA_TRANSITION_30_TURNS = Object.freeze({
-    // 爆撃→生命発生前
-    '爆撃時代': true,
-    // 生命発生前→嫌気性
-    '生命発生前時代': true,
-    // 嫌気性→光合成
-    '嫌気性細菌誕生時代': true,
-    // 光合成→真核
-    '光合成細菌誕生時代': true,
-    // 真核→多細胞
-    '真核生物誕生時代': true,
-    // 多細胞→海洋多様化
-    '多細胞生物誕生時代': true,
-    // 海洋多様化→苔類
-    '海洋生物多様化時代': true,
-    // 苔類→シダ
-    '苔類進出時代': true,
-    // 以降は指定なし
-    'シダ植物時代': false,
-    '大森林時代': false,
-    '文明時代': false,
-    '海棲文明時代': false
-});
-
 export function buildEraInitialClimate(era) {
     const e = (typeof era === 'string' && ERAS.includes(era)) ? era : '大森林時代';
     return { ...ERA_INITIALS[e] };
@@ -321,11 +296,6 @@ export function buildTurnAlphaParams(Turn_yr) {
     })[key];
 
     return { GI_alpha, CO2_alpha, O2_alpha, Temp_alpha, glacier_alpha, alphaKey: key };
-}
-
-export function buildEraTransitionRule(fromEra) {
-    const e = (typeof fromEra === 'string' && ERAS.includes(fromEra)) ? fromEra : '大森林時代';
-    return { use30Turns1000yr: !!ERA_TRANSITION_30_TURNS[e] };
 }
 
 export function getNextEraByTime(curEra, Time_yr) {
