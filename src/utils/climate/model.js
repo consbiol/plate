@@ -217,7 +217,7 @@ export function computeNextClimateTurn(cur) {
         Turn_yr ** 0.5
         * 0.0000003
         * Math.exp(-sq((averageTemperature - 30) / 10))
-        * (f_CO2 - 0.00028);
+        * (f_CO2 - CO2_ocean_eq);
 
     const CO2_abs_rock =
         Turn_yr ** 0.5
@@ -225,19 +225,18 @@ export function computeNextClimateTurn(cur) {
         * (f_land / 0.3)
         * Math.exp((averageTemperature - 15) / 12)
         * Math.pow((f_CO2 / 0.0004), 0.7)
-        * Math.exp(-sq((averageTemperature - 30) / 25));
+        * Math.exp(-sq((averageTemperature - 40) / 25));
 
     const Pland_t = computePland_t(era);
     const CO2_abs_plant =
-        (f_CO2 < 0.0001) ? 0 : (
-            Turn_yr ** 0.5
-            * 0.0000003
-            * Pland_t
-            * (f_green / 0.3)
-            * Math.exp(-sq((averageTemperature - 22.5) / 15))
-            * ((3 * f_CO2) / (f_CO2 + 0.0008))
-        );
-    
+        Turn_yr ** 0.5
+        * 0.0000003
+        * Pland_t
+        * (f_green / 0.3)
+        * Math.exp(-sq((averageTemperature - 22.5) / 15))
+        * ((3 * f_CO2) / (f_CO2 + 0.0008))
+        * (f_CO2 / (f_CO2 + 0.00003));
+
     const CO2_abs_ocean = Math.max(-CO2_flux_ocean, 0);
     const CO2_abs_carbonate = Math.max(-CO2_flux_carbonate, 0);
 
@@ -309,7 +308,7 @@ export function computeNextClimateTurn(cur) {
             * ((3 * f_CO2) / (f_CO2 + 0.0008))
         )
         * Math.pow((1 + f_O2 / 0.21), -0.25);
-    
+
 
     // NOTE: Step6 でも使用するため、ここで一度だけ計算して使い回す
     // （高温O2放出式が H2O_eff を参照するため、先に定義して TDZ を避ける）

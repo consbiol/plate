@@ -72,7 +72,7 @@ export function computeLnGases(f_CO2, f_CH4) {
     return { lnCO2, lnCH4 };
 }
 
-export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, floor) {
+export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, floor, averageTemperature) {
     // Normalize inputs while preserving explicit zeros
     Pressure = toNum(Pressure, 0);
     lnCO2 = toNum(lnCO2, 0);
@@ -82,10 +82,11 @@ export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f
     f_N2 = toNum(f_N2, 0.78);
     f_CO2 = toNum(f_CO2, 0.0004);
     floor = toNum(floor, 0.18);
+    averageTemperature = toNum(averageTemperature, 15);
 
     let tau = Math.pow(Pressure, 0.3) * (0.2 * lnCO2 + 0.3 * lnCH4 + 0.6 * H2O_eff + f_H2 * (0.4 * f_N2 + 0.2 * f_H2 + 0.1 * f_CO2));
     tau = Math.min(tau, 5); // tau capped to avoid runaway greenhouse / numerical lock-in
-    let Radiation_cooling = 1 / (1 + tau);
+    let Radiation_cooling = 1 / (1 + tau / ((averageTemperature + 273.15) / (15 + 273.15)) ** 0.5);
     Radiation_cooling = Math.max(Radiation_cooling, floor);
     return Radiation_cooling;
 }
