@@ -72,7 +72,7 @@ export function computeLnGases(f_CO2, f_CH4) {
     return { lnCO2, lnCH4 };
 }
 
-export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, floor, averageTemperature) {
+export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, floor, averageTemperature, solarEvolution) {
     // Normalize inputs while preserving explicit zeros
     Pressure = toNum(Pressure, 0);
     lnCO2 = toNum(lnCO2, 0);
@@ -81,12 +81,21 @@ export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f
     f_H2 = toNum(f_H2, 0);
     f_N2 = toNum(f_N2, 0.78);
     f_CO2 = toNum(f_CO2, 0.0004);
-    floor = toNum(floor, 0.18);
+    floor = toNum(floor, 0.15);
     averageTemperature = toNum(averageTemperature, 15);
+    solarEvolution = toNum(solarEvolution, 1);
 
-    let tau = Math.pow(Pressure, 0.3) * (0.2 * lnCO2 + 0.3 * lnCH4 + 0.6 * H2O_eff + f_H2 * (0.4 * f_N2 + 0.2 * f_H2 + 0.1 * f_CO2));
-    tau = Math.min(tau, 5); // tau capped to avoid runaway greenhouse / numerical lock-in
-    let Radiation_cooling = 1 / (1 + tau / ((averageTemperature + 273.15) / (15 + 273.15)) ** 0.5);
+    let tau = Math.pow(Pressure, 0.3) * (0.25 * lnCO2 + 0.35 * lnCH4 + 0.6 * H2O_eff + f_H2 * (0.4 * f_N2 + 0.2 * f_H2 + 0.1 * f_CO2));
+    let tau_H2O = 0.5 * Math.pow(Pressure, 0.3) * 0.6 * H2O_eff;
+    // 太陽進化を反映した制限温度計算
+    let T_emit = 288 * Math.pow(solarEvolution, 1.25);
+
+    // OLR計算
+    let OLR_gray = 1 / (1 + tau / Math.sqrt((averageTemperature + 273.15) / 288));
+    let OLR_limit = 1 / (1 + tau_H2O / Math.sqrt(T_emit / 288));
+
+    // 放射冷却
+    let Radiation_cooling = Math.min(OLR_gray, OLR_limit)
     Radiation_cooling = Math.max(Radiation_cooling, floor);
     return Radiation_cooling;
 }
