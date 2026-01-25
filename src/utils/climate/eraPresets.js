@@ -10,7 +10,7 @@ const ERA_INITIALS = Object.freeze({
         f_CH4: 0.01,
         f_Ar: 0.0020,
         f_H2: 0.0100,
-        averageTemperature: 60,
+        averageTemperature: 20,
         f_cloud: 0.45,
         greenIndex: 1,
         sol_event: 0
@@ -23,7 +23,7 @@ const ERA_INITIALS = Object.freeze({
         f_CH4: 0.01,
         f_Ar: 0.0022,
         f_H2: 0.00905,
-        averageTemperature: 50,
+        averageTemperature: 20,
         f_cloud: 0.50,
         greenIndex: 1,
         sol_event: 0
@@ -36,7 +36,7 @@ const ERA_INITIALS = Object.freeze({
         f_CH4: 0.01,
         f_Ar: 0.0029,
         f_H2: 0.00670,
-        averageTemperature: 40,
+        averageTemperature: 20,
         f_cloud: 0.55,
         greenIndex: 1,
         sol_event: 0
@@ -49,7 +49,7 @@ const ERA_INITIALS = Object.freeze({
         f_CH4: 0.001,
         f_Ar: 0.0059,
         f_H2: 0.00091,
-        averageTemperature: 30,
+        averageTemperature: 20,
         f_cloud: 0.58,
         greenIndex: 1,
         sol_event: 0
@@ -88,7 +88,7 @@ const ERA_INITIALS = Object.freeze({
         f_CH4: 0.000001,
         f_Ar: 0.0090,
         f_H2: 0.000007,
-        averageTemperature: 23,
+        averageTemperature: 20,
         f_cloud: 0.60,
         greenIndex: 1,
         sol_event: 0
@@ -101,7 +101,7 @@ const ERA_INITIALS = Object.freeze({
         f_CH4: 0.000001,
         f_Ar: 0.0091,
         f_H2: 0.000006,
-        averageTemperature: 17,
+        averageTemperature: 20,
         f_cloud: 0.63,
         greenIndex: 1,
         sol_event: 0
@@ -114,7 +114,7 @@ const ERA_INITIALS = Object.freeze({
         f_CH4: 0.000001,
         f_Ar: 0.0092,
         f_H2: 0.000005,
-        averageTemperature: 10,
+        averageTemperature: 20,
         f_cloud: 0.65,
         greenIndex: 1,
         sol_event: 0
@@ -140,7 +140,7 @@ const ERA_INITIALS = Object.freeze({
         f_CH4: 0.000001,
         f_Ar: 0.0094,
         f_H2: 0.000002,
-        averageTemperature: 15,
+        averageTemperature: 20,
         f_cloud: 0.67,
         greenIndex: 1,
         sol_event: 0
@@ -153,7 +153,7 @@ const ERA_INITIALS = Object.freeze({
         f_CH4: 0.000001,
         f_Ar: 0.0094,
         f_H2: 0.000002,
-        averageTemperature: 15,
+        averageTemperature: 20,
         f_cloud: 0.67,
         greenIndex: 1,
         sol_event: 0
