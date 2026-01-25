@@ -10,7 +10,7 @@ function buildDefaultRenderSettings() {
         polarCloudBoost: 1.0,
 
         // Sphere 描画の極処理（旧propsの既定値に合わせる）
-        polarBufferRows: 50,
+        polarBufferRows: 150,
         polarAvgRows: 3,
         polarBlendRows: 12,
         polarNoiseStrength: 0.3,

@@ -26,16 +26,28 @@ export function drawSphereCPU(vm, canvas) {
     const topBuf = Math.floor(totalBuf / 2);
     const bottomBuf = totalBuf - topBuf;
     // Build stretched row map: rows near both poles are repeated to simulate vertical stretching.
-    // Rules: distance from nearest pole 0..4 -> factor 3, 5..14 -> factor 2, else 1.
+    // Rules: adjusted for smoother transition
+    // 0..1 -> 5.0x
+    // 2..4 -> 3.0x
+    // 5..14 -> 2.0x
+    // 15..29 -> 1.3x
     const expandedRowMapArr = [];
+    let accumulated = 0;
     for (let y = 0; y < height; y++) {
         const distTop = y;
         const distBottom = height - 1 - y;
         const minDist = Math.min(distTop, distBottom);
-        let factor = 1;
-        if (minDist <= 4) factor = 3;
-        else if (minDist <= 14) factor = 2;
-        for (let k = 0; k < factor; k++) expandedRowMapArr.push(y);
+        let factor = 1.0;
+        if (minDist <= 1) factor = 5.0;
+        else if (minDist <= 4) factor = 3.0;
+        else if (minDist <= 14) factor = 2.0;
+        else if (minDist <= 29) factor = 1.3;
+
+        accumulated += factor;
+        while (accumulated >= 1) {
+            expandedRowMapArr.push(y);
+            accumulated -= 1;
+        }
     }
     const stretchedHeight = expandedRowMapArr.length;
     const colShift = (vm._rotationColumns || 0);

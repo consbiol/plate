@@ -39,7 +39,7 @@ export default {
       return getGetter(this.$store, 'gridData', []);
     },
     polarBufferRows() {
-      return getGetterPath(this.$store, ['renderSettings', 'polarBufferRows'], 50);
+      return getGetterPath(this.$store, ['renderSettings', 'polarBufferRows'], 150);
     },
     polarAvgRows() {
       return getGetterPath(this.$store, ['renderSettings', 'polarAvgRows'], 3);
