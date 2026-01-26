@@ -363,7 +363,7 @@ export function computeNextClimateTurn(cur) {
     const hazeFrac = cloudRes.hazeFrac;
     f_cloud = cloudRes.f_cloud;
     // compute albedo from shared helper
-    const albedo = computeAlbedo({ f_cloud, hazeFrac, terrain });
+    const albedo = computeAlbedo({ f_cloud, hazeFrac, terrain, Time_yr });
 
     // --- Step6: 有効放射率 ---
 
@@ -548,7 +548,7 @@ export function computeRadiativeEquilibriumTempK(state, options = {}) {
     let Radiation_cooling = computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, 0.15);
 
     // compute albedo via shared helper
-    const albedo = computeAlbedo({ f_cloud, hazeFrac, terrain });
+    const albedo = computeAlbedo({ f_cloud, hazeFrac, terrain, Time_yr });
 
     const { averageTemperature_calc, Sol } = computeRadiativeEquilibriumCalc({ solarEvolution, Time_yr, Meteo_eff, sol_event, albedo, Radiation_cooling });
     return { averageTemperature_calc, Sol, f_cloud, Radiation_cooling, H2O_eff, f_H2O };

@@ -94,15 +94,14 @@ export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f
     return Radiation_cooling;
 }
 
-export function computeRadiativeEquilibriumCalc({ solarEvolution, Time_yr, Meteo_eff = 1, sol_event = 0, albedo = 0.3, Radiation_cooling }) {
-    const milankovitch = 1 + 0.00005 * Math.sin(2 * Math.PI * Time_yr / 100000);
-    const Sol = 950 * solarEvolution * milankovitch + sol_event;
+export function computeRadiativeEquilibriumCalc({ solarEvolution, Meteo_eff = 1, sol_event = 0, albedo = 0.3, Radiation_cooling }) {
+    const Sol = 950 * solarEvolution + sol_event;
     const sigma = 5.67e-8;
-    const averageTemperature_calc = Math.pow((Sol * Meteo_eff * (1 - albedo)) / (4 * sigma * Math.pow(Radiation_cooling, 0.5)), 0.25);
+    const averageTemperature_calc = Math.pow((Sol * Meteo_eff * (1 - albedo)) / (4 * sigma * Math.pow(Radiation_cooling, 0.7)), 0.25);
     return { averageTemperature_calc, Sol };
 }
 
-export function computeAlbedo({ f_cloud, hazeFrac, terrain = {} } = {}) {
+export function computeAlbedo({ f_cloud, hazeFrac, terrain = {}, Time_yr = 0 } = {}) {
     const f_tundra = Number(terrain.f_tundra) || 0;
     const f_city = Number(terrain.f_city) || 0;
     const f_desert = Number(terrain.f_desert) || 0;
@@ -129,21 +128,19 @@ export function computeAlbedo({ f_cloud, hazeFrac, terrain = {} } = {}) {
 
     const A_glacier = glacierAlbedo(f_glacier);
 
+    const milankovitch = 1 + 0.015 * Math.sin(2 * Math.PI * Time_yr / 100000);
+
     const albedo_0 =
-        // 氷河（氷河分布球面幾何＋緯度依存の日射重み付け）
-        (1 - f_cloud) * A_glacier * f_glacier + f_cloud * (A_glacier + (1 - A_glacier) * 0.05) * f_glacier
-        // 緑地+ツンドラ
-        + (1 - f_cloud) * 0.13 * (f_green + f_tundra) + f_cloud * (0.13 + 0.15) * (f_green + f_tundra)
-        // 都市
-        + (1 - f_cloud) * 0.14 * f_city + f_cloud * (0.14 + 0.06) * f_city
-        // 砂漠
-        + (1 - f_cloud) * 0.38 * f_desert + f_cloud * (0.38 + 0.07) * f_desert
-        // 農地+汚染地
-        + (1 - f_cloud) * 0.18 * (f_cultivated + f_polluted) + f_cloud * (0.18 + 0.12) * (f_cultivated + f_polluted)
-        // 高地+高山
-        + (1 - f_cloud) * 0.22 * (f_highland + f_alpine) + f_cloud * (0.22 + 0.03) * (f_highland + f_alpine)
-        // 海洋
-        + (1 - f_cloud) * 0.06 * f_ocean + f_cloud * (0.06 + 0.25) * f_ocean;
+        (
+            // 氷河（氷河分布球面幾何＋緯度依存の日射重み付け）
+            (1 - f_cloud) * A_glacier * f_glacier + f_cloud * (A_glacier + (1 - A_glacier) * 0.05) * f_glacier
+            + (1 - f_cloud) * 0.13 * (f_green + f_tundra) + f_cloud * (0.13 + 0.15) * (f_green + f_tundra)
+            + (1 - f_cloud) * 0.14 * f_city + f_cloud * (0.14 + 0.06) * f_city
+            + (1 - f_cloud) * 0.38 * f_desert + f_cloud * (0.38 + 0.07) * f_desert
+            + (1 - f_cloud) * 0.18 * (f_cultivated + f_polluted) + f_cloud * (0.18 + 0.12) * (f_cultivated + f_polluted)
+            + (1 - f_cloud) * 0.22 * (f_highland + f_alpine) + f_cloud * (0.22 + 0.03) * (f_highland + f_alpine)
+            + (1 - f_cloud) * 0.06 * f_ocean + f_cloud * (0.06 + 0.25) * f_ocean
+        ) * milankovitch;
 
     let albedo = albedo_0 + (1 - albedo_0) * 0.12 * hazeFrac;
     if (albedo < 0.15) albedo = 0.15;
