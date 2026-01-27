@@ -1,5 +1,5 @@
 export function getVertexShaderSource() {
-    return `
+  return `
         attribute vec2 a_position;
         void main() {
           gl_Position = vec4(a_position, 0.0, 1.0);
@@ -8,7 +8,7 @@ export function getVertexShaderSource() {
 }
 
 export function getFragmentShaderSource() {
-    return `
+  return `
         precision mediump float;
         uniform sampler2D u_texture;
         uniform sampler2D u_classTex;
@@ -178,8 +178,8 @@ export function getFragmentShaderSource() {
           float eff = clamp(u_f_cloud * classW, 0.0, 1.0);
           // トーラスFBMノイズ（極バッファ含む全域で評価）
           float nCloud = fbmTile(vec2(uEff, vEff), max(2.0, u_cloudPeriod));
-          // 被覆度の閾値（雲量で強く変化）: 雲量↑で閾値↓ → coverage↑
-          float t = mix(0.9, 0.2, eff);
+          // 被覆度の閾値（雲量で強く変化）: 雲量↑で閾値↓ → coverage↑ sqrt(eff)で低値で雲量増加強調
+          float t = mix(0.9, 0.4, sqrt(eff));
           // 極ブースト: vEffが0/1に近いほど強い（閾値を下げる）
           float pole = abs(vEff - 0.5) / 0.5; // 端(極)で1, 赤道で0
           pole = clamp(pole, 0.0, 1.0);
