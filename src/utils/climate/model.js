@@ -111,7 +111,7 @@ export function computeNextClimateTurn(cur) {
 
     // --- Step1: 地質・天文学的パラメータ ---
     const f_N2_fixed = Number(constants.f_N2_fixed);
-    if (isFinite(f_N2_fixed)) f_N2 = f_N2_fixed;
+    if (isFinite(f_N2_fixed)) f_N2 = f_N2_fixed * (1 - Math.exp(-(Time_yr * 1e-9) / 0.3));
 
     // Consolidated solar / gas computation
     const _gases = computeSolarAndGases(Time_yr, constants);
@@ -206,31 +206,36 @@ export function computeNextClimateTurn(cur) {
     // CO2
     const CO2_ocean_eq =
         0.00028 * Math.exp((averageTemperature - 15) / 30);
+    const CO2_carbonate_eq =
+        0.00028 * Math.exp((averageTemperature - 10) / 35);
     const CO2_flux_ocean =
         Turn_yr ** 0.5
-        * 0.00000025
+        * 0.0000015
         * f_ocean
         * (f_CO2 - CO2_ocean_eq)
-        / (1 + Math.log(1 + f_CO2 / 0.00028));
-
+        * Math.pow(f_CO2 / 0.00028, 0.3);
     const CO2_flux_carbonate =
         Turn_yr ** 0.5
-        * 0.0000003
-        * Math.exp(-sq((averageTemperature - 30) / 10))
-        * (f_CO2 - CO2_ocean_eq);
+        * 0.00000015
+        * (f_CO2 - CO2_carbonate_eq)
+        * Math.exp((averageTemperature - 10) / 20);
 
+    const Pland_t = computePland_t(era);
+
+    const land_weathering_eff =
+        1 + 0.3 * Math.tanh(3 * Pland_t);
     const CO2_abs_rock =
         Turn_yr ** 0.5
         * 0.00000008
         * (f_land / 0.3)
+        * land_weathering_eff
         * Math.exp((averageTemperature - 15) / 12)
         * Math.pow((f_CO2 / 0.0004), 0.7)
         * Math.exp(-sq((averageTemperature - 40) / 25));
 
-    const Pland_t = computePland_t(era);
     const CO2_abs_plant =
         Turn_yr ** 0.5
-        * 0.0000003
+        * 0.0000006
         * Pland_t
         * (f_green / 0.3)
         * Math.exp(-sq((averageTemperature - 22.5) / 15))
