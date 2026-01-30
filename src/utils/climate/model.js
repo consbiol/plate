@@ -251,7 +251,7 @@ export function computeNextClimateTurn(cur) {
         Turn_yr ** 0.5
         * 0.00000025
         * (Volcano_event + Volcano_event_manual)
-        * Math.pow(4550000000 / (Time_yr + 100000000), 3)
+        * Math.pow(4.55e9 / (Time_yr + 100000000), 1.2)
         * (1 + 0.5 * ((f_land_original - 0.3) / 0.3))
         * (0.5 + (Math.random() + Math.random()) / 2);
 

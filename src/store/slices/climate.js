@@ -71,7 +71,9 @@ function buildDefaultClimateState() {
             Fire_event_CO2: 0,
             CH4_event: 0,
             sol_event: 0,
-            CosmicRay: 1
+            CosmicRay: 1,
+            // Land Ratio イベント（一時的な±補正、永続化しない）
+            land_ratio_event: 0
         },
 
         // 地形由来の面積率（Parameters_Display.vue から供給）
@@ -132,7 +134,7 @@ function buildDefaultClimateState() {
         },
         baseAverageTemperature: 15,
 
-        
+
     };
 }
 
@@ -161,7 +163,7 @@ function buildSeededConstants({ deterministicSeed }) {
         // Step6
         T_sat: sampleRange(rng, 24, 32),
         dT: sampleRange(rng, 12, 18),
-        H2O_max: sampleRange(rng, 1.5, 1.8)
+        H2O_max: sampleRange(rng, 1.3, 1.6)
     };
 }
 
@@ -361,6 +363,17 @@ export function createClimateSlice() {
                     ev.CosmicRay = 1.5;
                     ev.Cosmic_one_shot_remaining = 1;
                 }, { forceTurnWindow: true });
+            },
+
+            // Land Ratio イベント（slider 用 +/-）
+            bumpLandRatioEvent(state, delta) {
+                patchClimateEvents(state, (ev) => {
+                    const prev = Number(ev.land_ratio_event || 0);
+                    const d = Number(delta || 0);
+                    if (!isFinite(d)) return false;
+                    // -0.1 .. +0.1 の範囲
+                    ev.land_ratio_event = clamp(prev + d, -0.1, 0.1);
+                });
             }
         },
         actions: {
@@ -412,7 +425,7 @@ export function createClimateSlice() {
                     constants,
                     terrain,
                     vars,
-                    
+
                 };
                 next.baseAverageTemperature = initial.averageTemperature;
                 // 放射平衡温度（初期化時点）は「時代デフォルトの平均気温」を優先して設定する。

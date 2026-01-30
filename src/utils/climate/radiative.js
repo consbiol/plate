@@ -53,13 +53,16 @@ export function computeClouds({ Pressure, f_ocean, averageTemperature, CosmicRay
 export function computeH2Oeff(averageTemperature, f_ocean, constants = {}, options = {}) {
     const T_sat = Number(constants.T_sat) || 40;
     const dT = Number(constants.dT) || 5;
-    const H2O_max = Number(constants.H2O_max) || 2.9;
+    const H2O_max = Number(constants.H2O_max) || 1.4;
     const avg = Number(averageTemperature) || 15;
     let H2O_eff = H2O_max
         * (Math.exp((avg - 15) / 50) / (1 + Math.exp((avg - T_sat) / dT)))
         * (f_ocean + 0.1 * (1 - f_ocean)) + 0.5;
     if (options.conservative) {
-        H2O_eff = Math.min(H2O_eff, 1.5);
+        const H2O_cap =
+            avg < 40 ? 1.5 :
+                avg < 60 ? 1.4 : 1.3;
+        H2O_eff = Math.min(H2O_eff, H2O_cap);
     }
     return H2O_eff;
 }

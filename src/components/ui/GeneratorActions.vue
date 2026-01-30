@@ -117,11 +117,7 @@ import {
 export default {
   name: 'GeneratorActions',
   props: {
-    disabled: { type: Boolean, required: false, default: false },
-    // Land Ratio (陸の割合 x): Parameters_Display.vue の local.seaLandRatio を受け取る
-    landRatioX: { type: Number, required: false, default: 0.3 },
-    // イベントパネルの slider は「base からの差分（±0.1）」として扱う
-    landRatioBase: { type: Number, required: false, default: 0.3 },
+    disabled: { type: Boolean, required: false, default: false }
   },
   computed: {
     solEvent() {
@@ -149,15 +145,8 @@ export default {
     }
     ,
     landRatioDelta() {
-      const x = Number(this.landRatioX);
-      const base = Number(this.landRatioBase);
-      if (!isFinite(x) || !isFinite(base)) return 0;
-      let d = x - base;
-      // slider range: -0.10..+0.10
-      d = Math.max(-0.1, Math.min(0.1, d));
-      // 0.01刻みに寄せる（表示の安定化）
-      d = Math.round(d * 100) / 100;
-      return d;
+      const c = (this.$store && this.$store.state && this.$store.state.climate) ? this.$store.state.climate : null;
+      return (c && c.events && typeof c.events.land_ratio_event === 'number') ? c.events.land_ratio_event : 0;
     },
     landRatioAtMin() {
       return this.landRatioDelta <= -0.1;
@@ -202,8 +191,7 @@ export default {
     bumpLandRatio(delta) {
       const d = Number(delta || 0);
       if (!isFinite(d) || d === 0) return;
-      // 親（Parameters_Display.vue）へ通知して、陸の割合 x を更新してもらう
-      this.$emit('bump-land-ratio', d);
+      this.$store.commit('bumpLandRatioEvent', d);
     }
     ,
     triggerMeteo(level) {

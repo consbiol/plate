@@ -6,9 +6,6 @@
       @update="onClickUpdate"
       @revise="onClickReviseHighFrequency"
       @drift="onClickDrift"
-      :landRatioX="local.seaLandRatio"
-      :landRatioBase="landRatioEventBase"
-      @bump-land-ratio="onBumpLandRatio"
     >
       <template v-slot:inline-views>
         <div class="inline-views">
@@ -178,7 +175,7 @@
       :runQueue="runQueue"
       :gridWidth="gridWidth"
       :gridHeight="gridHeight"
-      :seaLandRatio="local.seaLandRatio"
+      :seaLandRatio="effectiveSeaLandRatio"
       :centersY="local.centersY"
       :minCenterDistance="computedMinCenterDistance"
       :noiseAmp="0.15"
@@ -517,11 +514,16 @@ export default {
     storeEra() {
       return getEra(this.$store);
     },
-    // イベントパネルの Land Ratio slider は「base からの差分（±0.1）」なので、
-    // base は既定値（PARAM_DEFAULTS.seaLandRatio）を用いる。
-    landRatioEventBase() {
-      const b = Number(PARAM_DEFAULTS && PARAM_DEFAULTS.seaLandRatio);
-      return isFinite(b) ? b : 0.3;
+    // base + event
+    effectiveSeaLandRatio() {
+      const base = (this.local && typeof this.local.seaLandRatio === 'number') ? Number(this.local.seaLandRatio) : 0.3;
+      // Get land_ratio_event from current climate state
+      const c = (this.$store && this.$store.state && this.$store.state.climate) ? this.$store.state.climate : null;
+      const delta = (c && c.events && typeof c.events.land_ratio_event === 'number') ? Number(c.events.land_ratio_event) : 0;
+      let val = base + delta;
+      // Clamp logic if needed (e.g. 0.01 to 0.99)
+      val = Math.max(0.01, Math.min(0.99, val));
+      return val;
     },
     storeGeneratorParams() {
       return getGeneratorParams(this.$store);
@@ -612,7 +614,7 @@ export default {
     // Derived (computed from local/UI + store snapshots)
     // ---------------------------
     computedAverageHighlandsPerCenter() {
-      const x = (this.local && typeof this.local.seaLandRatio === 'number') ? Number(this.local.seaLandRatio) : 0.3;
+      const x = (this.effectiveSeaLandRatio) ? Number(this.effectiveSeaLandRatio) : 0.3;
       return 2 + 10 * x;
     },
     topTundraRowsComputed() {
@@ -651,7 +653,7 @@ export default {
     computedMinCenterDistance() {
       // 元の実装に合わせる:
       // seaLandRatio を 0.2..1.0 にクランプし、20..40 に線形補間して四捨五入する
-      const raw = (this.local && Number.isFinite(this.local.seaLandRatio)) ? Number(this.local.seaLandRatio) : Number(PARAM_DEFAULTS && PARAM_DEFAULTS.seaLandRatio);
+      const raw = (this.effectiveSeaLandRatio) ? Number(this.effectiveSeaLandRatio) : Number(PARAM_DEFAULTS && PARAM_DEFAULTS.seaLandRatio);
       const x = Math.max(0.2, Math.min(1.0, raw));
       const minDistance = 20 + (x - 0.2) * 25; // 20..40
       return Math.round(minDistance);
@@ -705,20 +707,7 @@ export default {
     }
   },
   methods: {
-    onBumpLandRatio(delta) {
-      const d = Number(delta || 0);
-      if (!isFinite(d) || d === 0) return;
-      const base = Number(this.landRatioEventBase);
-      const min = Math.max(0.01, base - 0.1);
-      const max = Math.min(0.99, base + 0.1);
-      const prev = Number(this.local && this.local.seaLandRatio);
-      const cur = isFinite(prev) ? prev : base;
-      let next = cur + d;
-      next = Math.max(min, Math.min(max, next));
-      // 0.01刻みにスナップ（浮動小数誤差対策）
-      next = Math.round(next * 100) / 100;
-      this.local.seaLandRatio = next;
-    },
+
     // ---------------------------
     // Popup / rendering helpers (side effects)
     // ---------------------------
