@@ -204,21 +204,22 @@ export function computeNextClimateTurn(cur) {
     const f_land_original = Number(terrain.f_land_original) || 0.3;
 
     // CO2
-    const CO2_ocean_eq =
-        0.00028 * Math.exp((averageTemperature - 15) / 30);
     const CO2_carbonate_eq =
-        0.00028 * Math.exp((averageTemperature - 10) / 35);
+        0.00028 * Math.exp((averageTemperature - 15) / 60);
     const CO2_flux_ocean =
-        Turn_yr ** 0.5
-        * 0.0000015
+        -1 * Turn_yr ** 0.5
+        * 0.0000012
         * f_ocean
-        * (f_CO2 - CO2_ocean_eq)
-        * Math.pow(f_CO2 / 0.00028, 0.3);
+        * f_CO2
+        * Math.tanh((20 - averageTemperature) / 12)
+        * Math.exp(-(averageTemperature - 15) / 80);
+
     const CO2_flux_carbonate =
-        Turn_yr ** 0.5
+        -1 * Turn_yr ** 0.5
         * 0.00000015
         * (f_CO2 - CO2_carbonate_eq)
-        * Math.exp((averageTemperature - 10) / 20);
+        * Math.exp((averageTemperature - 15) / 20)
+        * Math.exp(-sq((averageTemperature - 50) / 20));
 
     const Pland_t = computePland_t(era);
 
