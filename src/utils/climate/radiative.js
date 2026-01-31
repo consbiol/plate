@@ -76,7 +76,7 @@ export function computeLnGases(f_CO2, f_CH4) {
 }
 
 
-export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, averageTemperature, solarEvolution) {
+export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, averageTemperature, solarEvolution, Time_yr = 0) {
     // Normalize inputs while preserving explicit zeros
     Pressure = toNum(Pressure, 0);
     lnCO2 = toNum(lnCO2, 0);
@@ -88,12 +88,12 @@ export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f
     averageTemperature = toNum(averageTemperature, 15);
     solarEvolution = toNum(solarEvolution, 1);
 
-    let tau = Math.pow(Pressure, 0.3) * (0.5 * lnCO2 + 0.35 * lnCH4 + 0.6 * H2O_eff + f_H2 * (0.4 * f_N2 + 0.2 * f_H2 + 0.1 * f_CO2));
+    let tau = Math.pow(Pressure, 0.3) * (0.45 * lnCO2 + 0.55 * lnCH4 + 0.45 * H2O_eff + f_H2 * (0.8 * f_N2 + 0.3 * f_H2 + 0.2 * f_CO2));
 
     const n = 2.2 + 0.8 * Math.tanh((averageTemperature - 15) / 20);
     tau = Math.min(tau, 15); // tau capped to avoid runaway greenhouse / numerical lock-in
     let Radiation_cooling = 1 / (1 + tau / (Math.pow((averageTemperature + 273) / (15 + 273), n) * Math.pow(solarEvolution, 1.25)));
-    Radiation_cooling = 0.15 + 0.85 * Radiation_cooling;
+    Radiation_cooling = (0.15 + 0.85 * Radiation_cooling) * (1 + 0.4 * Math.exp(-Time_yr / 1e9));
     return Radiation_cooling;
 }
 
@@ -122,7 +122,7 @@ export function computeAlbedo({ f_cloud, hazeFrac, terrain = {}, Time_yr = 0 } =
         const A_max = 0.6; // A_max は「全球平均氷床状態」であり、局所的新雪アルベドではない
 
         const x0 = 0.35;
-        const k = 4.0;
+        const k = 6;
 
         const s = 1 / (1 + Math.exp(-k * (f_glacier - x0)));
 

@@ -376,7 +376,7 @@ export function computeNextClimateTurn(cur) {
     // H2O_eff は Step4(O2) で計算済み（高温O2放出式で参照するため）
 
     const { lnCO2, lnCH4 } = computeLnGases(f_CO2, f_CH4);
-    let Radiation_cooling = computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, 0.15);
+    let Radiation_cooling = computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, averageTemperature, solarEvolution, Time_yr);
 
     // --- Step7: 平均気温 ---
     // Sol / milankovitch は radiative.js 内の computeRadiativeEquilibriumCalc で計算するため重複を削除
@@ -551,7 +551,7 @@ export function computeRadiativeEquilibriumTempK(state, options = {}) {
     const f_cloud = cloudInit.f_cloud;
 
     const { lnCO2, lnCH4 } = computeLnGases(f_CO2, f_CH4);
-    let Radiation_cooling = computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, 0.15);
+    let Radiation_cooling = computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, averageTemperature, solarEvolution, Time_yr);
 
     // compute albedo via shared helper
     const albedo = computeAlbedo({ f_cloud, hazeFrac, terrain, Time_yr });

@@ -379,22 +379,25 @@ export default {
       const b = this._getLatBandIndex(y, x);
       // `baseLandDistanceThreshold` を「全帯に効く基準オフセット」として扱う。
       // これにより、UIの「基準値」を変更して Revise しても乾燥地が反映される。
-      const baseDefault = Number(PARAM_DEFAULTS && PARAM_DEFAULTS.baseLandDistanceThreshold);
-      const baseNowRaw = Number(this.baseLandDistanceThreshold);
-      const baseNow = Number.isFinite(baseNowRaw) ? baseNowRaw : baseDefault;
-      const baseDelta = (Number.isFinite(baseDefault) ? (baseNow - baseDefault) : 0);
+      // Return per-band threshold directly. Fall back to PARAM_DEFAULTS when prop is not finite.
+      const getBand = (n) => {
+        const v = Number(this[`landDistanceThreshold${n}`]);
+        return Number.isFinite(v)
+          ? v
+          : Number(PARAM_DEFAULTS && PARAM_DEFAULTS[`landDistanceThreshold${n}`]);
+      };
       switch (b) {
-        case 1: return Number(this.landDistanceThreshold1) + baseDelta;
-        case 2: return Number(this.landDistanceThreshold2) + baseDelta;
-        case 3: return Number(this.landDistanceThreshold3) + baseDelta;
-        case 4: return Number(this.landDistanceThreshold4) + baseDelta;
-        case 5: return Number(this.landDistanceThreshold5) + baseDelta;
-        case 6: return Number(this.landDistanceThreshold6) + baseDelta;
-        case 7: return Number(this.landDistanceThreshold7) + baseDelta;
-        case 8: return Number(this.landDistanceThreshold8) + baseDelta;
-        case 9: return Number(this.landDistanceThreshold9) + baseDelta;
-        case 10: return Number(this.landDistanceThreshold10) + baseDelta;
-        default: return Number(this.landDistanceThreshold10) + baseDelta;
+        case 1: return getBand(1);
+        case 2: return getBand(2);
+        case 3: return getBand(3);
+        case 4: return getBand(4);
+        case 5: return getBand(5);
+        case 6: return getBand(6);
+        case 7: return getBand(7);
+        case 8: return getBand(8);
+        case 9: return getBand(9);
+        case 10: return getBand(10);
+        default: return getBand(10);
       }
     },
     // seaLandRatio に応じて中心間の最低距離を計算する

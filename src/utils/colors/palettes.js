@@ -38,8 +38,8 @@ function getEraColors_Bombardment() {
         highland: '#3E2F1F',
         alpine: '#2B2B2B',
         tundra: '#474747',
-        landGlacier: '#a1a58a',
-        seaGlacier: '#AFDFE4',
+        landGlacier: '#a9b6bd',
+        seaGlacier: '#9db3bf',
         glacier: '#A59A8A',
         border: '#000000'
     };
