@@ -76,7 +76,7 @@ export function computeLnGases(f_CO2, f_CH4) {
 }
 
 
-export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, averageTemperature, Time_yr = 0) {
+export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, averageTemperature, Time_yr = 0, photosynthEraActive = false) {
     // Normalize inputs while preserving explicit zeros
     Pressure = toNum(Pressure, 0);
     lnCO2 = toNum(lnCO2, 0);
@@ -89,10 +89,17 @@ export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f
 
     let tau = Math.pow(Pressure, 0.3) * (0.55 * lnCO2 + 0.55 * lnCH4 + 0.6 * H2O_eff + f_H2 * (0.8 * f_N2 + 0.3 * f_H2 + 0.2 * f_CO2));
 
-    const n = 2 + 0.7 * Math.tanh((averageTemperature - 15) / 20);
+    const n = 1.8 + 0.7 * Math.tanh((averageTemperature - 15) / 20);
     tau = Math.min(tau, 15); // tau capped to avoid runaway greenhouse / numerical lock-in
     let Radiation_cooling = 1 / (1 + tau / (Math.pow((averageTemperature + 273) / (15 + 273), n)));
     Radiation_cooling = (0.08 + 0.92 * Radiation_cooling) * (1 + 0.4 * Math.exp(-Time_yr / 1e9));
+
+    // 実験用: 光合成細菌（シアノバクテリア）出現期に放射冷却を強めるボーナス
+    // 有効化された場合のみ Radiation_cooling を 0.8 乗して冷却を強める（デフォルトは無効）
+    if (photosynthEraActive) {
+        Radiation_cooling = Math.pow(Radiation_cooling, 0.8);
+    }
+
     return Radiation_cooling;
 }
 
