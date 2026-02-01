@@ -76,7 +76,7 @@ export function computeLnGases(f_CO2, f_CH4) {
 }
 
 
-export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, averageTemperature, solarEvolution, Time_yr = 0) {
+export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, averageTemperature, Time_yr = 0) {
     // Normalize inputs while preserving explicit zeros
     Pressure = toNum(Pressure, 0);
     lnCO2 = toNum(lnCO2, 0);
@@ -86,19 +86,18 @@ export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f
     f_N2 = toNum(f_N2, 0.78);
     f_CO2 = toNum(f_CO2, 0.0004);
     averageTemperature = toNum(averageTemperature, 15);
-    solarEvolution = toNum(solarEvolution, 1);
 
-    let tau = Math.pow(Pressure, 0.3) * (0.45 * lnCO2 + 0.55 * lnCH4 + 0.45 * H2O_eff + f_H2 * (0.8 * f_N2 + 0.3 * f_H2 + 0.2 * f_CO2));
+    let tau = Math.pow(Pressure, 0.3) * (0.55 * lnCO2 + 0.55 * lnCH4 + 0.6 * H2O_eff + f_H2 * (0.8 * f_N2 + 0.3 * f_H2 + 0.2 * f_CO2));
 
-    const n = 2.2 + 0.8 * Math.tanh((averageTemperature - 15) / 20);
+    const n = 2 + 0.7 * Math.tanh((averageTemperature - 15) / 20);
     tau = Math.min(tau, 15); // tau capped to avoid runaway greenhouse / numerical lock-in
-    let Radiation_cooling = 1 / (1 + tau / (Math.pow((averageTemperature + 273) / (15 + 273), n) * Math.pow(solarEvolution, 1.25)));
-    Radiation_cooling = (0.15 + 0.85 * Radiation_cooling) * (1 + 0.4 * Math.exp(-Time_yr / 1e9));
+    let Radiation_cooling = 1 / (1 + tau / (Math.pow((averageTemperature + 273) / (15 + 273), n)));
+    Radiation_cooling = (0.08 + 0.92 * Radiation_cooling) * (1 + 0.4 * Math.exp(-Time_yr / 1e9));
     return Radiation_cooling;
 }
 
-export function computeRadiativeEquilibriumCalc({ solarEvolution, Meteo_eff = 1, sol_event = 0, albedo = 0.3, Radiation_cooling }) {
-    const Sol = 950 * solarEvolution + sol_event;
+export function computeRadiativeEquilibriumCalc({ solarEvolution, Meteo_eff = 1, sol_event = 0, albedo = 0.3, Radiation_cooling, initialSol = 950 }) {
+    const Sol = initialSol * solarEvolution + sol_event;
     const sigma = 5.67e-8;
     const averageTemperature_calc = Math.pow((Sol * Meteo_eff * (1 - albedo)) / (4 * sigma * Math.pow(Radiation_cooling, 0.7)), 0.25);
     return { averageTemperature_calc, Sol };

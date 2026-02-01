@@ -252,7 +252,7 @@ export function computeNextClimateTurn(cur) {
         Turn_yr ** 0.5
         * 0.00000025
         * (Volcano_event + Volcano_event_manual)
-        * Math.pow(4.55e9 / (Time_yr + 100000000), 1.2)
+        * Math.pow(4.55e9 / (Time_yr + 0.1e9), 1.25)
         * (1 + 0.5 * ((f_land_original - 0.3) / 0.3))
         * (0.5 + (Math.random() + Math.random()) / 2);
 
@@ -380,7 +380,16 @@ export function computeNextClimateTurn(cur) {
 
     // --- Step7: 平均気温 ---
     // Sol / milankovitch は radiative.js 内の computeRadiativeEquilibriumCalc で計算するため重複を削除
-    const { averageTemperature_calc, Sol } = computeRadiativeEquilibriumCalc({ solarEvolution, Time_yr, Meteo_eff, sol_event, albedo, Radiation_cooling });
+    const initialSolVal = Number(constants.initialSol) || 950;
+    const { averageTemperature_calc, Sol } = computeRadiativeEquilibriumCalc({
+        solarEvolution,
+        Time_yr,
+        Meteo_eff,
+        sol_event,
+        albedo,
+        Radiation_cooling,
+        initialSol: initialSolVal
+    });
 
     if (Time_turn === 0) {
         averageTemperature = averageTemperature_calc - 273.15;
@@ -556,7 +565,16 @@ export function computeRadiativeEquilibriumTempK(state, options = {}) {
     // compute albedo via shared helper
     const albedo = computeAlbedo({ f_cloud, hazeFrac, terrain, Time_yr });
 
-    const { averageTemperature_calc, Sol } = computeRadiativeEquilibriumCalc({ solarEvolution, Time_yr, Meteo_eff, sol_event, albedo, Radiation_cooling });
+    const initialSolVal = Number(constants.initialSol) || 950;
+    const { averageTemperature_calc, Sol } = computeRadiativeEquilibriumCalc({
+        solarEvolution,
+        Time_yr,
+        Meteo_eff,
+        sol_event,
+        albedo,
+        Radiation_cooling,
+        initialSol: initialSolVal
+    });
     return { averageTemperature_calc, Sol, f_cloud, Radiation_cooling, H2O_eff, f_H2O };
 }
 

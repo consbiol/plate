@@ -137,6 +137,7 @@ export function buildClimateOutputHtml({ climateTurn, climateVars, climate } = {
       <div class="row"><label>dT (℃):</label><span>${fmtNum(constants.dT, 3)}</span> <span class="muted">→地球型15℃</span></div>
       <div class="row"><label>H2O_max:</label><span>${fmtNum(constants.H2O_max, 6)}</span> <span class="muted">→地球型1.65</span></div>
       <div class="row"><label>Sol (W/m2):</label><span>${fmtNum(v.Sol, 3)}</span> <span class="muted">(地球現在≈1361)</span></div>
+      <div class="row"><label>initialSol (W/m2):</label><span>${fmtNum(constants.initialSol, 3)}</span> <span class="muted">→地球型950</span></div>
       <div class="row"><label>Radiation_cooling:</label><span>${fmtSig(v.Radiation_cooling, 3)}</span></div>
       <div class="row"><label>solarFlareUpRate:</label><span>${fmtSig(constants.solarFlareUpRate, 3)}</span> <span class="muted">→地球型0.3</span></div>
       <div class="row"><label>argonCapacity:</label><span>${fmtSig(constants.argonCapacity, 3)}</span> <span class="muted">→地球型0.0101</span></div>

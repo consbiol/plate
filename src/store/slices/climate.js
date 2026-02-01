@@ -163,7 +163,9 @@ function buildSeededConstants({ deterministicSeed }) {
         // Step6
         T_sat: sampleRange(rng, 24, 32),
         dT: sampleRange(rng, 12, 18),
-        H2O_max: sampleRange(rng, 1.3, 1.6)
+        H2O_max: sampleRange(rng, 1.3, 1.6),
+        // Step7
+        initialSol: sampleRange(rng, 850, 1050)
     };
 }
 
