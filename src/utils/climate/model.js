@@ -25,10 +25,10 @@ const ERA_PLAND_T = /** @type {Record<string, number>} */ ({
 });
 
 const ERA_OCEAN_PLANT_O2_BASE = /** @type {Record<string, number>} */ ({
-    '光合成細菌誕生時代': 0.15,
+    '光合成細菌誕生時代': 0.1,
     '真核生物誕生時代': 0.3,
-    '多細胞生物誕生時代': 0.6,
-    '海洋生物多様化時代': 0.8,
+    '多細胞生物誕生時代': 0.5,
+    '海洋生物多様化時代': 0.7,
     '苔類進出時代': 1.0,
     'シダ植物時代': 1.0,
     '大森林時代': 1.0,
@@ -282,7 +282,7 @@ export function computeNextClimateTurn(cur) {
     const volcGate = f_O2_forAbs / (f_O2_forAbs + 0.1); // 火山項のゲート
     const O2_abs =
         Turn_yr ** 0.5
-        * 0.00008
+        * 0.00002
         * land_abs_eff
         * (f_land / 0.3)
         * (Math.pow((f_O2_forAbs / 0.21), 0.6) + 0.1)
@@ -379,7 +379,6 @@ export function computeNextClimateTurn(cur) {
     let Radiation_cooling = computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, averageTemperature, solarEvolution, Time_yr);
 
     // --- Step7: 平均気温 ---
-    // Sol / milankovitch は radiative.js 内の computeRadiativeEquilibriumCalc で計算するため重複を削除
     const initialSolVal = Number(constants.initialSol) || 950;
     const { averageTemperature_calc, Sol } = computeRadiativeEquilibriumCalc({
         solarEvolution,

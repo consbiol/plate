@@ -87,7 +87,7 @@ export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f
     f_CO2 = toNum(f_CO2, 0.0004);
     averageTemperature = toNum(averageTemperature, 15);
 
-    let tau = Math.pow(Pressure, 0.3) * (0.55 * lnCO2 + 0.55 * lnCH4 + 0.6 * H2O_eff + f_H2 * (0.8 * f_N2 + 0.3 * f_H2 + 0.2 * f_CO2));
+    let tau = Math.pow(Pressure, 0.5) * (1.5 * lnCO2 + 1.5 * lnCH4 + 1.5 * H2O_eff + f_H2 * (0.8 * f_N2 + 0.8 * f_H2 + 0.4 * f_CO2));
 
     const n = 1.8 + 0.7 * Math.tanh((averageTemperature - 15) / 20);
     tau = Math.min(tau, 15); // tau capped to avoid runaway greenhouse / numerical lock-in
@@ -95,9 +95,9 @@ export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f
     Radiation_cooling = (0.08 + 0.92 * Radiation_cooling) * (1 + 0.4 * Math.exp(-Time_yr / 1e9));
 
     // 実験用: 光合成細菌（シアノバクテリア）出現期に放射冷却を強めるボーナス
-    // 有効化された場合のみ Radiation_cooling を 0.8 乗して冷却を強める（デフォルトは無効）
+    // 有効化された場合のみ Radiation_cooling を 0.75 乗して冷却を強める（デフォルトは無効）
     if (photosynthEraActive) {
-        Radiation_cooling = Math.pow(Radiation_cooling, 0.8);
+        Radiation_cooling = Math.pow(Radiation_cooling, 0.75);
     }
 
     return Radiation_cooling;
@@ -106,7 +106,7 @@ export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f
 export function computeRadiativeEquilibriumCalc({ solarEvolution, Meteo_eff = 1, sol_event = 0, albedo = 0.3, Radiation_cooling, initialSol = 950 }) {
     const Sol = initialSol * solarEvolution + sol_event;
     const sigma = 5.67e-8;
-    const averageTemperature_calc = Math.pow((Sol * Meteo_eff * (1 - albedo)) / (4 * sigma * Math.pow(Radiation_cooling, 0.7)), 0.25);
+    const averageTemperature_calc = Math.pow((Sol * Meteo_eff * (1 - albedo)) / (4 * sigma * Math.pow(Radiation_cooling, 0.6)), 0.25);
     return { averageTemperature_calc, Sol };
 }
 
