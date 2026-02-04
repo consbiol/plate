@@ -3,6 +3,7 @@ import {
     getEraTerrainColors,
     getEraLandTint
 } from '../../../utils/colors.js';
+import { rand2 } from '../cloudNoise.js';
 import { getCellClassWeight } from '../classWeight.js';
 import { isCityCell as isCityCellShared } from '../nightShadow.js';
 
@@ -76,10 +77,13 @@ export function buildMapPixels({ vm, width, height, expandedRowMap = null }) {
                 if (cell && cell.terrain && cell.terrain.type === 'land' && cell.terrain.land !== 'glacier') {
                     const tint = vm.parseColorToRgb(vm.landTintColor || getEraLandTint(vm.era));
                     const k = Math.max(0, Math.min(1, vm.landTintStrength || 0));
+                    // ランダム濃淡
+                    const nVar = rand2(x, y); // util imported
+                    const shade = 1.0 + (nVar - 0.5) * 0.1;
                     rgb = [
-                        Math.round(rgb[0] * (1 - k) + tint[0] * k),
-                        Math.round(rgb[1] * (1 - k) + tint[1] * k),
-                        Math.round(rgb[2] * (1 - k) + tint[2] * k)
+                        Math.max(0, Math.min(255, Math.round((rgb[0] * (1 - k) + tint[0] * k) * shade))),
+                        Math.max(0, Math.min(255, Math.round((rgb[1] * (1 - k) + tint[1] * k) * shade))),
+                        Math.max(0, Math.min(255, Math.round((rgb[2] * (1 - k) + tint[2] * k) * shade)))
                     ];
                 }
             }

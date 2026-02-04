@@ -251,10 +251,13 @@ export function drawSphereCPU(vm, canvas) {
                 if (cell && cell.terrain && cell.terrain.type === 'land' && cell.terrain.land !== 'glacier') {
                     const tint = vm.parseColorToRgb(vm.landTintColor || getEraLandTint(vm.era));
                     const k = Math.max(0, Math.min(1, (vm.landTintStrength || 0) * 0.6)); // 極はやや弱め
+                    // ランダム濃淡
+                    const nVar = vm._rand2 ? vm._rand2(xMap, yMap) : 0.5;
+                    const shade = 1.0 + (nVar - 0.5) * 0.1;
                     colMap = [
-                        Math.round(colMap[0] * (1 - k) + tint[0] * k),
-                        Math.round(colMap[1] * (1 - k) + tint[1] * k),
-                        Math.round(colMap[2] * (1 - k) + tint[2] * k)
+                        Math.max(0, Math.min(255, Math.round((colMap[0] * (1 - k) + tint[0] * k) * shade))),
+                        Math.max(0, Math.min(255, Math.round((colMap[1] * (1 - k) + tint[1] * k) * shade))),
+                        Math.max(0, Math.min(255, Math.round((colMap[2] * (1 - k) + tint[2] * k) * shade)))
                     ];
                 }
             }
@@ -380,9 +383,12 @@ export function drawSphereCPU(vm, canvas) {
                 if (cell && cell.terrain && cell.terrain.type === 'land' && cell.terrain.land !== 'glacier') {
                     const tint = vm.parseColorToRgb(vm.landTintColor || getEraLandTint(vm.era));
                     const k = Math.max(0, Math.min(1, vm.landTintStrength || 0));
-                    r = Math.round(r * (1 - k) + tint[0] * k);
-                    g = Math.round(g * (1 - k) + tint[1] * k);
-                    b = Math.round(b * (1 - k) + tint[2] * k);
+                    // ランダム濃淡（地形っぽさ）: 基準±5%程度
+                    const nVar = vm._rand2 ? vm._rand2(xMap, yMap) : 0.5;
+                    const shade = 1.0 + (nVar - 0.5) * 0.1;
+                    r = Math.max(0, Math.min(255, Math.round((r * (1 - k) + tint[0] * k) * shade)));
+                    g = Math.max(0, Math.min(255, Math.round((g * (1 - k) + tint[1] * k) * shade)));
+                    b = Math.max(0, Math.min(255, Math.round((b * (1 - k) + tint[2] * k) * shade)));
                 }
             }
             // --- 雲オーバーレイ（描画後に適用） ---
