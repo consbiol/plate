@@ -282,7 +282,7 @@ export function computeNextClimateTurn(cur) {
     const volcGate = f_O2_forAbs / (f_O2_forAbs + 0.1); // 火山項のゲート
     const O2_abs =
         Turn_yr ** 0.5
-        * 0.00002
+        * 0.00008
         * land_abs_eff
         * (f_land / 0.3)
         * (Math.pow((f_O2_forAbs / 0.21), 0.6) + 0.1)
@@ -298,7 +298,7 @@ export function computeNextClimateTurn(cur) {
     const fungal_factor = computeFungalFactor(era);
     const O2_prod =
         Turn_yr ** 0.5
-        * 0.0005
+        * 0.0007
         * (
             0.6
             * f_ocean

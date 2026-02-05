@@ -89,7 +89,11 @@ export function computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f
 
     let tau = Math.pow(Pressure, 0.5) * (1.5 * lnCO2 + 1.5 * lnCH4 + 1.5 * H2O_eff + f_H2 * (0.8 * f_N2 + 0.8 * f_H2 + 0.4 * f_CO2));
 
-    const n = 1.8 + 0.7 * Math.tanh((averageTemperature - 15) / 20);
+    let n =
+        averageTemperature <= 15
+            ? 1.8 + 0.7 * Math.tanh((averageTemperature - 15) / 20)
+            : 1.7 + 0.4 * Math.tanh((averageTemperature - 15) / 20);
+    n = Math.max(1.8, n);
     tau = Math.min(tau, 15); // tau capped to avoid runaway greenhouse / numerical lock-in
     let Radiation_cooling = 1 / (1 + tau / (Math.pow((averageTemperature + 273) / (15 + 273), n)));
     Radiation_cooling = (0.08 + 0.92 * Radiation_cooling) * (1 + 0.4 * Math.exp(-Time_yr / 1e9));
