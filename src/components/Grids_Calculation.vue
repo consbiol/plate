@@ -1331,8 +1331,9 @@ export default {
         this.superPloom_calc = spc;
         if (!Array.isArray(this.superPloom_history)) this.superPloom_history = [];
         this.superPloom_history.push(spc);
-        const superPloom = (this.superPloom_history.length > 5)
-          ? this.superPloom_history[this.superPloom_history.length - 6]
+        // 厳密な遅延を1ターンにする: 直前ターンの値を参照する
+        const superPloom = (this.superPloom_history.length > 1)
+          ? this.superPloom_history[this.superPloom_history.length - 2]
           : 0;
 
         // フェーズ切替: 接近側で superPloom > 30 -> 反発へ。反発で superPloom == 0 -> 接近へ。
