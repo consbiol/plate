@@ -230,9 +230,9 @@ export function computeNextClimateTurn(cur) {
         * 0.00000008
         * (f_land / 0.3)
         * land_weathering_eff
-        * Math.exp((averageTemperature - 15) / 12)
-        * Math.pow((f_CO2 / 0.0004), 0.7)
-        * Math.exp(-sq((averageTemperature - 40) / 25));
+        * Math.exp((averageTemperature - 15) / 18)
+        * Math.pow((f_CO2 / 0.002), 0.8)
+        * Math.exp(-sq((averageTemperature - 30) / 22));
 
     const CO2_abs_plant =
         Turn_yr ** 0.5
