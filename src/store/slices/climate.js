@@ -62,6 +62,8 @@ function buildDefaultClimateState() {
             // Volcano_event_manual のワンショット残ターン数（mutation が 3 に設定し、model 側でデクリメントして 0 で 0 に戻す）
             Volcano_manual_remaining: 0,
             Meteo_eff: 1,
+            // 隕石落下時の CO2 加算量（bar）。model 側で f_CO2_calc に加算される。
+            Meteo_CO2_add: 0,
             // Meteo のワンショット残ターン（mutation で 1 に設定し、model 側でデクリメントして 0 で Meteo_eff を 1 に戻す）
             Meteo_one_shot_remaining: 0,
             // Fire のワンショット残ターン（mutation で 1 に設定し、model 側でデクリメントして 0 で Fire_event_CO2 を 0 に戻す）
@@ -288,6 +290,16 @@ export function createClimateSlice() {
                     };
                     const val = Object.prototype.hasOwnProperty.call(mapping, lvl) ? mapping[lvl] : 1.00;
                     ev.Meteo_eff = Number(val);
+                    // レベル -> CO2 加算量 (bar) のマッピング
+                    const co2Mapping = {
+                        0: 0,
+                        1: 0.0002,   // 200 ppm
+                        2: 0.0005,   // 500 ppm
+                        3: 0.001,    // 1000 ppm
+                        4: 0.002,    // 2000 ppm
+                        5: 0.003     // 3000 ppm
+                    };
+                    ev.Meteo_CO2_add = Object.prototype.hasOwnProperty.call(co2Mapping, lvl) ? Number(co2Mapping[lvl]) : 0;
                     // 1ターンだけ有効にするフラグ（model側でデクリメントして次ターンにリセットする）
                     ev.Meteo_one_shot_remaining = (lvl === 0) ? 0 : 1;
                 }, { forceTurnWindow: true });

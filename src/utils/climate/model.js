@@ -160,6 +160,7 @@ export function computeNextClimateTurn(cur) {
     // --- Step2: イベント ---
     const Meteo_eff = Number(events.Meteo_eff);
     const Fire_event_CO2 = Number(events.Fire_event_CO2);
+    const Meteo_CO2_add = Number(events.Meteo_CO2_add) || 0;
     const CH4_event = Number(events.CH4_event);
     const sol_event = Number(events.sol_event);
     const CosmicRay = (typeof events.CosmicRay === 'number') ? events.CosmicRay : 1;
@@ -253,7 +254,7 @@ export function computeNextClimateTurn(cur) {
         * 0.00000025
         * (Volcano_event + Volcano_event_manual)
         * Math.pow(4.55e9 / (Time_yr + 0.1e9), 1.25)
-        * (1 + 0.5 * ((f_land_original - 0.3) / 0.3))
+        * (1 + 0.4 * Math.tanh((f_land_original - 0.3) / 0.2))
         * (0.5 + (Math.random() + Math.random()) / 2);
 
     const CO2_release_ocean = Math.max(CO2_flux_ocean, 0);
@@ -268,7 +269,7 @@ export function computeNextClimateTurn(cur) {
     if (Time_turn === 0 || eraWillChange) {
         f_CO2 = f_CO2_calc;
     } else {
-        f_CO2 = CO2_alpha * f_CO2_calc + (1 - CO2_alpha) * f_CO2;
+        f_CO2 = CO2_alpha * f_CO2_calc + (1 - CO2_alpha) * f_CO2 + Meteo_CO2_add;
     }
     f_CO2 = Math.max(f_CO2, 0.000006);
 
@@ -438,8 +439,9 @@ export function computeNextClimateTurn(cur) {
     if (meteoRemaining > 0) {
         nextEvents.Meteo_one_shot_remaining = nextMeteoRemaining;
         if (nextMeteoRemaining === 0) {
-            // ワンショットが終了したら Meteo_eff を Lv0 (=1) に戻す
+            // ワンショットが終了したら Meteo_eff を Lv0 (=1) に戻し、CO2加算もリセット
             nextEvents.Meteo_eff = 1;
+            nextEvents.Meteo_CO2_add = 0;
         }
     }
 
@@ -462,6 +464,17 @@ export function computeNextClimateTurn(cur) {
         if (nextVolcanoRemaining === 0) {
             // ワンショットが終了したら Volcano_event_manual を Lv0 (=0) に戻す
             nextEvents.Volcano_event_manual = 0;
+        }
+    }
+
+    // Cosmic (超新星 / ガンマ線バースト: CosmicRay ワンショット)
+    const cosmicRemaining = Number(events.Cosmic_one_shot_remaining || 0);
+    const nextCosmicRemaining = Math.max(0, cosmicRemaining - 1);
+    if (cosmicRemaining > 0) {
+        nextEvents.Cosmic_one_shot_remaining = nextCosmicRemaining;
+        if (nextCosmicRemaining === 0) {
+            // ワンショットが終了したら CosmicRay を 1 (デフォルト) に戻す
+            nextEvents.CosmicRay = 1;
         }
     }
 
