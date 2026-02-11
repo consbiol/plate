@@ -64,43 +64,47 @@
       <div class="event-group">
         <div class="event-label">隕石落下</div>
         <div class="event-buttons">
-          <button @click="triggerMeteo(1)">Lv1</button>
-          <button @click="triggerMeteo(2)">Lv2</button>
-          <button @click="triggerMeteo(3)">Lv3</button>
-          <button @click="triggerMeteo(4)">Lv4</button>
-          <button @click="triggerMeteo(5)">Lv5</button>
+          <button @click="triggerMeteo(1)" :disabled="isEventLocked">Lv1</button>
+          <button @click="triggerMeteo(2)" :disabled="isEventLocked">Lv2</button>
+          <button @click="triggerMeteo(3)" :disabled="isEventLocked">Lv3</button>
+          <button @click="triggerMeteo(4)" :disabled="isEventLocked">Lv4</button>
+          <button @click="triggerMeteo(5)" :disabled="isEventLocked">Lv5</button>
         </div>
       </div>
       <div class="event-group">
         <div class="event-label">森林火災</div>
         <div class="event-buttons">
-          <button @click="triggerFire(1)">Lv1</button>
-          <button @click="triggerFire(2)">Lv2</button>
-          <button @click="triggerFire(3)">Lv3</button>
-          <button @click="triggerFire(4)">Lv4</button>
-          <button @click="triggerFire(5)">Lv5</button>
+          <button @click="triggerFire(1)" :disabled="isEventLocked">Lv1</button>
+          <button @click="triggerFire(2)" :disabled="isEventLocked">Lv2</button>
+          <button @click="triggerFire(3)" :disabled="isEventLocked">Lv3</button>
+          <button @click="triggerFire(4)" :disabled="isEventLocked">Lv4</button>
+          <button @click="triggerFire(5)" :disabled="isEventLocked">Lv5</button>
         </div>
+      </div>
+      <div class="event-group">
+        <div class="event-label">宇宙線イベント</div>
+        <label><input type="checkbox" v-model="cosmicEnabled" /> 有効</label>
       </div>
       <div class="event-group">
         <div class="event-label">近傍超新星</div>
         <div class="event-buttons">
-          <button @click="triggerCosmic()">発火 (3ターン)</button>
+          <button @click="triggerCosmic()" :disabled="isEventLocked || !cosmicEnabled">発火 (3ターン)</button>
         </div>
       </div>
       <div class="event-group">
         <div class="event-label">ガンマ線バースト</div>
         <div class="event-buttons">
-          <button @click="triggerGamma()">発火 (1ターン)</button>
+          <button @click="triggerGamma()" :disabled="isEventLocked || !cosmicEnabled">発火 (1ターン)</button>
         </div>
       </div>
       <div class="event-group">
         <div class="event-label">火山イベント</div>
         <div class="event-buttons">
-          <button @click="triggerVolcano(1)">Lv1</button>
-          <button @click="triggerVolcano(2)">Lv2</button>
-          <button @click="triggerVolcano(3)">Lv3</button>
-          <button @click="triggerVolcano(4)">Lv4</button>
-          <button @click="triggerVolcano(5)">Lv5</button>
+          <button @click="triggerVolcano(1)" :disabled="isEventLocked">Lv1</button>
+          <button @click="triggerVolcano(2)" :disabled="isEventLocked">Lv2</button>
+          <button @click="triggerVolcano(3)" :disabled="isEventLocked">Lv3</button>
+          <button @click="triggerVolcano(4)" :disabled="isEventLocked">Lv4</button>
+          <button @click="triggerVolcano(5)" :disabled="isEventLocked">Lv5</button>
         </div>
       </div>
     </div>
@@ -118,6 +122,11 @@ export default {
   name: 'GeneratorActions',
   props: {
     disabled: { type: Boolean, required: false, default: false }
+  },
+  data() {
+    return {
+      cosmicEnabled: true
+    };
   },
   computed: {
     solEvent() {
@@ -173,6 +182,24 @@ export default {
     cosmicVal() {
       const c = (this.$store && this.$store.state && this.$store.state.climate) ? this.$store.state.climate : null;
       return (c && c.events && typeof c.events.CosmicRay === 'number') ? c.events.CosmicRay : 1;
+    },
+    // 強制Turn_yrウィンドウ中（20ターン）はイベントボタンをロックする
+    isEventLocked() {
+      return this.$store && this.$store.getters && this.$store.getters.isEventLocked;
+    },
+    // 現在の時代（store.climate.era）
+    currentEra() {
+      const c = (this.$store && this.$store.state && this.$store.state.climate) ? this.$store.state.climate : null;
+      return c ? c.era : null;
+    }
+  },
+  watch: {
+    // 時代変更時にチェックボックスのデフォルトをリセット
+    currentEra: {
+      immediate: true,
+      handler(era) {
+        this.cosmicEnabled = !(era === '文明時代' || era === '海棲文明時代');
+      }
     }
   },
   methods: {

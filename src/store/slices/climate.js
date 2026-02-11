@@ -182,7 +182,7 @@ export function createClimateSlice() {
         const cur = curClimate || buildDefaultClimateState();
         const era = cur.era;
         const isCivilEra = (era === '文明時代' || era === '海棲文明時代');
-        if (isCivilEra) return cur;
+        // if (isCivilEra) return cur;
 
         const nTurns = Math.max(0, Math.floor(Number(turns) || 0));
         if (nTurns <= 0) return cur;
@@ -191,6 +191,12 @@ export function createClimateSlice() {
             ? cur.forcedOriginalTurnYr
             : (typeof cur.Turn_yr === 'number' && cur.Turn_yr > 0 ? cur.Turn_yr : null);
 
+        // Determine target Turn_yr
+        let targetTurnYr = Number(forcedTurnYr) || 1000;
+        if (isCivilEra) {
+            targetTurnYr = 10;
+        }
+
         return {
             ...cur,
             // 強制開始前の Turn_yr を保持（UI変更値を含む）
@@ -198,7 +204,7 @@ export function createClimateSlice() {
             // この瞬間から nTurns ターン強制（重複発火時はここで再スタートする）
             forcedTurnsRemaining: nTurns,
             // 即時反映（次ターン計算から強制されるが、UI表示を直ちに揃えたい場合に備えてここでも反映）
-            Turn_yr: Number(forcedTurnYr) || 1000
+            Turn_yr: targetTurnYr
         };
     }
 
@@ -229,7 +235,12 @@ export function createClimateSlice() {
                 isRunning: state.climate?.isRunning
             }),
             climateVars: (state) => state.climate?.vars,
-            climateHistory: (state) => state.climate?.history
+            climateHistory: (state) => state.climate?.history,
+            // 強制Turn_yrウィンドウ中（forcedTurnsRemaining > 0）はイベントボタンをロックする
+            isEventLocked: (state) => {
+                const c = state.climate;
+                return !!(c && typeof c.forcedTurnsRemaining === 'number' && c.forcedTurnsRemaining > 0);
+            }
         },
         mutations: {
             setClimate(state, next) {
@@ -333,11 +344,11 @@ export function createClimateSlice() {
                 patchClimateEvents(state, (ev) => {
                     const mapping = {
                         0: 0,
-                        1: 0.5,
-                        2: 1.5,
-                        3: 3.0,
-                        4: 4.0,
-                        5: 6.0
+                        1: 6,
+                        2: 12,
+                        3: 25,
+                        4: 50,
+                        5: 100
                     };
                     const val = Object.prototype.hasOwnProperty.call(mapping, lvl) ? mapping[lvl] : 0;
                     ev.Volcano_event_manual = Number(val);
@@ -387,7 +398,7 @@ export function createClimateSlice() {
                     if (!isFinite(d)) return false;
                     // -0.1 .. +0.1 の範囲
                     ev.land_ratio_event = clamp(prev + d, -0.1, 0.1);
-                });
+                }, { forceTurnWindow: true });
             }
         },
         actions: {

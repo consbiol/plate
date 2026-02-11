@@ -86,8 +86,15 @@ export function computeNextClimateTurn(cur) {
     let forcedOriginalTurnYr = (typeof state.forcedOriginalTurnYr === 'number') ? state.forcedOriginalTurnYr : null;
 
     // 強制中は「このターンの計算」に使う Turn_yr を 1000 にする（alpha や nextTimeYr も含む）
+    // 強制中は「このターンの計算」に使う Turn_yr を 1000 にする（alpha や nextTimeYr も含む）
+    // NOTE: 文明時代・海棲文明時代は 10 に固定する
     if (forcedTurnsRemaining > 0) {
-        Turn_yr = 1000;
+        const isCivilEra = (era === '文明時代' || era === '海棲文明時代');
+        if (isCivilEra) {
+            Turn_yr = 10;
+        } else {
+            Turn_yr = 1000;
+        }
     }
 
     const { GI_alpha, CO2_alpha, O2_alpha, Temp_alpha } = buildTurnAlphaParams(Turn_yr);
@@ -291,7 +298,7 @@ export function computeNextClimateTurn(cur) {
         * f_O2_forAbs
         + Turn_yr ** 0.5
         * 0.0003
-        * Volcano_event
+        * (Volcano_event + Volcano_event_manual / 20)
         * volcGate;
 
     const ocean_plantO2_base = computeOceanPlantO2Base(era);
@@ -421,7 +428,12 @@ export function computeNextClimateTurn(cur) {
             nextTurnYrForState = forcedOriginalTurnYr;
             forcedOriginalTurnYr = null;
         } else {
-            nextTurnYrForState = 1000;
+            const nextIsCivil = (nextEra === '文明時代' || nextEra === '海棲文明時代');
+            if (nextIsCivil) {
+                nextTurnYrForState = 10;
+            } else {
+                nextTurnYrForState = 1000;
+            }
         }
     } else {
         // 強制なし：ユーザー指定（baseTurnYr）を維持
