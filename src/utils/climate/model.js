@@ -38,10 +38,10 @@ const ERA_OCEAN_PLANT_O2_BASE = /** @type {Record<string, number>} */ ({
 
 const ERA_LAND_PLANT_O2 = /** @type {Record<string, number>} */ ({
     '苔類進出時代': 0.07,
-    'シダ植物時代': 1.2,
-    '大森林時代': 1.0,
-    '文明時代': 1.0,
-    '海棲文明時代': 1.0,
+    'シダ植物時代': 1.0,
+    '大森林時代': 0.85,
+    '文明時代': 0.85,
+    '海棲文明時代': 0.85,
 });
 
 const ERA_FUNGAL_FACTOR = /** @type {Record<string, number>} */ ({
@@ -210,6 +210,8 @@ export function computeNextClimateTurn(cur) {
     const f_ocean = Number(terrain.f_ocean) || 0;
     const f_green = Number(terrain.f_green) || 0;
     const f_land_original = Number(terrain.f_land_original) || 0.3;
+    const f_deepSea = Number(terrain.f_deepSea) || 0;
+    const f_shallowSea = Number(terrain.f_shallowSea) || 0;
 
     // CO2
     const CO2_carbonate_eq =
@@ -309,10 +311,11 @@ export function computeNextClimateTurn(cur) {
         * 0.0007
         * (
             0.6
-            * f_ocean
+            // eslint-disable-next-line no-undef
+            * (0.31 * f_deepSea + 2.6 * f_shallowSea)
             * Math.exp(-sq((averageTemperature - 20) / 18))
             * ocean_plantO2_base
-            * (1 + 0.25 * f_green * land_plantO2)
+            * (1 + 0.15 * f_green * land_plantO2 - 0.35 * Math.pow(f_green, 3) * land_plantO2)
             * ((f_CO2 / (f_CO2 + 0.0004)) + 0.5)
             + 0.4
             * f_green
