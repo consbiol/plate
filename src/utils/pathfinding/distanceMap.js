@@ -2,13 +2,14 @@
 // - トーラス形状など、座標のラップは呼び出し側で定義する
 // - directions は近傍方向の配列（例: 8近傍）
 
+import { torusDistance, torusWrap } from '../torus.js';
+
 export function computeDistanceMap({
     sources,
     N,
     directions,
     gridWidth,
-    wrap,
-    distance
+    gridHeight // Added gridHeight
 }) {
     const dist = new Array(N).fill(Infinity);
     const heap = [];
@@ -60,10 +61,10 @@ export function computeDistanceMap({
         if (!current) break;
         if (current.dist !== dist[current.idx]) continue;
         for (const dir of directions) {
-            const wrapped = wrap(current.x + dir.dx, current.y + dir.dy);
+            const wrapped = torusWrap(gridWidth, gridHeight, current.x + dir.dx, current.y + dir.dy);
             if (!wrapped) continue;
             const nIdx = wrapped.y * gridWidth + wrapped.x;
-            const w = distance(current.x, current.y, wrapped.x, wrapped.y);
+            const w = torusDistance(gridWidth, gridHeight, current.x, current.y, wrapped.x, wrapped.y);
             const nd = current.dist + w;
             if (nd < dist[nIdx]) {
                 dist[nIdx] = nd;

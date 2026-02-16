@@ -662,9 +662,6 @@ export default {
           highlandColor, alpineColor, tundraColor, glacierColor
         } = this._getBaseColors();
         const directions = getDirections8();
-        const wrap = (x, y) => this.torusWrap(x, y);
-        const distFn = (x1, y1, x2, y2) => this.torusDistance(x1, y1, x2, y2);
-
         const landSources = [];
         for (let gy = 0; gy < this.gridHeight; gy++) {
           for (let gx = 0; gx < this.gridWidth; gx++) {
@@ -677,8 +674,7 @@ export default {
           N,
           directions,
           gridWidth: this.gridWidth,
-          wrap,
-          distance: distFn
+          gridHeight: this.gridHeight
         });
 
         const seaSources = [];
@@ -693,8 +689,7 @@ export default {
           N,
           directions,
           gridWidth: this.gridWidth,
-          wrap,
-          distance: distFn
+          gridHeight: this.gridHeight
         });
 
         const colors = classifyBaseColors(this, {
