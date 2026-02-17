@@ -292,7 +292,14 @@ export default {
         _lastLakesList: null
       };
     },
-    _buildHighlandsCtx() {
+    _buildClassifyCtx() {
+      return {
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        baseSeaDistanceThreshold: this.baseSeaDistanceThreshold,
+        getLandDistanceThresholdForRow: (...args) => this._getLandDistanceThresholdForRow(...args)
+      };
+    },    _buildHighlandsCtx() {
       return {
         gridWidth: this.gridWidth,
         gridHeight: this.gridHeight,
@@ -692,7 +699,7 @@ export default {
           gridHeight: this.gridHeight
         });
 
-        const colors = classifyBaseColors(this, {
+        const colors = classifyBaseColors(this._buildClassifyCtx(), {
           N,
           landMask,
           noiseGrid,

@@ -1,6 +1,6 @@
 // distanceToSea / distanceToLand とノイズから、色（地形カテゴリ）を分類する
 
-export function classifyBaseColors(vm, {
+export function classifyBaseColors(ctx, {
   N,
   landMask,
   noiseGrid,
@@ -14,16 +14,16 @@ export function classifyBaseColors(vm, {
   desertColor
 }) {
   const colors = new Array(N);
-  for (let gy = 0; gy < vm.gridHeight; gy++) {
-    for (let gx = 0; gx < vm.gridWidth; gx++) {
-      const idx = gy * vm.gridWidth + gx;
+  for (let gy = 0; gy < ctx.gridHeight; gy++) {
+    for (let gx = 0; gx < ctx.gridWidth; gx++) {
+      const idx = gy * ctx.gridWidth + gx;
       const n = noiseGrid[idx];
       if (landMask[idx]) {
-        const bandThreshold = vm._getLandDistanceThresholdForRow(gy, gx);
+        const bandThreshold = ctx.getLandDistanceThresholdForRow(gy, gx);
         const landThreshold = bandThreshold + n * landNoiseAmplitude;
         colors[idx] = distanceToSea[idx] > landThreshold ? desertColor : lowlandColor;
       } else {
-        const seaThreshold = vm.baseSeaDistanceThreshold + n * seaNoiseAmplitude;
+        const seaThreshold = ctx.baseSeaDistanceThreshold + n * seaNoiseAmplitude;
         colors[idx] = distanceToLand[idx] > seaThreshold ? deepSeaColor : shallowSeaColor;
       }
     }
