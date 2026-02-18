@@ -1,7 +1,7 @@
 // 氷河の適用（上端/下端）
 // - Grids_Calculation.vue から切り出し（機能不変）
 
-function getAdditionalGlacierRowsForCell(vm, col, {
+function getAdditionalGlacierRowsForCell(ctx, col, {
   shallowSeaColor,
   deepSeaColor,
   lowlandColor,
@@ -11,15 +11,15 @@ function getAdditionalGlacierRowsForCell(vm, col, {
   alpineColor
 }) {
   if (col === shallowSeaColor || col === deepSeaColor) return 0;
-  if (col === lowlandColor) return vm.landGlacierExtraRows;
-  if (col === tundraColor) return vm.landGlacierExtraRows;
-  if (col === desertColor) return vm.landGlacierExtraRows;
-  if (col === highlandColor) return vm.highlandGlacierExtraRows;
-  if (col === alpineColor) return vm.alpineGlacierExtraRows;
+  if (col === lowlandColor) return ctx.landGlacierExtraRows;
+  if (col === tundraColor) return ctx.landGlacierExtraRows;
+  if (col === desertColor) return ctx.landGlacierExtraRows;
+  if (col === highlandColor) return ctx.highlandGlacierExtraRows;
+  if (col === alpineColor) return ctx.alpineGlacierExtraRows;
   return 0;
 }
 
-function applyGlacierPass(vm, {
+function applyGlacierPass(ctx, {
   colors,
   glacierNoiseTable,
   landNoiseAmplitude,
@@ -37,10 +37,10 @@ function applyGlacierPass(vm, {
   lakeMask,
   fromTop
 }) {
-  for (let gy = 0; gy < vm.gridHeight; gy++) {
-    for (let gx = 0; gx < vm.gridWidth; gx++) {
-      const idx = gy * vm.gridWidth + gx;
-      const distance = fromTop ? gy : (vm.gridHeight - 1 - gy);
+  for (let gy = 0; gy < ctx.gridHeight; gy++) {
+    for (let gx = 0; gx < ctx.gridWidth; gx++) {
+      const idx = gy * ctx.gridWidth + gx;
+      const distance = fromTop ? gy : (ctx.gridHeight - 1 - gy);
       const noise = glacierNoiseTable[idx] * landNoiseAmplitude;
 
       // Water detection:
@@ -52,7 +52,7 @@ function applyGlacierPass(vm, {
 
       const additionalGrids = isWater
         ? 0
-        : getAdditionalGlacierRowsForCell(vm, colors[idx], {
+        : getAdditionalGlacierRowsForCell(ctx, colors[idx], {
           shallowSeaColor,
           deepSeaColor,
           lowlandColor,
@@ -72,7 +72,7 @@ function applyGlacierPass(vm, {
   }
 }
 
-export function applyGlaciers(vm, {
+export function applyGlaciers(ctx, {
   colors,
   glacierNoiseTable,
   landNoiseAmplitude,
@@ -105,7 +105,7 @@ export function applyGlaciers(vm, {
       : (typeof computedTopGlacierRows === 'number' ? computedTopGlacierRows : landRows));
 
   // --- 氷河の適用（上端） ---
-  applyGlacierPass(vm, {
+  applyGlacierPass(ctx, {
     colors,
     glacierNoiseTable,
     landNoiseAmplitude,
@@ -125,7 +125,7 @@ export function applyGlaciers(vm, {
   });
 
   // --- 氷河の適用（下端） ---
-  applyGlacierPass(vm, {
+  applyGlacierPass(ctx, {
     colors,
     glacierNoiseTable,
     landNoiseAmplitude,
