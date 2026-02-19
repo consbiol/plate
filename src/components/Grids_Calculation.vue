@@ -337,6 +337,12 @@ export default {
         _getLandDistanceThresholdForRow: (...args) => this._getLandDistanceThresholdForRow(...args)
       };
     },
+    _buildCenterCellsCtx() {
+      return {
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight
+      };
+    },
     // サブRNG（サブストリーム）生成: ベースの deterministicSeed にラベルを連結して独立RNGを作る
     _getDerivedRng(...labels) {
       if (this.forceRandomDerivedRng) return null;
@@ -749,7 +755,7 @@ export default {
       } = stage2({ noiseGrid });
 
       // 各中心の陸セル一覧を前計算（湖/高地で再利用）
-      const { centerLandCells, centerLandCellsPre } = buildCenterLandCells(this, {
+      const { centerLandCells, centerLandCellsPre } = buildCenterLandCells(this._buildCenterCellsCtx(), {
         centers,
         ownerCenterIdx,
         landMask,

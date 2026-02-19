@@ -1,6 +1,6 @@
 // gridData の組み立て（terrain判定＋各種フラグ埋め込み）
 
-export function buildGridData(vm, {
+export function buildGridData(ctx, {
   N,
   colors,
   landMask,
@@ -21,9 +21,9 @@ export function buildGridData(vm, {
   seaPollutedMask
 }) {
   const gridData = new Array(N);
-  for (let gy = 0; gy < vm.gridHeight; gy++) {
-    for (let gx = 0; gx < vm.gridWidth; gx++) {
-      const idx = gy * vm.gridWidth + gx;
+  for (let gy = 0; gy < ctx.gridHeight; gy++) {
+    for (let gx = 0; gx < ctx.gridWidth; gx++) {
+      const idx = gy * ctx.gridWidth + gx;
       const temperature = null;
       const precipitation = null;
       const isLand = !!landMask[idx];
@@ -78,16 +78,16 @@ export function buildGridData(vm, {
   return gridData;
 }
 
-export function markCentersOnGridData(vm, { gridData, centers }) {
+export function markCentersOnGridData(ctx, { gridData, centers }) {
   // 中心点セルを赤で表示（フラグ埋め込み）
-  if (!vm.showCentersRed) return;
+  if (!ctx.showCentersRed) return;
   if (!Array.isArray(centers)) return;
   for (let ci = 0; ci < centers.length; ci++) {
     const c = centers[ci];
     if (!c) continue;
-    const cx = Math.max(0, Math.min(vm.gridWidth - 1, Math.floor(c.x)));
-    const cy = Math.max(0, Math.min(vm.gridHeight - 1, Math.floor(c.y)));
-    const idx = cy * vm.gridWidth + cx;
+    const cx = Math.max(0, Math.min(ctx.gridWidth - 1, Math.floor(c.x)));
+    const cy = Math.max(0, Math.min(ctx.gridHeight - 1, Math.floor(c.y)));
+    const idx = cy * ctx.gridWidth + cx;
     if (gridData[idx]) {
       gridData[idx].center = true;
     }
