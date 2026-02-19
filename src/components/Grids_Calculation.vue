@@ -343,6 +343,13 @@ export default {
         gridHeight: this.gridHeight
       };
     },
+    _buildAlpinesCtx() {
+      return {
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        torusWrap: (...args) => this.torusWrap(...args)
+      };
+    },
     // サブRNG（サブストリーム）生成: ベースの deterministicSeed にラベルを連結して独立RNGを作る
     _getDerivedRng(...labels) {
       if (this.forceRandomDerivedRng) return null;
@@ -468,7 +475,7 @@ export default {
     // 高山生成（高地に隣接しない高地セル）
     _generateAlpines(colors, highlandColor, lowlandColor, desertColor, alpineColor, directions) {
       // 実装は `src/utils/terrain/alpines.js` に分離（機能不変）
-      return generateAlpines(this, colors, highlandColor, lowlandColor, desertColor, alpineColor, directions);
+      return generateAlpines(this._buildAlpinesCtx(), colors, highlandColor, lowlandColor, desertColor, alpineColor, directions);
     },
     // --- Generate helpers（パイプラインを段階に分けて読みやすくする。挙動/乱数消費順は維持） ---
     _buildSeededLog(count) {
