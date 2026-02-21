@@ -10,6 +10,11 @@ function sq(x) {
     return v * v;
 }
 
+function resolveRng(options) {
+    if (options && typeof options.rng === 'function') return options.rng;
+    return Math.random;
+}
+
 // -----------------------------------------------------------------------------
 // Era-dependent coefficients
 // - Keep era strings centralized here for readability and easy auditing.
@@ -87,8 +92,9 @@ function computeOceanPhParams(era) {
     return ERA_OCEAN_PH_PARAMS[era] ?? ERA_OCEAN_PH_DEFAULT;
 }
 
-export function computeNextClimateTurn(cur) {
+export function computeNextClimateTurn(cur, options = {}) {
     const state = cur && typeof cur === 'object' ? cur : {};
+    const rng = resolveRng(options);
     const era = state.era || '大森林時代';
 
     const Time_turn = Number(state.Time_turn) || 0;
@@ -279,13 +285,17 @@ export function computeNextClimateTurn(cur) {
 
     const CO2_abs_total = CO2_abs_rock + CO2_abs_plant + CO2_abs_ocean + CO2_abs_carbonate;
 
-    const CO2_release_volcano =
-        Turn_yr ** 0.5
-        * 0.00000025
-        * (Volcano_event + Volcano_event_manual)
-        * Math.pow(4.55e9 / (Time_yr + 0.1e9), 1.25)
-        * (1 + 0.4 * Math.tanh((f_land_original - 0.3) / 0.2))
-        * (0.5 + (Math.random() + Math.random()) / 2);
+    const CO2_release_volcano = (() => {
+        const randomNoise = (rng() + rng()) / 2;
+        return (
+            Turn_yr ** 0.5
+            * 0.00000025
+            * (Volcano_event + Volcano_event_manual)
+            * Math.pow(4.55e9 / (Time_yr + 0.1e9), 1.25)
+            * (1 + 0.4 * Math.tanh((f_land_original - 0.3) / 0.2))
+            * (0.5 + randomNoise)
+        );
+    })();
 
     const CO2_release_ocean = Math.max(CO2_flux_ocean, 0);
     const CO2_release_carbonate = Math.max(CO2_flux_carbonate, 0);
