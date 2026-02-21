@@ -8,6 +8,34 @@ function safeDiv(n, d) {
     return nn / dd;
 }
 
+export const GREEN_ZERO_ERAS = new Set([
+    '爆撃時代',
+    '生命発生前時代',
+    '嫌気性細菌誕生時代',
+    '光合成細菌誕生時代',
+    '多細胞生物誕生時代',
+    '海洋生物多様化時代'
+]);
+
+export const GREEN_LOWLAND_ERAS = new Set([
+    'シダ植物時代',
+    '大森林時代',
+    '文明時代',
+    '海棲文明時代'
+]);
+
+/**
+ * era に応じた f_green を算出する。
+ */
+export function resolveGreenFraction(era, { f_bryophyte = 0, f_lowland = 0 } = {}) {
+    const targetEra = (typeof era === 'string') ? era : null;
+    if (!targetEra) return 0;
+    if (GREEN_ZERO_ERAS.has(targetEra)) return 0;
+    if (targetEra === '苔類進出時代') return f_bryophyte;
+    if (GREEN_LOWLAND_ERAS.has(targetEra)) return f_lowland;
+    return 0;
+}
+
 export function buildTerrainFractionsFromTypeCounts({ typeCounts, preGlacierStats, gridWidth, gridHeight, era } = {}) {
     const totalFallback = (Number(gridWidth) > 0 && Number(gridHeight) > 0) ? (Number(gridWidth) * Number(gridHeight)) : 1;
     const total = (typeCounts && typeof typeCounts.total === 'number') ? typeCounts.total : totalFallback;
@@ -42,34 +70,7 @@ export function buildTerrainFractionsFromTypeCounts({ typeCounts, preGlacierStat
     // - 苔類進出時代: f_green = f_bryophyte
     // - シダ植物時代/大森林時代/文明時代/海棲文明時代: f_green = f_lowland
     // - その他は既定で 0
-    const e = (typeof era === 'string') ? era : null;
-    const GREEN_ZERO_ERAS = new Set([
-        '爆撃時代',
-        '生命発生前時代',
-        '嫌気性細菌誕生時代',
-        '光合成細菌誕生時代',
-        '多細胞生物誕生時代',
-        '海洋生物多様化時代'
-    ]);
-    const GREEN_LOWLAND_ERAS = new Set([
-        'シダ植物時代',
-        '大森林時代',
-        '文明時代',
-        '海棲文明時代'
-    ]);
-
-    let f_green = 0;
-    if (e) {
-        if (GREEN_ZERO_ERAS.has(e)) {
-            f_green = 0;
-        } else if (e === '苔類進出時代') {
-            f_green = f_bryophyte;
-        } else if (GREEN_LOWLAND_ERAS.has(e)) {
-            f_green = f_lowland;
-        } else {
-            f_green = 0;
-        }
-    }
+    const f_green = resolveGreenFraction(era, { f_bryophyte, f_lowland });
 
     // 氷河補正前の陸/海（湖は海扱い）を優先。なければ現行の陸/海から推定。
     const f_land_original = (preGlacierStats && typeof preGlacierStats.landRatio === 'number')
