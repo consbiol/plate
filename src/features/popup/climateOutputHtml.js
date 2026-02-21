@@ -115,6 +115,7 @@ export function buildClimateOutputHtml({ climateTurn, climateVars, climate } = {
       <div class="row"><label>CO2_release_volcano (bar/turn):</label><span>${fmtSig(v.CO2_release_volcano, 3)}</span></div>
       <div class="row"><label>CO2_release_ocean (bar/turn):</label><span>${fmtSig(v.CO2_release_ocean, 3)}</span></div>
       <div class="row"><label>CO2_release_carbonate (bar/turn):</label><span>${fmtSig(v.CO2_release_carbonate, 3)}</span></div>
+      <div class="row"><label>oceanPh (pH):</label><span>${fmtSig(v.oceanPh, 3)}</span></div>
       <div class="row"><label>O2_abs (bar/turn):</label><span>${fmtSig((typeof v.O2_abs === 'number') ? v.O2_abs : v.O2_abs_total, 3)}</span></div>
       <div class="row"><label>land_abs_eff:</label><span>${fmtSig(v.land_abs_eff, 3)}</span></div>
       <div class="row"><label>O2_prod (bar/turn):</label><span>${fmtSig(v.O2_prod, 3)}</span></div>

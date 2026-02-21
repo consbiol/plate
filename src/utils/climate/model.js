@@ -50,6 +50,23 @@ const ERA_FUNGAL_FACTOR = /** @type {Record<string, number>} */ ({
 });
 
 
+const ERA_OCEAN_PH_PARAMS = Object.freeze({
+    '爆撃時代': { f_CO2_0: 0.3, pH0: 6, alphaPh: 0.5 },
+    '生命発生前時代': { f_CO2_0: 0.3, pH0: 6, alphaPh: 0.5 },
+    '嫌気性細菌誕生時代': { f_CO2_0: 0.2, pH0: 6.3, alphaPh: 0.6 },
+    '光合成細菌誕生時代': { f_CO2_0: 0.1, pH0: 6.8, alphaPh: 0.7 },
+    '真核生物誕生時代': { f_CO2_0: 0.02, pH0: 7.3, alphaPh: 0.8 },
+    '多細胞生物誕生時代': { f_CO2_0: 0.01, pH0: 7.5, alphaPh: 0.85 },
+    '海洋生物多様化時代': { f_CO2_0: 0.01, pH0: 8.0, alphaPh: 0.9 },
+    '苔類進出時代': { f_CO2_0: 0.003, pH0: 8.2, alphaPh: 0.85 },
+    'シダ植物時代': { f_CO2_0: 0.0002, pH0: 8.3, alphaPh: 0.8 },
+    '大森林時代': { f_CO2_0: 0.0004, pH0: 8.3, alphaPh: 0.8 },
+    '文明時代': { f_CO2_0: 0.0003, pH0: 8.2, alphaPh: 0.9 },
+    '海棲文明時代': { f_CO2_0: 0.0004, pH0: 8.25, alphaPh: 0.8 },
+});
+const ERA_OCEAN_PH_DEFAULT = ERA_OCEAN_PH_PARAMS['多細胞生物誕生時代'];
+
+
 function computePland_t(era) {
     return ERA_PLAND_T[era] ?? 0;
 }
@@ -64,6 +81,10 @@ function computeLandPlantO2(era) {
 
 function computeFungalFactor(era) {
     return ERA_FUNGAL_FACTOR[era] ?? 1.0;
+}
+
+function computeOceanPhParams(era) {
+    return ERA_OCEAN_PH_PARAMS[era] ?? ERA_OCEAN_PH_DEFAULT;
 }
 
 export function computeNextClimateTurn(cur) {
@@ -281,6 +302,11 @@ export function computeNextClimateTurn(cur) {
         f_CO2 = CO2_alpha * f_CO2_calc + (1 - CO2_alpha) * f_CO2 + Meteo_CO2_add;
     }
     f_CO2 = Math.max(f_CO2, 0.000006);
+
+    //海洋pH
+    const { f_CO2_0, pH0, alphaPh } = computeOceanPhParams(era);
+    const oceanPhRatio = Math.max(f_CO2 / f_CO2_0, 1e-12);
+    const oceanPh = pH0 - alphaPh * Math.log10(oceanPhRatio);
 
     // O2
     const f_O2_forAbs = Math.max(f_O2 - 0.0001, 0);
@@ -530,6 +556,7 @@ export function computeNextClimateTurn(cur) {
             f_N2,
             f_O2,
             f_CO2,
+            oceanPh,
             f_CH4,
             f_Ar,
             f_H2,
