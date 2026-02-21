@@ -130,6 +130,7 @@ export default {
       // prop を直接変更しないための内部ステート
       internalTopGlacierRows: this.topGlacierRows,
       lastReturnedGlacierRows: null,
+      lastGenerationInputs: null,
       // Generate時に「高頻度更新に必要なものだけ」キャッシュする
       /** @type {TerrainHighFrequencyCache|null} */
       hfCache: null,
@@ -195,6 +196,13 @@ export default {
         return { mode, runContext: rc, options: null };
       }
       return { mode: '', runContext: rc, options: null };
+    },
+    _getClimateAverageTemperatureCelsius() {
+      const climateVars = getClimateVars(this.$store);
+      if (climateVars && typeof climateVars.averageTemperature_calc === 'number') {
+        return climateVars.averageTemperature_calc - 273.15;
+      }
+      return null;
     },
     _drainRunQueue() {
       const q = Array.isArray(this.runQueue) ? this.runQueue : [];
@@ -335,6 +343,35 @@ export default {
         gridHeight: this.gridHeight,
         torusWrap: (...args) => this.torusWrap(...args),
         _getLandDistanceThresholdForRow: (...args) => this._getLandDistanceThresholdForRow(...args)
+      };
+    },
+    // --- 将来的な Web Worker に渡しやすいよう、主要入力をまとめる ---
+    _buildGenerationJobInputs() {
+      return {
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        seaLandRatio: this.seaLandRatio,
+        centersY: this.centersY,
+        minCenterDistance: this.minCenterDistance,
+        noiseAmp: this.noiseAmp,
+        kDecay: this.kDecay,
+        baseSeaDistanceThreshold: this.baseSeaDistanceThreshold,
+        baseLandDistanceThreshold: this.baseLandDistanceThreshold,
+        landBandVerticalWobbleRows: this.landBandVerticalWobbleRows,
+        averageTemperature: this.averageTemperature,
+        deterministicSeed: this.deterministicSeed,
+        era: this.era,
+        centerBias: this.centerBias,
+        topGlacierRows: this.topGlacierRows,
+        topTundraRows: this.topTundraRows,
+        tundraExtraRows: this.tundraExtraRows,
+        cityGenerationProbability: this.cityGenerationProbability,
+        cultivatedGenerationProbability: this.cultivatedGenerationProbability,
+        bryophyteGenerationProbability: this.bryophyteGenerationProbability,
+        pollutedAreasCount: this.pollutedAreasCount,
+        seaCityGenerationProbability: this.seaCityGenerationProbability,
+        seaCultivatedGenerationProbability: this.seaCultivatedGenerationProbability,
+        seaPollutedAreasCount: this.seaPollutedAreasCount
       };
     },
     _buildCenterCellsCtx() {
@@ -806,12 +843,11 @@ export default {
       let computedSmoothedTopGlacierRowsLand;
       let computedSmoothedTopGlacierRowsWater;
       try {
-        const climateVars = getClimateVars(this.$store);
-        if (climateVars && typeof climateVars.averageTemperature_calc === 'number') {
-          const rawC = climateVars.averageTemperature_calc - 273.15;
+        const climateRawC = this._getClimateAverageTemperatureCelsius();
+        if (Number.isFinite(climateRawC)) {
           // use pure computation (no smoothing, no vm mutation)
-          computedTopGlacierRowsLand = computeTopGlacierRowsPure(rawC, ratioOcean, 'land');
-          computedTopGlacierRowsWater = computeTopGlacierRowsPure(rawC, 0.7, 'water');
+          computedTopGlacierRowsLand = computeTopGlacierRowsPure(climateRawC, ratioOcean, 'land');
+          computedTopGlacierRowsWater = computeTopGlacierRowsPure(climateRawC, 0.7, 'water');
           computedSmoothedTopGlacierRowsLand = computedTopGlacierRowsLand;
           computedSmoothedTopGlacierRowsWater = computedTopGlacierRowsWater;
         } else {
@@ -1020,7 +1056,9 @@ export default {
      * @returns {TerrainEventPayload} emitted payload
      */
     runGenerate({ preserveCenterCoordinates = false, runContext = null } = {}) {
-      const N = this.gridWidth * this.gridHeight;
+      const generationInputs = this._buildGenerationJobInputs();
+      this.lastGenerationInputs = generationInputs;
+      const N = generationInputs.gridWidth * generationInputs.gridHeight;
       const seededRng = this._getSeededRng();
       this._resetDriftStateForGenerate({ preserveCenterCoordinates });
       const seededLog = this._buildSeededLog(this.centersY);
