@@ -235,7 +235,7 @@ export function buildPlaneHtml({ displayColors, cell, displayW, displayH, buildV
                 wrap.scrollLeft = startScrollLeft - dx;
                 wrap.scrollTop = startScrollTop - dy;
               });
-              ['pointerup','pointercancel','pointerleave'].forEach(function(n){
+              ['pointerup','pointercancel'].forEach(function(n){
                 wrap.addEventListener(n, function(ev){
                   if (!isDown) return;
                   isDown = false;

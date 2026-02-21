@@ -28,6 +28,7 @@ import { buildGridData, markCentersOnGridData } from '../utils/terrain/gridData.
 import { applySeededLogToCenterParameters } from '../utils/terrain/centerParams.js';
 import { computePreGlacierStats, buildGeneratedPayload, buildTerrainEventPayload } from '../utils/terrain/output.js';
 import { computeTopGlacierRowsFromAverageTemperature, getSmoothedGlacierRows, computeTopGlacierRowsPure } from '../utils/terrain/glacierRows.js';
+import { buildGenerationJobInputs, GENERATION_JOB_INPUT_KEYS } from '../utils/terrain/jobInputs.js';
 import { noise2D as noise2DUtil, fractalNoise2D as fractalNoise2DUtil } from '../utils/noise.js';
 import { poissonSample } from '../utils/stats/poisson.js';
 import { PARAM_DEFAULTS } from '../utils/paramsDefaults.js';
@@ -347,31 +348,29 @@ export default {
     },
     // --- 将来的な Web Worker に渡しやすいよう、主要入力をまとめる ---
     _buildGenerationJobInputs() {
+      const source = this._collectGenerationJobInputSource();
+      return buildGenerationJobInputs(source);
+    },
+    _collectGenerationJobInputSource() {
+      const source = {};
+      for (const key of GENERATION_JOB_INPUT_KEYS) {
+        source[key] = this[key];
+      }
+      return source;
+    },
+    _buildGenerationJobSpec() {
+      const generationInputs = Object.freeze(this._buildGenerationJobInputs());
+      const gridWidth = Number.isFinite(generationInputs.gridWidth)
+        ? generationInputs.gridWidth
+        : this.gridWidth;
+      const gridHeight = Number.isFinite(generationInputs.gridHeight)
+        ? generationInputs.gridHeight
+        : this.gridHeight;
       return {
-        gridWidth: this.gridWidth,
-        gridHeight: this.gridHeight,
-        seaLandRatio: this.seaLandRatio,
-        centersY: this.centersY,
-        minCenterDistance: this.minCenterDistance,
-        noiseAmp: this.noiseAmp,
-        kDecay: this.kDecay,
-        baseSeaDistanceThreshold: this.baseSeaDistanceThreshold,
-        baseLandDistanceThreshold: this.baseLandDistanceThreshold,
-        landBandVerticalWobbleRows: this.landBandVerticalWobbleRows,
-        averageTemperature: this.averageTemperature,
-        deterministicSeed: this.deterministicSeed,
-        era: this.era,
-        centerBias: this.centerBias,
-        topGlacierRows: this.topGlacierRows,
-        topTundraRows: this.topTundraRows,
-        tundraExtraRows: this.tundraExtraRows,
-        cityGenerationProbability: this.cityGenerationProbability,
-        cultivatedGenerationProbability: this.cultivatedGenerationProbability,
-        bryophyteGenerationProbability: this.bryophyteGenerationProbability,
-        pollutedAreasCount: this.pollutedAreasCount,
-        seaCityGenerationProbability: this.seaCityGenerationProbability,
-        seaCultivatedGenerationProbability: this.seaCultivatedGenerationProbability,
-        seaPollutedAreasCount: this.seaPollutedAreasCount
+        generationInputs,
+        gridWidth,
+        gridHeight,
+        N: (gridWidth || 0) * (gridHeight || 0)
       };
     },
     _buildCenterCellsCtx() {
@@ -1056,9 +1055,8 @@ export default {
      * @returns {TerrainEventPayload} emitted payload
      */
     runGenerate({ preserveCenterCoordinates = false, runContext = null } = {}) {
-      const generationInputs = this._buildGenerationJobInputs();
+      const { generationInputs, N } = this._buildGenerationJobSpec();
       this.lastGenerationInputs = generationInputs;
-      const N = generationInputs.gridWidth * generationInputs.gridHeight;
       const seededRng = this._getSeededRng();
       this._resetDriftStateForGenerate({ preserveCenterCoordinates });
       const seededLog = this._buildSeededLog(this.centersY);
