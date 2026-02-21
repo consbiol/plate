@@ -312,4 +312,11 @@ export function getNextEraByTime(curEra, Time_yr) {
     return { nextEra: e, didChange: false };
 }
 
+export function getEraStartTime(era) {
+    const e = (typeof era === 'string' && ERAS.includes(era)) ? era : '大森林時代';
+    const value = ERA_START_YR[e];
+    const num = Number(value);
+    return isFinite(num) ? Math.max(0, num) : 0;
+}
+
 

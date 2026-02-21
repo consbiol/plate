@@ -51,6 +51,7 @@
       Time_turn: <b>{{ climateTurn && climateTurn.Time_turn }}</b> /
       Turn_yr: <b>{{ climateTurn && climateTurn.Turn_yr }}</b> yr/turn /
       Time_yr: <b>{{ climateTurn && climateTurn.Time_yr }}</b> yr /
+      <b>{{ climateTurn && climateTurn.Time_yr_era }}</b> yr /
       時代: <b>{{ climateTurn && climateTurn.era }}</b>
     </div>
   </div>

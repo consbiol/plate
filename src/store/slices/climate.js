@@ -7,7 +7,8 @@ import { createDerivedRng } from '../../utils/rng.js';
 import { bestEffort } from '../../utils/bestEffort.js';
 import {
     buildEraInitialClimate,
-    buildEraTurnYr
+    buildEraTurnYr,
+    getEraStartTime
 } from '../../utils/climate/eraPresets.js';
 import { clamp } from '../../utils/climate/math.js';
 import { computeNextClimateTurn, computeRadiativeEquilibriumTempK } from '../../utils/climate/model.js';
@@ -226,14 +227,22 @@ export function createClimateSlice() {
         },
         getters: {
             climate: (state) => state.climate,
-            climateTurn: (state) => ({
-                era: state.climate?.era,
-                Time_turn: state.climate?.Time_turn,
-                Time_yr: state.climate?.Time_yr,
-                Turn_yr: state.climate?.Turn_yr,
-                Turn_speed: state.climate?.Turn_speed,
-                isRunning: state.climate?.isRunning
-            }),
+            climateTurn: (state) => {
+                const climate = state.climate;
+                const rawTimeYr = Number(climate?.Time_yr) || 0;
+                const eraStart = getEraStartTime(climate?.era);
+                const eraDelta = rawTimeYr - eraStart;
+                const timeYrEra = isFinite(eraDelta) ? Math.max(0, eraDelta) : 0;
+                return {
+                    era: climate?.era,
+                    Time_turn: climate?.Time_turn,
+                    Time_yr: rawTimeYr,
+                    Time_yr_era: timeYrEra,
+                    Turn_yr: climate?.Turn_yr,
+                    Turn_speed: climate?.Turn_speed,
+                    isRunning: climate?.isRunning
+                };
+            },
             climateVars: (state) => state.climate?.vars,
             climateHistory: (state) => state.climate?.history,
             // 強制Turn_yrウィンドウ中（forcedTurnsRemaining > 0）はイベントボタンをロックする
