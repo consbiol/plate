@@ -105,38 +105,28 @@ export function computeNextClimateTurn(cur) {
         ? Math.max(0, eraStartCandidate)
         : getEraStartTime(era);
     const Time_yr_era = Math.max(0, Time_yr - eraStartYr);
-    const bryophyteProbability = (era === '苔類進出時代') ? computeEraBryophyteProbability(Time_yr_era) : 0;
-    let baseAverageTemperature = (typeof state.baseAverageTemperature === 'number') ? state.baseAverageTemperature : 15;
 
-    // Turn_yr（UIで指定された値を優先。未設定なら era 既定値）
-    // ただし forcedTurnsRemaining が有効な間は、このターンの計算に限り Turn_yr=1000 を強制する。
     const baseTurnYr = Number(state.Turn_yr) || buildEraTurnYr(era);
     let Turn_yr = baseTurnYr;
-    // --- 強制 Turn_yr オーバーライド（Step2 の永続的太陽イベント用） ---
-    // - forcedTurnsRemaining: 残り強制ターン数（0: 無効）
-    // - forcedOriginalTurnYr: 強制開始前に保持しておく Turn_yr（復帰時に使用）
-    // 将来 Step2 に追加されるイベントでもこの機構を流用してください（下方に注釈あり）。
     let forcedTurnsRemaining = Number(state.forcedTurnsRemaining) || 0;
     let forcedOriginalTurnYr = (typeof state.forcedOriginalTurnYr === 'number') ? state.forcedOriginalTurnYr : null;
-
-    // 強制中は「このターンの計算」に使う Turn_yr を 1000 にする（alpha や nextTimeYr も含む）
-    // 強制中は「このターンの計算」に使う Turn_yr を 1000 にする（alpha や nextTimeYr も含む）
-    // NOTE: 文明時代・海棲文明時代は 10 に固定する
     if (forcedTurnsRemaining > 0) {
         const isCivilEra = (era === '文明時代' || era === '海棲文明時代');
-        if (isCivilEra) {
-            Turn_yr = 10;
-        } else {
-            Turn_yr = 1000;
-        }
+        Turn_yr = isCivilEra ? 10 : 1000;
     }
-
-    const { GI_alpha, CO2_alpha, O2_alpha, Temp_alpha } = buildTurnAlphaParams(Turn_yr);
 
     const constants = state.constants || {};
     const events = state.events || {};
     const terrain = state.terrain || {};
     const v0 = state.vars || {};
+    let greenIndex = Number(v0.greenIndex);
+    const prevBryophyteProbability = Math.max(0, Number(v0.bryophyteProbability) || 0);
+    const bryophyteProbability = (era === '苔類進出時代')
+        ? computeEraBryophyteProbability(Time_yr_era, Turn_yr, prevBryophyteProbability, greenIndex)
+        : 0;
+    let baseAverageTemperature = (typeof state.baseAverageTemperature === 'number') ? state.baseAverageTemperature : 15;
+
+    const { GI_alpha, CO2_alpha, O2_alpha, Temp_alpha } = buildTurnAlphaParams(Turn_yr);
 
     // 前ターン値
     let f_N2 = Number(v0.f_N2);
@@ -148,7 +138,6 @@ export function computeNextClimateTurn(cur) {
     let Pressure = Number(v0.Pressure);
     let f_cloud = Number(v0.f_cloud);
     let averageTemperature = Number(v0.averageTemperature);
-    let greenIndex = Number(v0.greenIndex);
 
     // --- Step1: 地質・天文学的パラメータ ---
     const f_N2_fixed = Number(constants.f_N2_fixed);

@@ -495,7 +495,14 @@ export function createClimateSlice() {
                 });
 
                 const eraTimeDelta = Math.max(0, (Number(initial.Time_yr) || 0) - resolvedEraStartYr);
-                next.vars = { ...(next.vars || {}), bryophyteProbability: computeEraBryophyteProbability(eraTimeDelta) };
+                const prevBryophyteProbability = Math.max(0, Number(next.vars?.bryophyteProbability) || 0);
+                const bryophyteProbability = computeEraBryophyteProbability(
+                    eraTimeDelta,
+                    Turn_yr,
+                    prevBryophyteProbability,
+                    next.vars?.greenIndex
+                );
+                next.vars = { ...(next.vars || {}), bryophyteProbability };
                 commit('setClimate', next);
             },
 

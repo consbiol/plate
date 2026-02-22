@@ -1,6 +1,6 @@
 import { ERAS } from '../paramsDefaults.js';
 
-// eraごとの初期値（指定テーブル）
+// default tables
 const ERA_INITIALS = Object.freeze({
     '爆撃時代': {
         Time_yr: 400000000,
@@ -160,7 +160,7 @@ const ERA_INITIALS = Object.freeze({
     }
 });
 
-// eraごとの標準 Turn_yr
+// default Turn_yr
 const ERA_TURN_YR = Object.freeze({
     '爆撃時代': 50000,
     '生命発生前時代': 50000,
@@ -178,11 +178,51 @@ const ERA_TURN_YR = Object.freeze({
 
 const BRYOPHYTE_PROBABILITY_MAX = 1 - 1e-12;
 
-export function computeEraBryophyteProbability(Time_yr_era) {
+const TURN_ALPHA_KEYS = Object.freeze([10, 20, 100, 1000, 2000, 5000, 10000, 50000, 100000]);
+
+const TURN_BRYOPHYTE_ALPHA_MAP = Object.freeze({
+    10: 0.05,
+    20: 0.06,
+    100: 0.08,
+    1000: 0.10,
+    2000: 0.12,
+    5000: 0.14,
+    10000: 0.15,
+    50000: 0.20,
+    100000: 0.25
+});
+
+function resolveTurnAlphaKey(turnYr) {
+    const asNumber = Number(turnYr);
+    if (TURN_ALPHA_KEYS.includes(asNumber)) {
+        return asNumber;
+    }
+    if (asNumber < 20) return 10;
+    if (asNumber < 100) return 20;
+    if (asNumber < 1000) return 100;
+    if (asNumber < 2000) return 1000;
+    if (asNumber < 5000) return 2000;
+    if (asNumber < 10000) return 5000;
+    if (asNumber < 50000) return 10000;
+    if (asNumber < 100000) return 50000;
+    return 100000;
+}
+
+export function computeEraBryophyteProbability(Time_yr_era, Turn_yr = 1000, previousProbability = 0, greenIndex = 1) {
     const eraValue = Number(Time_yr_era);
     if (!isFinite(eraValue)) return 0;
-    const exponent = Math.exp(-6e-8 * (eraValue - 1e8));
-    const raw = 1 / (1 + exponent);
+
+    const prevValue = Number(previousProbability);
+    const prev = isFinite(prevValue)
+        ? Math.max(0, Math.min(BRYOPHYTE_PROBABILITY_MAX, prevValue))
+        : 0;
+
+    const key = resolveTurnAlphaKey(Turn_yr);
+    const bryo_alpha = TURN_BRYOPHYTE_ALPHA_MAP[key] ?? 0.1;
+    const greenIndexValue = Number(greenIndex);
+    const greenIndexFactor = isFinite(greenIndexValue) ? Math.max(0, greenIndexValue) : 1;
+    const raw_calc = greenIndexFactor * (1 / (1 + Math.exp(-6e-8 * (eraValue - 1e8))));
+    const raw = bryo_alpha * raw_calc + (1 - bryo_alpha) * prev;
     return Math.max(0, Math.min(BRYOPHYTE_PROBABILITY_MAX, raw));
 }
 
@@ -195,12 +235,12 @@ const ERA_TRANSITION_DURATION_YR = Object.freeze({
     '多細胞生物誕生時代': 600000000,
     '海洋生物多様化時代': 800000000,
     '苔類進出時代': 100000000,
-    'シダ植物時代': 100000000,
     '大森林時代': 100000000,
     '文明時代': 150000000,
     '海棲文明時代': 150000000
 });
 
+// まだ時代遷移が起きていない（またはその情報が保存されていない）初期状態／他の箇所で「時代の開始年」が必要になったとき、この定義を参照する
 const ERA_START_YR = Object.freeze({
     '生命発生前時代': 450000000,
     '嫌気性細菌誕生時代': 600000000,
@@ -241,22 +281,9 @@ export function buildEraTurnYr(era) {
     return Number(ERA_TURN_YR[e] || 50000);
 }
 
-// Turn_yr によって CO2_alpha/O2_alpha/Temp_alpha/GI_alpha を決定
+// Turn_yr によって 各alphaを決定
 export function buildTurnAlphaParams(Turn_yr) {
-    const t = Number(Turn_yr);
-    // 指定可能値（UIで選べるリスト）
-    const allowed = [10, 20, 100, 1000, 2000, 5000, 10000, 50000, 100000];
-    // 指定値以外は近いレンジに丸める（閾値は経験則）
-    const key = allowed.includes(t)
-        ? t
-        : (t < 20 ? 10
-            : (t < 100 ? 20
-                : (t < 1000 ? 100
-                    : (t < 2000 ? 1000
-                        : (t < 5000 ? 2000
-                            : (t < 10000 ? 5000
-                                : (t < 50000 ? 10000
-                                    : (t < 100000 ? 50000 : 100000))))))));
+    const key = resolveTurnAlphaKey(Turn_yr);
 
     const GI_alpha = ({
         10: 0.07,
