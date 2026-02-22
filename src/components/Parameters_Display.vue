@@ -122,6 +122,10 @@
       <input type="number" min="0" max="50" step="1" v-model.number="local.alpineGlacierExtraRows" />
     </div>
     <div class="param-row">
+      <label>苔類進出確率 (気候計算): </label>
+      <span>{{ formatProbabilityValue(climateBryophyteProbability) }}</span>
+    </div>
+    <div class="param-row">
       <label>湖の数（平均）: </label>
       <input type="number" min="0" max="10" step="0.5" v-model.number="local.averageLakesPerCenter" />
     </div>
@@ -207,7 +211,7 @@
       :era="local.era || storeEra"
       :cityGenerationProbability="local.cityProbability"
       :cultivatedGenerationProbability="local.cultivatedProbability"
-      :bryophyteGenerationProbability="local.bryophyteProbability"
+      :bryophyteGenerationProbability="activeBryophyteProbability"
       :pollutedAreasCount="local.pollutedAreasCount"
       :seaCityGenerationProbability="local.seaCityProbability"
       :seaCultivatedGenerationProbability="local.seaCultivatedProbability"
@@ -537,6 +541,21 @@ export default {
     climateVars() {
       return getClimateVars(this.$store);
     },
+    climateBryophyteProbability() {
+      if (this.storeEra !== '苔類進出時代') return null;
+      const val = this.climateVars?.bryophyteProbability;
+      if (typeof val !== 'number' || !isFinite(val)) return null;
+      return Math.max(0, Math.min(1 - Number.EPSILON, val));
+    },
+    activeBryophyteProbability() {
+      const computedVal = this.climateBryophyteProbability;
+      if (typeof computedVal === 'number') return computedVal;
+      const localVal = Number(this.local?.bryophyteProbability);
+      if (Number.isFinite(localVal)) {
+        return Math.max(0, Math.min(1, localVal));
+      }
+      return Number(PARAM_DEFAULTS.bryophyteProbability);
+    },
     climateHistory() {
       return getClimateHistory(this.$store);
     },
@@ -834,6 +853,11 @@ export default {
         // fallback
         this.runContext = { runMode, runId: null };
       }
+    },
+    formatProbabilityValue(value) {
+      const numeric = (typeof value === 'number') ? value : Number(value);
+      if (!Number.isFinite(numeric)) return '-';
+      return numeric.toFixed(6);
     },
     _triggerRun(mode, options = null, { allowDuringTurn = false } = {}) {
       // Safety: during turn ticking, block manual/enqueued runs to keep state consistent.
@@ -1177,6 +1201,7 @@ export default {
         landDistanceThresholdAverage: this.landDistanceThresholdAverage,
         topTundraRowsComputed: this.topTundraRowsComputed,
         topGlacierRowsDisplayed: this.topGlacierRowsDisplayed,
+      computedBryophyteProbability: this.climateBryophyteProbability,
         volcanoEvent
       });
     },

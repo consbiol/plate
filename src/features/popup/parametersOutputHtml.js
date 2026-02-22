@@ -56,7 +56,7 @@ export function buildParametersOutputHtml({
   landDistanceThresholdAverage,
   topTundraRowsComputed,
   topGlacierRowsDisplayed
-  , volcanoEvent
+  , computedBryophyteProbability, volcanoEvent
 }) {
   const params = localParams || {};
   const centers = centerParams || [];
@@ -66,6 +66,11 @@ export function buildParametersOutputHtml({
   const totalN = typeCounts ? (typeCounts.total || (gridWidth * gridHeight)) : (gridWidth * gridHeight);
   const centersHtml = buildCentersHtml(centers);
   const escape = (v) => escapeHtml(v);
+  const formatProbability = (val) => {
+    const numeric = (typeof val === 'number') ? val : Number(val);
+    return (Number.isFinite(numeric)) ? numeric.toFixed(6) : '-';
+  };
+  const bryophyteProbabilityDisplay = formatProbability(computedBryophyteProbability);
 
   return `
 <!doctype html>
@@ -100,6 +105,7 @@ export function buildParametersOutputHtml({
     <div class="row"><label>陸(低地・乾燥地・ツンドラ)の氷河追加グリッド数:</label><span>${escape(params.landGlacierExtraRows)}</span></div>
     <div class="row"><label>高地の氷河追加グリッド数:</label><span>${escape(params.highlandGlacierExtraRows)}</span></div>
     <div class="row"><label>高山の氷河追加グリッド数:</label><span>${escape(params.alpineGlacierExtraRows)}</span></div>
+    <div class="row"><label>苔類進出確率 (気候):</label><span>${escape(bryophyteProbabilityDisplay)}</span></div>
     <div class="row"><label>グリッド幅×高さ:</label><span>${escape(gridWidth)} × ${escape(gridHeight)}</span></div>
     ${pre ? `<div class="row"><label>氷河上書き前 - 陸:</label><span>${escape(pre.landCount)} (${escape((pre.landRatio * 100).toFixed(2))}% )</span></div>
              <div class="row"><label>氷河上書き前 - 海:</label><span>${escape(pre.seaCount)} (${escape((100 - (pre.landRatio * 100)).toFixed(2))}% )</span></div>` : ''

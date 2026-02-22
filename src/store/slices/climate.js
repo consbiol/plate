@@ -11,7 +11,7 @@ import {
     getEraStartTime
 } from '../../utils/climate/eraPresets.js';
 import { clamp } from '../../utils/climate/math.js';
-import { computeNextClimateTurn, computeRadiativeEquilibriumTempK } from '../../utils/climate/model.js';
+import { computeNextClimateTurn, computeRadiativeEquilibriumTempK, computeEraBryophyteProbability } from '../../utils/climate/model.js';
 import { buildTerrainFractionsFromTypeCounts } from '../../utils/climate/terrainFractions.js';
 import {
     VOLCANO_EVENT_MAG_DEFAULT_INDEX,
@@ -133,7 +133,8 @@ function buildDefaultClimateState() {
             albedo: 0.3,
             H2O_eff: 1,
             Sol: null,
-            averageTemperature: 15
+            averageTemperature: 15,
+            bryophyteProbability: 0
         },
         baseAverageTemperature: 15,
 
@@ -480,6 +481,9 @@ export function createClimateSlice() {
                     };
                 });
 
+                const eraStartYr = getEraStartTime(nextEra);
+                const eraTimeDelta = Math.max(0, (Number(initial.Time_yr) || 0) - eraStartYr);
+                next.vars = { ...(next.vars || {}), bryophyteProbability: computeEraBryophyteProbability(eraTimeDelta) };
                 commit('setClimate', next);
             },
 
