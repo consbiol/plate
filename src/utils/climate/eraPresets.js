@@ -97,7 +97,7 @@ const ERA_INITIALS = Object.freeze({
         Time_yr: 4100000000,
         f_N2: 0.78,
         f_O2: 0.10,
-        f_CO2: 0.01,
+        f_CO2: 0.005,
         f_CH4: 0.000001,
         f_Ar: 0.0091,
         f_H2: 0.000006,
@@ -176,9 +176,32 @@ const ERA_TURN_YR = Object.freeze({
     '海棲文明時代': 10
 });
 
-// Step9: era の時間閾値（次の時代へ移る条件 = Time_yr が次時代の開始値を超えたら）
+const BRYOPHYTE_PROBABILITY_MAX = 1 - 1e-12;
+
+export function computeEraBryophyteProbability(Time_yr_era) {
+    const eraValue = Number(Time_yr_era);
+    if (!isFinite(eraValue)) return 0;
+    const exponent = Math.exp(-6e-8 * (eraValue - 1e8));
+    const raw = 1 / (1 + exponent);
+    return Math.max(0, Math.min(BRYOPHYTE_PROBABILITY_MAX, raw));
+}
+
+// Step9: era の時間閾値（次の時代へ移る条件 = Time_yr_era が次時代の閾値を超えたら）
+const ERA_TRANSITION_DURATION_YR = Object.freeze({
+    '生命発生前時代': 50000000,
+    '嫌気性細菌誕生時代': 250000000,
+    '光合成細菌誕生時代': 1000000000,
+    '真核生物誕生時代': 1600000000,
+    '多細胞生物誕生時代': 600000000,
+    '海洋生物多様化時代': 800000000,
+    '苔類進出時代': 100000000,
+    'シダ植物時代': 100000000,
+    '大森林時代': 100000000,
+    '文明時代': 150000000,
+    '海棲文明時代': 150000000
+});
+
 const ERA_START_YR = Object.freeze({
-    '爆撃時代': 400000000,
     '生命発生前時代': 450000000,
     '嫌気性細菌誕生時代': 600000000,
     '光合成細菌誕生時代': 1600000000,
@@ -298,15 +321,24 @@ export function buildTurnAlphaParams(Turn_yr) {
     return { GI_alpha, CO2_alpha, O2_alpha, Temp_alpha, glacier_alpha, alphaKey: key };
 }
 
-export function getNextEraByTime(curEra, Time_yr) {
+export function getNextEraByTime(curEra, Time_yr_era) {
     const e = (typeof curEra === 'string' && ERAS.includes(curEra)) ? curEra : '大森林時代';
-    const t = Number(Time_yr);
+    const t = Number(Time_yr_era);
     if (!isFinite(t)) return { nextEra: e, didChange: false };
     const idx = ERA_ORDER.indexOf(e);
     if (idx < 0) return { nextEra: e, didChange: false };
     const next = ERA_ORDER[idx + 1];
     if (!next) return { nextEra: e, didChange: false };
-    const threshold = ERA_START_YR[next];
+    if (e === '苔類進出時代' && next === 'シダ植物時代') {
+        // 苔類確率が 0.5 を超えたらシダ植物時代へ移行
+        const eraTime = Math.max(0, t);
+        if (computeEraBryophyteProbability(eraTime) > 0.5) {
+            return { nextEra: next, didChange: true };
+        }
+        return { nextEra: e, didChange: false };
+    }
+
+    const threshold = ERA_TRANSITION_DURATION_YR[next];
     if (typeof threshold !== 'number') return { nextEra: e, didChange: false };
     if (t >= threshold) return { nextEra: next, didChange: true };
     return { nextEra: e, didChange: false };

@@ -1,6 +1,13 @@
 // - state構造は store/slices/climate.js の `climate` を前提
 
-import { buildEraTurnYr, buildTurnAlphaParams, getNextEraByTime, buildEraInitialClimate, getEraStartTime } from './eraPresets.js';
+import {
+    buildEraInitialClimate,
+    buildEraTurnYr,
+    buildTurnAlphaParams,
+    computeEraBryophyteProbability,
+    getEraStartTime,
+    getNextEraByTime
+} from './eraPresets.js';
 import { computeSolarAndGases, computeH2Oeff, computeLnGases, computeRadiationCooling, computeRadiativeEquilibriumCalc, computeClouds, computeAlbedo } from './radiative.js';
 import { volcanoEventMagFromIndex } from './volcanoEventMagnification.js';
 
@@ -8,17 +15,6 @@ import { volcanoEventMagFromIndex } from './volcanoEventMagnification.js';
 function sq(x) {
     const v = Number(x);
     return v * v;
-}
-
-const BRYOPHYTE_PROBABILITY_MAX = 1 - 1e-12;
-
-export function computeEraBryophyteProbability(Time_yr_era) {
-    const eraValue = Number(Time_yr_era);
-    if (!isFinite(eraValue)) return 0;
-    const adjusted = eraValue - 1e8;
-    const exponent = Math.exp(-6e-8 * adjusted);
-    const raw = 1 / (1 + exponent);
-    return Math.max(0, Math.min(BRYOPHYTE_PROBABILITY_MAX, raw));
 }
 
 // -----------------------------------------------------------------------------
@@ -104,8 +100,12 @@ export function computeNextClimateTurn(cur) {
 
     const Time_turn = Number(state.Time_turn) || 0;
     const Time_yr = Number(state.Time_yr) || 0;
-    const eraStartTime = getEraStartTime(era);
-    const Time_yr_era = Math.max(0, Time_yr - eraStartTime);
+    const eraStartCandidate = Number(state.eraStartYr);
+    const eraStartYr = isFinite(eraStartCandidate)
+        ? Math.max(0, eraStartCandidate)
+        : getEraStartTime(era);
+    const Time_yr_era = Math.max(0, Time_yr - eraStartYr);
+    const bryophyteProbability = (era === '苔類進出時代') ? computeEraBryophyteProbability(Time_yr_era) : 0;
     let baseAverageTemperature = (typeof state.baseAverageTemperature === 'number') ? state.baseAverageTemperature : 15;
 
     // Turn_yr（UIで指定された値を優先。未設定なら era 既定値）
@@ -207,7 +207,8 @@ export function computeNextClimateTurn(cur) {
     const CosmicRay = (typeof events.CosmicRay === 'number') ? events.CosmicRay : 1;
     const Volcano_event_manual = Number(events.Volcano_event_manual) || 0;
     // 次 state が時代遷移で開始されるかを事前判定（時代変化直後の「初回ターン」扱いを検出するため）
-    const eraWillChange = getNextEraByTime(era, Time_yr + Turn_yr).didChange;
+    const nextTimeYrEra = Time_yr_era + Turn_yr;
+    const eraWillChange = getNextEraByTime(era, nextTimeYrEra).didChange;
     // Temp_alpha の上書き制御用（隕石イベントなどで Meteo_eff != 1 の場合は即時 Temp_alpha=1）
     let temp_Alpha_event = Temp_alpha;
     if (Meteo_eff !== 1) {
@@ -452,13 +453,15 @@ export function computeNextClimateTurn(cur) {
 
     // --- Step9: 時代変更トリガー（時間経過） ---
     let nextEra = era;
-    const { nextEra: eraByTime, didChange } = getNextEraByTime(era, nextTimeYr);
+    let nextEraStartYr = eraStartYr;
+    const { nextEra: eraByTime, didChange } = getNextEraByTime(era, nextTimeYrEra);
     if (didChange) {
         nextEra = eraByTime;
         baseAverageTemperature = buildEraInitialClimate(nextEra).averageTemperature;
         // 時代が変わったらターンカウントをリセットする
         // （次 state は次時代開始時点の状態なので Time_turn を 0 にする）
         nextTimeTurn = 0;
+        nextEraStartYr = nextTimeYr;
     }
 
     // --- 強制 Turn_yr の継続/終了処理 ---
@@ -532,12 +535,11 @@ export function computeNextClimateTurn(cur) {
         }
         }
 
-    const bryophyteProbability = (era === '苔類進出時代') ? computeEraBryophyteProbability(Time_yr_era) : 0;
-
     return {
         ...state,
         events: nextEvents,
         era: nextEra,
+        eraStartYr: nextEraStartYr,
         Time_turn: nextTimeTurn,
         Time_yr: nextTimeYr,
         Turn_yr: nextTurnYrForState,

@@ -122,7 +122,7 @@
       <input type="number" min="0" max="50" step="1" v-model.number="local.alpineGlacierExtraRows" />
     </div>
     <div class="param-row">
-      <label>苔類進出確率 (気候計算): </label>
+      <label>苔類進出確率 (BryophyteProbability): </label>
       <span>{{ formatProbabilityValue(climateBryophyteProbability) }}</span>
     </div>
     <div class="param-row">

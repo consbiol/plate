@@ -8,15 +8,18 @@ import { bestEffort } from '../../utils/bestEffort.js';
 import {
     buildEraInitialClimate,
     buildEraTurnYr,
+    computeEraBryophyteProbability,
     getEraStartTime
 } from '../../utils/climate/eraPresets.js';
 import { clamp } from '../../utils/climate/math.js';
-import { computeNextClimateTurn, computeRadiativeEquilibriumTempK, computeEraBryophyteProbability } from '../../utils/climate/model.js';
+import { computeNextClimateTurn, computeRadiativeEquilibriumTempK } from '../../utils/climate/model.js';
 import { buildTerrainFractionsFromTypeCounts } from '../../utils/climate/terrainFractions.js';
 import {
     VOLCANO_EVENT_MAG_DEFAULT_INDEX,
     clampVolcanoEventMagIndex
 } from '../../utils/climate/volcanoEventMagnification.js';
+
+const DEFAULT_ERA_START_YR = getEraStartTime('大森林時代');
 
 function buildDefaultClimateState() {
     return {
@@ -30,6 +33,7 @@ function buildDefaultClimateState() {
         // 1ターンあたりの待機秒
         Turn_speed: 1.0,
         isRunning: false,
+        eraStartYr: DEFAULT_ERA_START_YR,
 
         // 永続的なイベントによる Turn_yr 強制用（例：Step2 の太陽活動イベントで使用）
         // - forcedTurnsRemaining: 残り強制ターン数（0なら無効）
@@ -231,7 +235,10 @@ export function createClimateSlice() {
             climateTurn: (state) => {
                 const climate = state.climate;
                 const rawTimeYr = Number(climate?.Time_yr) || 0;
-                const eraStart = getEraStartTime(climate?.era);
+                const eraStartCandidate = Number(climate?.eraStartYr);
+                const eraStart = isFinite(eraStartCandidate)
+                    ? Math.max(0, eraStartCandidate)
+                    : getEraStartTime(climate?.era);
                 const eraDelta = rawTimeYr - eraStart;
                 const timeYrEra = isFinite(eraDelta) ? Math.max(0, eraDelta) : 0;
                 return {
@@ -446,9 +453,15 @@ export function createClimateSlice() {
                     )
                 };
 
+                const initialEraStartCandidate = Number(initial.Time_yr);
+                const resolvedEraStartYr = isFinite(initialEraStartCandidate)
+                    ? initialEraStartCandidate
+                    : getEraStartTime(nextEra);
+
                 const next = {
                     ...buildDefaultClimateState(),
                     era: nextEra,
+                    eraStartYr: resolvedEraStartYr,
                     Time_turn: 0,
                     Time_yr: initial.Time_yr,
                     Turn_yr,
@@ -481,8 +494,7 @@ export function createClimateSlice() {
                     };
                 });
 
-                const eraStartYr = getEraStartTime(nextEra);
-                const eraTimeDelta = Math.max(0, (Number(initial.Time_yr) || 0) - eraStartYr);
+                const eraTimeDelta = Math.max(0, (Number(initial.Time_yr) || 0) - resolvedEraStartYr);
                 next.vars = { ...(next.vars || {}), bryophyteProbability: computeEraBryophyteProbability(eraTimeDelta) };
                 commit('setClimate', next);
             },
