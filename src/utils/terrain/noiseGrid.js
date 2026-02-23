@@ -1,24 +1,20 @@
-// 見た目ノイズ（乾燥地・海エッジなど）の前計算
+const SEED_STRICT_ERAS = new Set(['文明時代', '海棲文明時代']);
+const FALLBACK_DIRS_8 = [
+  { dx: -1, dy: -1 }, { dx: 0, dy: -1 }, { dx: 1, dy: -1 },
+  { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+  { dx: -1, dy: 1 }, { dx: 0, dy: 1 }, { dx: 1, dy: 1 }
+];
 
-function isSeedStrictEra(ctx) {
-  return (ctx.era === '文明時代' || ctx.era === '海棲文明時代');
-}
+const isSeedStrictEra = (ctx) => SEED_STRICT_ERAS.has(ctx.era);
 
 export function getDirections8() {
-  // Use centralized DIRS8 constant to avoid duplicate definitions
-  // Import dynamically to avoid circular import issues when module is required early.
   try {
-    // eslint-disable-next-line global-require
     const { DIRS8 } = require('./features/constants');
     if (Array.isArray(DIRS8) && DIRS8.length > 0) return DIRS8;
   } catch (e) {
     // fallback to local definition
   }
-  return [
-    { dx: -1, dy: -1 }, { dx: 0, dy: -1 }, { dx: 1, dy: -1 },
-    { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
-    { dx: -1, dy: 1 }, { dx: 0, dy: 1 }, { dx: 1, dy: 1 }
-  ];
+  return FALLBACK_DIRS_8;
 }
 
 export function buildVisualNoiseGrid(ctx, {
@@ -29,8 +25,6 @@ export function buildVisualNoiseGrid(ctx, {
   for (let gy = 0; gy < ctx.gridHeight; gy++) {
     for (let gx = 0; gx < ctx.gridWidth; gx++) {
       const idx = gy * ctx.gridWidth + gx;
-      // 乾燥地・海エッジなど「見た目ノイズ」
-      // 文明時代・海棲文明時代のみシードで固定（浅瀬/深海境界・砂漠/低地境界を決定論化）
       const strict = isSeedStrictEra(ctx) && !!seededRng;
       const vrng = strict ? (ctx._getDerivedRng('vis-noise', gx, gy) || seededRng) : Math.random;
       noiseGrid[idx] = (vrng() * 2 - 1);

@@ -47,6 +47,13 @@ import { RUN_MODES } from '../constants/runQueue.js';
  * @typedef {import('../types/index.js').TerrainRunCommand} TerrainRunCommand
  * @typedef {import('../types/index.js').TerrainHighFrequencyCache} TerrainHighFrequencyCache
  */
+const LAND_BAND_MIN = 1;
+const LAND_BAND_MAX = 10;
+const DIRS_8 = [
+  [-1, -1], [0, -1], [1, -1],
+  [-1, 0], /*0,0*/ [1, 0],
+  [-1, 1], [0, 1], [1, 1]
+];
 // このコンポーネントは「計算専用」です（UIや描画は行いません）。
 // 概要:
 // 1) 陸中心のサンプリングと各中心の影響（スコア）計算
@@ -311,7 +318,8 @@ export default {
         baseSeaDistanceThreshold: this.baseSeaDistanceThreshold,
         getLandDistanceThresholdForRow: (...args) => this._getLandDistanceThresholdForRow(...args)
       };
-    },    _buildHighlandsCtx() {
+    },
+    _buildHighlandsCtx() {
       return {
         gridWidth: this.gridWidth,
         gridHeight: this.gridHeight,
@@ -429,35 +437,19 @@ export default {
       }
       const dPole = Math.min(yShifted, this.gridHeight - 1 - yShifted);
       const band = Math.floor(dPole / 5) + 1;
-      if (band < 1) return 1;
-      if (band > 10) return 10;
+      if (band < LAND_BAND_MIN) return LAND_BAND_MIN;
+      if (band > LAND_BAND_MAX) return LAND_BAND_MAX;
       return band;
     },
     // 指定行/列の land distance threshold を返す
     _getLandDistanceThresholdForRow(y, x) {
       const b = this._getLatBandIndex(y, x);
-      // `baseLandDistanceThreshold` を「全帯に効く基準オフセット」として扱う。
-      // これにより、UIの「基準値」を変更して Revise しても乾燥地が反映される。
-      // Return per-band threshold directly. Fall back to PARAM_DEFAULTS when prop is not finite.
-      const getBand = (n) => {
-        const v = Number(this[`landDistanceThreshold${n}`]);
-        return Number.isFinite(v)
-          ? v
-          : Number(PARAM_DEFAULTS && PARAM_DEFAULTS[`landDistanceThreshold${n}`]);
-      };
-      switch (b) {
-        case 1: return getBand(1);
-        case 2: return getBand(2);
-        case 3: return getBand(3);
-        case 4: return getBand(4);
-        case 5: return getBand(5);
-        case 6: return getBand(6);
-        case 7: return getBand(7);
-        case 8: return getBand(8);
-        case 9: return getBand(9);
-        case 10: return getBand(10);
-        default: return getBand(10);
-      }
+      const idx = Math.min(LAND_BAND_MAX, Math.max(LAND_BAND_MIN, b));
+      const propName = `landDistanceThreshold${idx}`;
+      const v = Number(this[propName]);
+      return Number.isFinite(v)
+        ? v
+        : Number(PARAM_DEFAULTS && PARAM_DEFAULTS[propName]);
     },
     // seaLandRatio に応じて中心間の最低距離を計算する
     // マッピング: 0.2 -> 20, 0.6 -> 30, 1.0 -> 40（線形補間）。範囲外はクランプ。
@@ -1249,14 +1241,9 @@ export default {
       const baseSeaCity = Math.max(0, Number(this.seaCityGenerationProbability || 0));
       const countSeaPollutedAreas = Math.max(0, Math.floor(Number(this.seaPollutedAreasCount || 0)));
       
-      const dirs8 = [
-        [-1, -1], [0, -1], [1, -1],
-        [-1, 0], /*0,0*/ [1, 0],
-        [-1, 1], [0, 1], [1, 1]
-      ];
       const isAdjacentToSea = (gx, gy) => {
-        for (let di = 0; di < dirs8.length; di++) {
-          const d = dirs8[di];
+        for (let di = 0; di < DIRS_8.length; di++) {
+          const d = DIRS_8[di];
           const w = this.torusWrap(gx + d[0], gy + d[1]);
           if (!w) continue;
           const nIdx = w.y * this.gridWidth + w.x;
@@ -1265,8 +1252,8 @@ export default {
         return false;
       };
       const isAdjacentToLand = (gx, gy) => {
-        for (let di = 0; di < dirs8.length; di++) {
-          const d = dirs8[di];
+        for (let di = 0; di < DIRS_8.length; di++) {
+          const d = DIRS_8[di];
           const w = this.torusWrap(gx + d[0], gy + d[1]);
           if (!w) continue;
           const nIdx = w.y * this.gridWidth + w.x;

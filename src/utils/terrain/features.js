@@ -1,6 +1,3 @@
-// 文明要素（都市/耕作地/汚染）＋海棲文明要素の生成＋苔類進出
-// Grids_Calculation.vue から切り出し（機能不変）。
-
 import { DIRS8 } from './features/constants';
 import { makeIsAdjacent, isOneCellIsland } from './features/adjacency';
 import { clamp01 } from './features/math';
@@ -10,6 +7,18 @@ import { getStartRng } from './features/vmRng';
 import { maybeStartClusterAtCell } from './features/cluster';
 import { getBiasedCityProbability } from './features/probability';
 import { generatePollutedAreas } from './features/pollution';
+
+const CITY_BIAS_SCALE = 0.01;
+const CITY_BIAS_MIN = 0.05;
+const CITY_BIAS_MAX = 8.0;
+const CLUSTER_ACCEPT_P = 0.6;
+const CULTIVATED_MEAN = 5;
+const CULTIVATED_MAX = 50;
+const CITY_MEAN = 3;
+const CITY_MAX = 50;
+const POLLUTED_MEAN = 20;
+const POLLUTED_MAX = 200;
+const ADJACENCY_MULTIPLIER = 5;
 
 export function generateFeatures(
     ctx,
@@ -23,18 +32,10 @@ export function generateFeatures(
     const rCity = pickRng(ctx._getDerivedRng('city'));
     const rCult = pickRng(ctx._getDerivedRng('cultivated'));
     const rBryo = pickRng(ctx._getDerivedRng('bryophyte'));
-    // 地域差ノイズ（都市の発生率に地域バイアスを付与）
-    // fractalNoise2D は [-1,1] を返す。これを [cityBiasMin, cityBiasMax] に線形マップして倍率とする
-    const cityBiasScale = 0.01; // 小さいほど広域パッチ
-    const cityBiasMin = 0.05; // 発生しにくい地域
-    const cityBiasMax = 8.0; // 発生しやすい地域
     const isAdjacentToSea = makeIsAdjacent(ctx, landMask, false);
     const isAdjacentToLand = makeIsAdjacent(ctx, landMask, true);
-    // 文明時代のみ city/cultivated を生成
     const isCivilizationEra = (ctx.era === '文明時代');
-    // 苔類進出時代のみ苔類進出地を生成
     const isBryophyteEra = (ctx.era === '苔類進出時代');
-    // 苔類進出地の生成アルゴリズム（耕作地と同等。ただし海隣接で確率100倍、かつ苔類進出時代のみ）
     if (isBryophyteEra) {
         for (let gy = 0; gy < ctx.gridHeight; gy++) {
             for (let gx = 0; gx < ctx.gridWidth; gx++) {
@@ -52,13 +53,12 @@ export function generateFeatures(
                         startProbability: pcBryo,
                         startRng: startBryoRng,
                         clusterRngKey: 'bryophyte-cluster',
-                        poissonMean: 5,
-                        poissonMax: 50,
+                        poissonMean: CULTIVATED_MEAN,
+                        poissonMax: CULTIVATED_MAX,
                         dirs: DIRS8,
                         seededRng,
-                        acceptP: 0.6,
+                        acceptP: CLUSTER_ACCEPT_P,
                         canFill: (nIdx) => {
-                            // 拡張条件: 低地・未city・未cultivated・未bryophyte
                             if (colors[nIdx] !== lowlandColor) return false;
                             if (cityMask[nIdx]) return false;
                             if (cultivatedMask[nIdx]) return false;
@@ -75,12 +75,9 @@ export function generateFeatures(
         for (let gy = 0; gy < ctx.gridHeight; gy++) {
             for (let gx = 0; gx < ctx.gridWidth; gx++) {
                 const idx = gy * ctx.gridWidth + gx;
-                // 最終色が低地のみ対象（ツンドラ/砂漠/高地/高山/氷河/海などは除外）
                 if (colors[idx] !== lowlandColor) continue;
-                // cultivated（先に生成）陸上の耕作地（cultivated）は海隣接時に baseCult * 10 
                 const baseCult = Math.max(0, ctx.cultivatedGenerationProbability || 0);
                 const pcCult = isAdjacentToSea(gx, gy) ? clamp01(baseCult * 5) : baseCult;
-                // 開始セルの採択は座標由来のシードで決定（安定化）
                 const startCultRng = getStartRng(ctx, 'cultivated-start', gx, gy, rCult);
                 if (!cultivatedMask[idx]) {
                     maybeStartClusterAtCell({
@@ -91,13 +88,12 @@ export function generateFeatures(
                         startProbability: pcCult,
                         startRng: startCultRng,
                         clusterRngKey: 'cultivated-cluster',
-                        poissonMean: 5,
-                        poissonMax: 50,
+                        poissonMean: CULTIVATED_MEAN,
+                        poissonMax: CULTIVATED_MAX,
                         dirs: DIRS8,
                         seededRng,
-                        acceptP: 0.6,
+                        acceptP: CLUSTER_ACCEPT_P,
                         canFill: (nIdx) => {
-                            // 拡張条件: 低地・未city・未cultivated
                             if (colors[nIdx] !== lowlandColor) return false;
                             if (cityMask[nIdx]) return false;
                             if (cultivatedMask[nIdx]) return false;
@@ -106,7 +102,6 @@ export function generateFeatures(
                         onFill: (nIdx) => { cultivatedMask[nIdx] = true; }
                     });
                 }
-                // city（cultivated の後で上書き）陸上の都市（city）は adjacencyMultiplier:10 を渡しており、海隣接時に10倍扱い
                 if (cityMask[idx]) continue;
                 const baseCity = Math.max(0, ctx.cityGenerationProbability || 0);
                 const pcCity = getBiasedCityProbability({
@@ -115,12 +110,11 @@ export function generateFeatures(
                     gy,
                     baseProbability: baseCity,
                     isAdjacentFn: isAdjacentToSea,
-                    biasScale: cityBiasScale,
-                    biasMin: cityBiasMin,
-                    biasMax: cityBiasMax,
-                    adjacencyMultiplier: 5
+                    biasScale: CITY_BIAS_SCALE,
+                    biasMin: CITY_BIAS_MIN,
+                    biasMax: CITY_BIAS_MAX,
+                    adjacencyMultiplier: ADJACENCY_MULTIPLIER
                 });
-                // 開始セルの採択は座標由来のシードで決定（安定化）
                 const startCityRng = getStartRng(ctx, 'city-start', gx, gy, rCity);
                 if (pcCity > 0 && !isOneCellIsland(ctx, landMask, gx, gy) && !cityMask[idx]) {
                     maybeStartClusterAtCell({
@@ -131,13 +125,12 @@ export function generateFeatures(
                         startProbability: pcCity,
                         startRng: startCityRng,
                         clusterRngKey: 'city-cluster',
-                        poissonMean: 3,
-                        poissonMax: 50,
+                        poissonMean: CITY_MEAN,
+                        poissonMax: CITY_MAX,
                         dirs: DIRS8,
                         seededRng,
-                        acceptP: 0.6,
+                        acceptP: CLUSTER_ACCEPT_P,
                         canFill: (nIdx) => {
-                            // 拡張条件: 低地・未city
                             if (colors[nIdx] !== lowlandColor) return false;
                             if (cityMask[nIdx]) return false;
                             return true;
@@ -147,10 +140,8 @@ export function generateFeatures(
                 }
             }
         }
-        // 追加: 汚染地の生成（文明時代のみ、低地/都市/耕作地セル上に生成、クラスター平均サイズ ~20）
         const countPolluted = Math.max(0, Math.floor(Number(ctx.pollutedAreasCount || 0)));
         if (countPolluted > 0) {
-            // 海岸セルに重み10、内陸に重み1（cityと同様の海岸優遇）
             generatePollutedAreas(ctx, {
                 N,
                 countAreas: countPolluted,
@@ -161,8 +152,8 @@ export function generateFeatures(
                 },
                 pickRngKey: 'polluted-pick',
                 clusterRngKey: 'polluted-cluster',
-                targetMean: 20,
-                targetMax: 200,
+                targetMean: POLLUTED_MEAN,
+                targetMax: POLLUTED_MAX,
                 dirs: DIRS8,
                 pollutedMask,
                 canExpand: (nIdx) => (colors[nIdx] === lowlandColor || cityMask[nIdx] || cultivatedMask[nIdx])
@@ -170,24 +161,19 @@ export function generateFeatures(
         }
     }
 
-    // 追加: 海棲city/cultivated/polluted の生成（浅瀬のみ、陸隣接で確率10倍）
     const seaCityMask = new Array(N).fill(false);
     const seaCultivatedMask = new Array(N).fill(false);
     const seaPollutedMask = new Array(N).fill(false);
     const rSeaCity = pickRng(ctx._getDerivedRng('sea-city'));
     const rSeaCult = pickRng(ctx._getDerivedRng('sea-cultivated'));
-    // 海棲文明時代のみ seaCity/seaCultivated/seaPolluted を生成
     const isSeaCivilizationEra = (ctx.era === '海棲文明時代');
     if (isSeaCivilizationEra) {
         for (let gy = 0; gy < ctx.gridHeight; gy++) {
             for (let gx = 0; gx < ctx.gridWidth; gx++) {
                 const idx = gy * ctx.gridWidth + gx;
-                // 最終色が浅瀬のみ対象
                 if (colors[idx] !== shallowSeaColor) continue;
-                // seaCultivated（先に生成）浅瀬の海耕作（seaCultivated）は陸隣接時に baseSeaCult * 10
                 const baseSeaCult = Math.max(0, ctx.seaCultivatedGenerationProbability || 0);
                 const pcSeaCult = isAdjacentToLand(gx, gy) ? clamp01(baseSeaCult * 5) : baseSeaCult;
-                // 開始セルの採択は座標由来のシードで決定（安定化）
                 const startSeaCultRng = getStartRng(ctx, 'sea-cultivated-start', gx, gy, rSeaCult);
                 if (!seaCultivatedMask[idx]) {
                     maybeStartClusterAtCell({
@@ -198,13 +184,12 @@ export function generateFeatures(
                         startProbability: pcSeaCult,
                         startRng: startSeaCultRng,
                         clusterRngKey: 'sea-cultivated-cluster',
-                        poissonMean: 5,
-                        poissonMax: 50,
+                        poissonMean: CULTIVATED_MEAN,
+                        poissonMax: CULTIVATED_MAX,
                         dirs: DIRS8,
                         seededRng,
-                        acceptP: 0.6,
+                        acceptP: CLUSTER_ACCEPT_P,
                         canFill: (nIdx) => {
-                            // 拡張条件: 浅瀬・未seaCity・未seaCultivated
                             if (colors[nIdx] !== shallowSeaColor) return false;
                             if (seaCityMask[nIdx]) return false;
                             if (seaCultivatedMask[nIdx]) return false;
@@ -213,7 +198,6 @@ export function generateFeatures(
                         onFill: (nIdx) => { seaCultivatedMask[nIdx] = true; }
                     });
                 }
-                // seaCity（seaCultivated の後で上書き）浅瀬の海都市（seaCity）も adjacencyMultiplier:10 を渡しており、陸隣接時に10倍扱い
                 if (seaCityMask[idx]) continue;
                 const baseSeaCity = Math.max(0, ctx.seaCityGenerationProbability || 0);
                 const pcSeaCity = getBiasedCityProbability({
@@ -222,12 +206,11 @@ export function generateFeatures(
                     gy,
                     baseProbability: baseSeaCity,
                     isAdjacentFn: isAdjacentToLand,
-                    biasScale: cityBiasScale,
-                    biasMin: cityBiasMin,
-                    biasMax: cityBiasMax,
-                    adjacencyMultiplier: 5
+                    biasScale: CITY_BIAS_SCALE,
+                    biasMin: CITY_BIAS_MIN,
+                    biasMax: CITY_BIAS_MAX,
+                    adjacencyMultiplier: ADJACENCY_MULTIPLIER
                 });
-                // 開始セルの採択は座標由来のシードで決定（安定化）
                 const startSeaCityRng = getStartRng(ctx, 'sea-city-start', gx, gy, rSeaCity);
                 if (!seaCityMask[idx]) {
                     maybeStartClusterAtCell({
@@ -238,13 +221,12 @@ export function generateFeatures(
                         startProbability: pcSeaCity,
                         startRng: startSeaCityRng,
                         clusterRngKey: 'sea-city-cluster',
-                        poissonMean: 3,
-                        poissonMax: 50,
+                        poissonMean: CITY_MEAN,
+                        poissonMax: CITY_MAX,
                         dirs: DIRS8,
                         seededRng,
-                        acceptP: 0.6,
+                        acceptP: CLUSTER_ACCEPT_P,
                         canFill: (nIdx) => {
-                            // 拡張条件: 浅瀬・未seaCity
                             if (colors[nIdx] !== shallowSeaColor) return false;
                             if (seaCityMask[nIdx]) return false;
                             return true;
@@ -254,10 +236,8 @@ export function generateFeatures(
                 }
             }
         }
-        // 追加: 海棲汚染地の生成（海棲文明時代のみ、浅瀬/海棲都市/海棲耕作地セル上に生成、クラスター平均サイズ ~20）
         const countSeaPolluted = Math.max(0, Math.floor(Number(ctx.seaPollutedAreasCount || 0)));
         if (countSeaPolluted > 0) {
-            // 陸隣接セルに重み10、内陸に重み1（seaCityと同様の陸隣接優遇）
             generatePollutedAreas(ctx, {
                 N,
                 countAreas: countSeaPolluted,
@@ -268,8 +248,8 @@ export function generateFeatures(
                 },
                 pickRngKey: 'sea-polluted-pick',
                 clusterRngKey: 'sea-polluted-cluster',
-                targetMean: 20,
-                targetMax: 200,
+                targetMean: POLLUTED_MEAN,
+                targetMax: POLLUTED_MAX,
                 dirs: DIRS8,
                 pollutedMask: seaPollutedMask,
                 canExpand: (nIdx) => (colors[nIdx] === shallowSeaColor || seaCityMask[nIdx] || seaCultivatedMask[nIdx])

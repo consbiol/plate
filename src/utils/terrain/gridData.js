@@ -1,5 +1,3 @@
-// gridData の組み立て（terrain判定＋各種フラグ埋め込み）
-
 export function buildGridData(ctx, {
   N,
   colors,
@@ -21,9 +19,11 @@ export function buildGridData(ctx, {
   seaPollutedMask
 }) {
   const gridData = new Array(N);
-  for (let gy = 0; gy < ctx.gridHeight; gy++) {
-    for (let gx = 0; gx < ctx.gridWidth; gx++) {
-      const idx = gy * ctx.gridWidth + gx;
+  const gridWidth = ctx.gridWidth;
+  const gridHeight = ctx.gridHeight;
+  for (let gy = 0; gy < gridHeight; gy++) {
+    for (let gx = 0; gx < gridWidth; gx++) {
+      const idx = gy * gridWidth + gx;
       const temperature = null;
       const precipitation = null;
       const isLand = !!landMask[idx];
@@ -47,10 +47,7 @@ export function buildGridData(ctx, {
         else if (col === desertColor) terrain = { type: 'land', land: 'desert' };
         else terrain = { type: 'land', land: 'lowland' };
       }
-      // 氷河の“上書き元”種別（描画用）
-      // - landGlacier: 低地/乾燥/高地/高山/ツンドラ/都市/耕作/苔/汚染 など陸域を上書き
-      // - seaGlacier : 深海/浅瀬/湖/海棲都市/海棲耕作/海棲汚染 など水域を上書き
-      // NOTE: terrain 自体の sea/land は既存仕様のまま（面積計算/既存ロジック互換のため）。
+      // 氷河の上書き元（描画用）
       let glacierKind = null;
       if (col === glacierColor) {
         // “水域扱い”にしたい条件: 海セル / 湖 / 海棲フラグ
@@ -79,15 +76,16 @@ export function buildGridData(ctx, {
 }
 
 export function markCentersOnGridData(ctx, { gridData, centers }) {
-  // 中心点セルを赤で表示（フラグ埋め込み）
   if (!ctx.showCentersRed) return;
   if (!Array.isArray(centers)) return;
+  const gridWidth = ctx.gridWidth;
+  const gridHeight = ctx.gridHeight;
   for (let ci = 0; ci < centers.length; ci++) {
     const c = centers[ci];
     if (!c) continue;
-    const cx = Math.max(0, Math.min(ctx.gridWidth - 1, Math.floor(c.x)));
-    const cy = Math.max(0, Math.min(ctx.gridHeight - 1, Math.floor(c.y)));
-    const idx = cy * ctx.gridWidth + cx;
+    const cx = Math.max(0, Math.min(gridWidth - 1, Math.floor(c.x)));
+    const cy = Math.max(0, Math.min(gridHeight - 1, Math.floor(c.y)));
+    const idx = cy * gridWidth + cx;
     if (gridData[idx]) {
       gridData[idx].center = true;
     }

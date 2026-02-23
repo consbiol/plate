@@ -1,8 +1,17 @@
 import { pickRng } from '../rng.js';
 
-function isSeedStrictEra(era) {
-  return (era === '文明時代' || era === '海棲文明時代');
-}
+const SEED_STRICT_ERAS = new Set(['文明時代', '海棲文明時代']);
+const DIRS_8 = [
+  [-1, -1], [0, -1], [1, -1],
+  [-1, 0], /*0,0*/ [1, 0],
+  [-1, 1], [0, 1], [1, 1]
+];
+const DEFAULT_EXPANSION_BIAS = 0.12;
+const DEFAULT_MAX_ITERATIONS = 10;
+const FLIP_PROB = 0.30;
+const SCORE_BAND_RATIO = 0.05;
+
+const isSeedStrictEra = (era) => SEED_STRICT_ERAS.has(era);
 
 function getGridContext(ctx) {
   const { gridWidth, gridHeight, torusWrap, _getDerivedRng, era } = ctx;
@@ -11,13 +20,10 @@ function getGridContext(ctx) {
 
 function countLandNeighbors(x, y, landMask, gridWidth, torusWrap) {
   let count = 0;
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      if (dx === 0 && dy === 0) continue;
-      const wrapped = torusWrap(x + dx, y + dy);
-      if (!wrapped) continue;
-      if (landMask[wrapped.y * gridWidth + wrapped.x]) count++;
-    }
+  for (const [dx, dy] of DIRS_8) {
+    const wrapped = torusWrap(x + dx, y + dy);
+    if (!wrapped) continue;
+    if (landMask[wrapped.y * gridWidth + wrapped.x]) count++;
   }
   return count;
 }
@@ -26,8 +32,8 @@ export function dilateLandMask(ctx, {
   landMask,
   scores,
   threshold,
-  expansionBias = 0.12,
-  maxIterations = 10
+  expansionBias = DEFAULT_EXPANSION_BIAS,
+  maxIterations = DEFAULT_MAX_ITERATIONS
 }) {
   const { gridWidth, gridHeight, torusWrap } = getGridContext(ctx);
   let current = landMask.slice();
@@ -88,19 +94,15 @@ export function jitterCoastline(ctx, {
     if (s < minScore) minScore = s;
     if (s > maxScore) maxScore = s;
   }
-  const scoreBand = Math.max(1e-6, (maxScore - minScore) * 0.05);
-  const flipProb = 0.30;
+  const scoreBand = Math.max(1e-6, (maxScore - minScore) * SCORE_BAND_RATIO);
 
   const hasOppNeighbor = (x, y) => {
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const w = torusWrap(x + dx, y + dy);
-        if (!w) continue;
-        const a = y * gridWidth + x;
-        const b = w.y * gridWidth + w.x;
-        if (next[a] !== next[b]) return true;
-      }
+    const a = y * gridWidth + x;
+    for (const [dx, dy] of DIRS_8) {
+      const w = torusWrap(x + dx, y + dy);
+      if (!w) continue;
+      const b = w.y * gridWidth + w.x;
+      if (next[a] !== next[b]) return true;
     }
     return false;
   };
@@ -114,7 +116,7 @@ export function jitterCoastline(ctx, {
         const r = strict
           ? pickRng(_getDerivedRng('coast-flip', gx, gy), seededRng)
           : pickRng();
-        if (r() < flipProb) {
+        if (r() < FLIP_PROB) {
           next[idx] = !next[idx];
         }
       }

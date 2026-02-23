@@ -60,6 +60,7 @@ export function computeDistanceMap({
   gridHeight
 }) {
   const dist = new Array(N).fill(Infinity);
+  if (!sources || sources.length === 0) return dist;
   const heap = createMinHeap();
 
   for (const s of sources) {

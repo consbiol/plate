@@ -176,7 +176,6 @@
     </div>
     
 
-    <!-- 非表示の計算コンポーネント（テンプレート内に配置することで使用済みとして認識される） -->
     <Grids_Calculation
       ref="calc"
       :runSignal="runSignal"
@@ -231,7 +230,6 @@
       @drifted="onGenerated"
     />
 
-    <!-- 非表示の球表示コンポーネント -->
     <Sphere_Display
       ref="sphere"
     />
@@ -308,12 +306,52 @@ import {
  *
  * @typedef {import('../types/index.js').TerrainEventPayload} TerrainEventPayload
  * @typedef {import('../types/index.js').TerrainRunCommand} TerrainRunCommand
- */
-
-/**
- * Local UI stats shape used by Parameters Output popup.
  * @typedef {import('../types/index.js').ParametersStats} ParametersStats
  */
+
+const TURN_YR_OPTIONS = [10, 20, 100, 1000, 2000, 5000, 10000, 50000, 100000];
+const LAND_THRESHOLD_KEYS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+const toFiniteNumber = (value, fallback) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+const clampNumber = (value, min, max, fallback) => {
+  const n = toFiniteNumber(value, fallback);
+  return Math.min(max, Math.max(min, n));
+};
+
+const getLocalNumber = (local, key, fallback) => {
+  const v = local?.[key];
+  return Number.isFinite(Number(v)) ? Number(v) : fallback;
+};
+
+const getEraValue = (local, storeEra) => (local?.era ? local.era : storeEra);
+const getDeterministicSeed = (local) => (typeof local?.deterministicSeed !== 'undefined' ? local.deterministicSeed : '');
+
+const getLandRatioDeltaFromStore = (store) => {
+  const delta = store?.state?.climate?.events?.land_ratio_event;
+  return Number.isFinite(Number(delta)) ? Number(delta) : 0;
+};
+
+const computeLandDistanceThresholdAverage = (local, fallback) => {
+  let sum = 0;
+  let count = 0;
+  for (const k of LAND_THRESHOLD_KEYS) {
+    const v = getLocalNumber(local, `landDistanceThreshold${k}`, null);
+    if (v !== null) {
+      sum += v;
+      count += 1;
+    }
+  }
+  return count > 0 ? Math.round(sum / count) : fallback;
+};
+
+const buildRunContext = (runMode, runSeq) => ({
+  runMode,
+  runId: `${Date.now()}-${runSeq}`
+});
 export default {
   name: 'Parameters_Display',
   components: { Grids_Calculation, Sphere_Display, GeneratorActions, TurnPanel },
@@ -396,88 +434,40 @@ export default {
   },
   data() {
     return {
-      // ---------------------------
-      // Core inputs / UI state
-      // ---------------------------
-      // グリッド幅・高さ（初期値: 200x100）
       gridWidth: GRID_DEFAULTS.gridWidth,
       gridHeight: GRID_DEFAULTS.gridHeight,
       local: createLocalParams(this),
-      // UI で選べる時代一覧（store.era と対応）
       eras: ERAS,
-      // 中心点のパラメータはdeepコピーして編集可能にする
       mutableCenterParams: deepClone(this.centerParameters || []),
-      // UIで選べる Turn_yr の選択肢
-      turnYrOptions: [10, 20, 100, 1000, 2000, 5000, 10000, 50000, 100000],
-      // store<->local 同期のループ防止フラグ
+      turnYrOptions: TURN_YR_OPTIONS,
       isSyncingLocalFromStore: false,
-
-      // ---------------------------
-      // Popup refs (windows)
-      // ---------------------------
       popup: {
         planePopupRef: null,
         parametersPopupRef: null,
         climatePopupRef: null
       },
-
-      // ---------------------------
-      // Calculation / rendering cache
-      // ---------------------------
       cache: {
-        // ポップアップ描画用の平面色（+2枠込み）
         planeDisplayColors: [],
-        // plane iframe のビルドバージョン（構造変化時はインクリメント）
         planeBuildVersion: 0
       },
-
-      // ---------------------------
-      // Run command (child trigger) - unified signal
-      // ---------------------------
       run: {
-        // single trigger counter
         runSignal: 0,
-        // queued commands (FIFO). Each item: TerrainRunCommand
         runQueue: [],
-        // child busy/idle (debug/UX)
         isBusy: false
       },
-
-      // ---------------------------
-      // Run context (mode/id): used to make emitted payloads self-describing
-      // ---------------------------
       runSeq: 0,
       runContext: { runMode: null, runId: null },
-
-      // ---------------------------
-      // Turn / timers
-      // ---------------------------
       turn: {
-        // ターン進行のタイマー（setTimeout）
         turnTimer: null
       },
-
-      // ---------------------------
-      // Popup non-reload update counters
-      // ---------------------------
       sphere: {
-        // sphere の非リロード更新回数管理
         sphereUpdateCount: 0,
         sphereMaxUpdates: SPHERE_MAX_NON_RELOAD_UPDATES
       },
-
-      // ---------------------------
-      // Derived stats for UI/output
-      // ---------------------------
       stats: null
     };
   },
   computed: {
-    // ---------------------------
-    // Proxies (data organization; keep existing field names stable)
-    // ---------------------------
-    // NOTE: Other modules (e.g. popup controllers) expect these vm fields to exist.
-    // We store them in nested objects for readability, and expose them here as proxies.
     planeDisplayColors: {
       get() { return this.cache.planeDisplayColors; },
       set(v) { this.cache.planeDisplayColors = v; }
@@ -519,23 +509,13 @@ export default {
       set(v) { this.sphere.sphereMaxUpdates = v; }
     },
 
-    // ---------------------------
-    // Store-derived state (Vuex)
-    // ---------------------------
-    // NOTE: prefer `src/store/api.js` wrappers; keep computed here for template readability.
     storeEra() {
       return getEra(this.$store);
     },
-    // base + event
     effectiveSeaLandRatio() {
-      const base = (this.local && typeof this.local.seaLandRatio === 'number') ? Number(this.local.seaLandRatio) : 0.3;
-      // Get land_ratio_event from current climate state
-      const c = (this.$store && this.$store.state && this.$store.state.climate) ? this.$store.state.climate : null;
-      const delta = (c && c.events && typeof c.events.land_ratio_event === 'number') ? Number(c.events.land_ratio_event) : 0;
-      let val = base + delta;
-      // Clamp logic if needed (e.g. 0.01 to 0.99)
-      val = Math.max(0.01, Math.min(0.99, val));
-      return val;
+      const base = getLocalNumber(this.local, 'seaLandRatio', 0.3);
+      const val = base + getLandRatioDeltaFromStore(this.$store);
+      return clampNumber(val, 0.01, 0.99, 0.3);
     },
     storeGeneratorParams() {
       return getGeneratorParams(this.$store);
@@ -569,41 +549,33 @@ export default {
     },
     selectedTurnYr: {
       get() {
-        const v = this.climateTurn && typeof this.climateTurn.Turn_yr === 'number' ? Number(this.climateTurn.Turn_yr) : 50000;
-        return v;
+        return toFiniteNumber(this.climateTurn?.Turn_yr, 50000);
       },
       set(val) {
-        const n = Number(val) || 50000;
+        const n = toFiniteNumber(val, 50000);
         bestEffort(() => patchClimate(this.$store, { Turn_yr: n }));
       }
     },
     turnSpeed: {
       get() {
-        return Number(this.climateTurn.Turn_speed || 1.0);
+        return toFiniteNumber(this.climateTurn?.Turn_speed, 1.0);
       },
       set(val) {
-        let v = Number(val);
-        if (!isFinite(v)) v = 1.0;
-        v = Math.max(0.1, Math.min(10, Math.round(v * 10) / 10));
+        let v = clampNumber(val, 0.1, 10, 1.0);
+        v = Math.round(v * 10) / 10;
         updateTurnSpeed(this.$store, v);
       }
     },
     turnSliderExp: {
       get() {
-        const ts = Number(this.climateTurn.Turn_speed || 1.0);
-        // avoid NaN
-        const safeTs = (ts > 0) ? ts : 1.0;
-        // UI slider operates on multiplier 'x' (larger x = faster).
-        // multiplier x = 1 / sec_per_turn, so exponent = log10(x) = -log10(sec)
+        const ts = toFiniteNumber(this.climateTurn?.Turn_speed, 1.0);
+        const safeTs = ts > 0 ? ts : 1.0;
         return Math.log10(1.0 / safeTs);
       },
       set(val) {
-        let exp = Number(val);
-        if (!isFinite(exp)) exp = 0;
-        // map back to seconds-per-turn: sec = 1 / (10^exp) = 10^-exp
+        const exp = toFiniteNumber(val, 0);
         let v = Math.pow(10, -exp);
-        v = Math.max(0.1, Math.min(10, v));
-        v = Math.round(v * 10) / 10;
+        v = Math.round(clampNumber(v, 0.1, 10, 1.0) * 10) / 10;
         updateTurnSpeed(this.$store, v);
       }
     },
@@ -612,12 +584,10 @@ export default {
         return getAverageTemperature(this.$store, 15);
       },
       set(val) {
-        let num = Number(val);
-        if (!isFinite(num)) return;
-        // 2℃刻みにスナップし、許容範囲へクランプ
+        let num = toFiniteNumber(val, null);
+        if (num === null) return;
         num = Math.round(num / 2) * 2;
-        if (num < -50) num = -50;
-        if (num > 60) num = 60;
+        num = clampNumber(num, -50, 60, 15);
         if (this.$store) {
           storeUpdateAverageTemperature(this.$store, num);
         }
@@ -629,10 +599,7 @@ export default {
         return getPlaneGridCellPx(this.$store, 3);
       },
       set(val) {
-        let v = Math.round(Number(val));
-        if (!isFinite(v)) v = 3;
-        if (v < 1) v = 1;
-        if (v > 10) v = 10;
+        let v = Math.round(clampNumber(val, 1, 10, 3));
         updatePlaneGridCellPx(this.$store, v);
       }
     },
@@ -641,42 +608,25 @@ export default {
     // Derived (computed from local/UI + store snapshots)
     // ---------------------------
     computedAverageHighlandsPerCenter() {
-      const x = (this.effectiveSeaLandRatio) ? Number(this.effectiveSeaLandRatio) : 0.3;
+      const x = toFiniteNumber(this.effectiveSeaLandRatio, 0.3);
       return 2 + 10 * x;
     },
     topTundraRowsComputed() {
-      const glacier = (this.local && typeof this.local.topGlacierRows === 'number') ? this.local.topGlacierRows : 0;
-      const extra = (this.local && typeof this.local.tundraExtraRows === 'number') ? this.local.tundraExtraRows : 0;
+      const glacier = getLocalNumber(this.local, 'topGlacierRows', 0);
+      const extra = getLocalNumber(this.local, 'tundraExtraRows', 0);
       return Math.max(0, glacier + extra);
     },
-    // UI表示用（計算側が生成時に使った実効値を優先）
     topGlacierRowsDisplayed() {
       if (this.stats && typeof this.stats.computedTopGlacierRows === 'number') {
         return Math.round(this.stats.computedTopGlacierRows);
       }
-      const v = (this.local && typeof this.local.topGlacierRows === 'number') ? this.local.topGlacierRows : 0;
+      const v = getLocalNumber(this.local, 'topGlacierRows', 0);
       return Math.round(v);
     },
-    // 低地・乾燥地間の帯別閾値の平均（帯1..帯10 の平均を返す）
     landDistanceThresholdAverage() {
-      const keys = [1,2,3,4,5,6,7,8,9,10];
-      let sum = 0;
-      let cnt = 0;
-      for (let i = 0; i < keys.length; i++) {
-        const k = keys[i];
-        const prop = this.local && typeof this.local[`landDistanceThreshold${k}`] !== 'undefined' ? this.local[`landDistanceThreshold${k}`] : null;
-        if (prop !== null && typeof prop === 'number' && isFinite(prop)) {
-          sum += Number(prop);
-          cnt += 1;
-        }
-      }
-      if (cnt === 0) {
-        // フォールバック: 明示的なbaseがあればそれを返す、なければ0
-        return (this.local && typeof this.local.baseLandDistanceThreshold === 'number') ? this.local.baseLandDistanceThreshold : 0;
-      }
-      return Math.round(sum / cnt);
+      const fallback = getLocalNumber(this.local, 'baseLandDistanceThreshold', 0);
+      return computeLandDistanceThresholdAverage(this.local, fallback);
     },
-    // 陸の割合 x に応じた中心間の排他距離（自動計算）
     computedMinCenterDistance() {
       return computeEffectiveMinCenterDistance(this.effectiveSeaLandRatio, PARAM_DEFAULTS && PARAM_DEFAULTS.seaLandRatio);
     }
@@ -735,7 +685,7 @@ export default {
     // ---------------------------
     _updatePlaneDisplayColorsFromGridData(gridData) {
       try {
-        const era = this.local && this.local.era ? this.local.era : this.storeEra;
+        const era = getEraValue(this.local, this.storeEra);
         const eraColors = getEraTerrainColors(era);
         const displayColors = (gridData && gridData.length === this.gridWidth * this.gridHeight)
           ? deriveDisplayColorsFromGridData(gridData, this.gridWidth, this.gridHeight, undefined, eraColors, /*preferPalette*/ true)
@@ -750,9 +700,8 @@ export default {
     // Turn UI
     // ---------------------------
     onTurnYrSelect(val) {
-      const n = Number(val);
-      if (!isFinite(n) || n <= 0) return;
-      // computed setter will commit to store
+      const n = toFiniteNumber(val, null);
+      if (n === null || n <= 0) return;
       this.selectedTurnYr = n;
     },
     /**
@@ -780,7 +729,7 @@ export default {
 
       // 気候モデルの地形面積率も更新（これを advanceClimateOneTurn より前に行う）
       {
-        const era = this.local && this.local.era ? this.local.era : this.storeEra;
+        const era = getEraValue(this.local, this.storeEra);
         updateClimateTerrainFractionsFromStats(this.$store, {
           gridTypeCounts: this.stats && this.stats.gridTypeCounts ? this.stats.gridTypeCounts : null,
           preGlacierStats: (this.stats && this.stats.preGlacier) ? this.stats.preGlacier : null,
@@ -797,15 +746,9 @@ export default {
       }
     },
 
-    // ---------------------------
-    // Local derived params (UI helpers)
-    // ---------------------------
     applyGreenIndexToLandDistanceThresholds() {
-      // OFFのときは手動上書きを尊重して何もしない
       if (!this.local || !this.local.landDistanceThresholdAuto) return;
-      // store -> local 同期中に走ると循環するためガード
       if (this.isSyncingLocalFromStore) return;
-      // greenIndex is sourced from the climate model / generator params (store). Prefer climate.vars.greenIndex if available.
       const climateVars = getClimateVars(this.$store);
       const storeGen = this.storeGeneratorParams ?? {};
       const giCandidate = (climateVars && typeof climateVars.greenIndex === 'number') ? climateVars.greenIndex : (typeof storeGen.greenIndex === 'number' ? storeGen.greenIndex : Number(PARAM_DEFAULTS.greenIndex));
@@ -816,15 +759,10 @@ export default {
       });
       if (!next || typeof next !== 'object') return;
 
-      // deep watcher の多重発火を避けるため、ローカル更新は一括で行う
-      // NOTE: ここから直接 store に dispatch すると store->local 同期と循環して
-      //       "Maximum recursive updates exceeded" になりやすいので、store反映は
-      //       local deep watcher（_syncStoreFromLocal）に任せる。
       this.isSyncingLocalFromStore = true;
       try {
         for (const k of Object.keys(next)) {
           if (Object.prototype.hasOwnProperty.call(this.local, k)) {
-            // 値が変わるときだけ代入（不要なリアクティブ通知を減らす）
             if (this.local[k] !== next[k]) this.local[k] = next[k];
           }
         }
@@ -835,43 +773,30 @@ export default {
     onEraChange() {
       updateEra(this.$store, this.local.era);
     },
-    // 平均気温から上端・下端氷河グリッド数を線形補間で算出（2℃刻み入力想定）
     updateAverageTemperature(value) {
-      const t = (typeof value === 'number') ? value
-        : this.averageTemperature;
+      const t = (typeof value === 'number') ? value : this.averageTemperature;
       const v = computeGlacierBaseRowsFromTemperature(t);
-      // 端数は四捨五入。負も許容（海氷河は作成しないよう計算側でガード）
       this.local.topGlacierRows = Math.round(v);
     },
 
-    // ---------------------------
-    // Generator actions (buttons)
-    // ---------------------------
     _setRunContext(runMode) {
+      this.runSeq = (Number(this.runSeq) || 0) + 1;
       try {
-        this.runSeq = (Number(this.runSeq) || 0) + 1;
-        // string id to avoid overflow / collision
-        this.runContext = { runMode, runId: `${Date.now()}-${this.runSeq}` };
+        this.runContext = buildRunContext(runMode, this.runSeq);
       } catch (e) {
-        // fallback
         this.runContext = { runMode, runId: null };
       }
     },
     formatProbabilityValue(value) {
-      const numeric = (typeof value === 'number') ? value : Number(value);
-      if (!Number.isFinite(numeric)) return '-';
-      return numeric.toFixed(6);
+      const numeric = toFiniteNumber(value, null);
+      return numeric === null ? '-' : numeric.toFixed(6);
     },
     _triggerRun(mode, options = null, { allowDuringTurn = false } = {}) {
-      // Safety: during turn ticking, block manual/enqueued runs to keep state consistent.
-      // (Turn loop uses direct revise call and explicit internal enqueues with allowDuringTurn=true.)
       if (!allowDuringTurn && this.climateTurn && this.climateTurn.isRunning) return;
       this._setRunContext(mode);
-      // enqueue (FIFO). child will drain on runSignal change.
       /** @type {TerrainRunCommand} */
       const item = { mode, options: options || null, runContext: this.runContext };
 
-      // Coalesce: reviseは「最新1件だけ」残せば十分（中間reviseを全消化する必要がない）
       if (mode === RUN_MODES.REVISE && Array.isArray(this.runQueue)) {
         let lastReviseIdx = -1;
         for (let i = this.runQueue.length - 1; i >= 0; i--) {
@@ -884,9 +809,7 @@ export default {
         }
       }
 
-      // Safety: cap queue size to avoid unbounded growth (e.g. repeated triggers during long generate).
       if (Array.isArray(this.runQueue) && this.runQueue.length >= RUN_QUEUE_MAX) {
-        // drop oldest to keep latest commands responsive
         const overflow = (this.runQueue.length - RUN_QUEUE_MAX) + 1;
         this.runQueue.splice(0, Math.max(1, overflow));
       }
@@ -937,8 +860,8 @@ export default {
     _applyTerrainPayloadToClimate({ payload, runMode }) {
       // 4) 気候モデル: generate のときだけ初期化（update/drift では初期化しない）
       bestEffort(() => {
-        const era = (this.local && this.local.era) ? this.local.era : this.storeEra;
-        const seed = (this.local && typeof this.local.deterministicSeed !== 'undefined') ? this.local.deterministicSeed : '';
+        const era = getEraValue(this.local, this.storeEra);
+        const seed = getDeterministicSeed(this.local);
         // 初期化は generate 操作のときのみ行う（turn進行中は絶対に初期化しない）
         if (runMode === 'generate' && !this.climateTurn?.isRunning) {
           // Generate では「時代デフォルトへ戻す」仕様（必須）
@@ -976,8 +899,8 @@ export default {
       this._triggerRun(RUN_MODES.GENERATE);
       // 1) 気候を先に初期化（generate時の純粋な放射平衡温度に基づいた topGlacierRows を作るため）
       bestEffort(() => {
-        const era = (this.local && this.local.era) ? this.local.era : this.storeEra;
-        const seed = (this.local && typeof this.local.deterministicSeed !== 'undefined') ? this.local.deterministicSeed : '';
+        const era = getEraValue(this.local, this.storeEra);
+        const seed = getDeterministicSeed(this.local);
         // Generate では「時代デフォルトへ戻す」仕様（必須）
         initClimateFromGenerate(this.$store, { era, deterministicSeed: seed, resetTurnYrToEraDefault: true });
         // climateVars に averageTemperature_calc (K) が入っている想定
@@ -1073,8 +996,8 @@ export default {
         const c = getClimate(this.$store);
         const needInit = !c || !c.constants || c.constants.solarFlareUpRate == null;
         if (needInit) {
-          const era = (this.local && this.local.era) ? this.local.era : this.storeEra;
-          const seed = (this.local && typeof this.local.deterministicSeed !== 'undefined') ? this.local.deterministicSeed : '';
+          const era = getEraValue(this.local, this.storeEra);
+          const seed = getDeterministicSeed(this.local);
           // turn開始時の初期化は、現在の Turn_yr（UI選択）を維持する
           initClimateFromGenerate(this.$store, { era, deterministicSeed: seed, resetTurnYrToEraDefault: false });
           // terrain は未生成ならデフォルトのまま（Generate後は onGenerated で更新される）
@@ -1204,7 +1127,7 @@ export default {
         landDistanceThresholdAverage: this.landDistanceThresholdAverage,
         topTundraRowsComputed: this.topTundraRowsComputed,
         topGlacierRowsDisplayed: this.topGlacierRowsDisplayed,
-      computedBryophyteProbability: this.climateBryophyteProbability,
+        computedBryophyteProbability: this.climateBryophyteProbability,
         volcanoEvent
       });
     },

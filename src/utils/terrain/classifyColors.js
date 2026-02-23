@@ -1,5 +1,3 @@
-// distanceToSea / distanceToLand とノイズから、色（地形カテゴリ）を分類する
-
 export function classifyBaseColors(ctx, {
   N,
   landMask,
@@ -14,9 +12,11 @@ export function classifyBaseColors(ctx, {
   desertColor
 }) {
   const colors = new Array(N);
-  for (let gy = 0; gy < ctx.gridHeight; gy++) {
-    for (let gx = 0; gx < ctx.gridWidth; gx++) {
-      const idx = gy * ctx.gridWidth + gx;
+  const gridWidth = ctx.gridWidth;
+  const gridHeight = ctx.gridHeight;
+  for (let gy = 0; gy < gridHeight; gy++) {
+    for (let gx = 0; gx < gridWidth; gx++) {
+      const idx = gy * gridWidth + gx;
       const n = noiseGrid[idx];
       if (landMask[idx]) {
         const bandThreshold = ctx.getLandDistanceThresholdForRow(gy, gx);

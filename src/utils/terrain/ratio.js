@@ -1,21 +1,20 @@
-// UIの seaLandRatio を内部の生成用比率へスムーズにマッピング（機能不変）
 import { clamp } from '../math.js';
 
+const X0 = 0.3;
+const Y0 = 0.07;
+const X1 = 0.9;
+const Y1 = 0.7;
+
 export function mapSeaLandRatio(ui) {
-    ui = clamp(Number(ui) || 0, 0, 1);
-    const x0 = 0.3, y0 = 0.07;
-    const x1 = 0.9, y1 = 0.7;
-    if (ui <= x0) {
-        // 0..x0 を 0..y0 に線形マップ
-        return (ui / x0) * y0;
-    } else if (ui >= x1) {
-        // x1..1 を y1..1 に線形マップ
-        return y1 + ((ui - x1) / (1 - x1)) * (1 - y1);
-    }
-    // 中央区間は smoothstep(3t^2-2t^3) で滑らかに補間
-    const t = (ui - x0) / (x1 - x0);
-    const s = t * t * (3 - 2 * t);
-    return y0 + s * (y1 - y0);
+  ui = clamp(Number(ui) || 0, 0, 1);
+  if (ui <= X0) {
+    return (ui / X0) * Y0;
+  } else if (ui >= X1) {
+    return Y1 + ((ui - X1) / (1 - X1)) * (1 - Y1);
+  }
+  const t = (ui - X0) / (X1 - X0);
+  const s = t * t * (3 - 2 * t);
+  return Y0 + s * (Y1 - Y0);
 }
 
 
