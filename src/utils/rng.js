@@ -1,3 +1,9 @@
+export function pickRng(...candidates) {
+    for (const rng of candidates) {
+        if (typeof rng === 'function') return rng;
+    }
+    return Math.random;
+}
 // --- シード対応RNG（mulberry32 + xmur3） ---
 // Grids_Calculation.vue で使っている決定論RNGをコンポーネント外に切り出し、
 // 「同じ seed / 同じ labels なら同じ乱数列」を保証する。

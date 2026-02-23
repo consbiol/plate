@@ -1,6 +1,8 @@
 // 汚染地の生成（重み付き抽選＋クラスタ拡張）
 
 import { growCluster } from './cluster';
+import { pickRng } from '../../rng.js';
+import { toCoords } from '../gridIndex.js';
 
 export function generatePollutedAreas(ctx, {
     N,
@@ -29,7 +31,7 @@ export function generatePollutedAreas(ctx, {
         totalWeight += w;
     }
 
-    const pickRng = ctx._getDerivedRng(pickRngKey) || Math.random;
+    const pick = pickRng(ctx._getDerivedRng(pickRngKey));
     const chosen = new Set();
 
     for (let k = 0; k < countAreas && eligible.length > 0; k++) {
@@ -38,7 +40,7 @@ export function generatePollutedAreas(ctx, {
         let pickedEi = -1;
         for (let tries = 0; tries < Math.max(20, eligible.length); tries++) {
             if (totalWeight <= 0) break;
-            let r = (pickRng() || Math.random) * totalWeight;
+            let r = pick() * totalWeight;
             let acc = 0;
             for (let ei = 0; ei < eligible.length; ei++) {
                 const w = weights[ei] || 0;
@@ -64,9 +66,8 @@ export function generatePollutedAreas(ctx, {
             weights[pickedEi] = 0;
         }
 
-        const sx = startIdx % ctx.gridWidth;
-        const sy = Math.floor(startIdx / ctx.gridWidth);
-        const clusterRng = ctx._getDerivedRng(clusterRngKey, sx, sy) || Math.random;
+        const { x: sx, y: sy } = toCoords(startIdx, ctx.gridWidth);
+        const clusterRng = pickRng(ctx._getDerivedRng(clusterRngKey, sx, sy));
         const targetSize = Math.max(1, ctx._poissonSample(targetMean, targetMax, clusterRng));
 
         growCluster({
@@ -77,8 +78,8 @@ export function generatePollutedAreas(ctx, {
             targetSize,
             dirs,
             acceptNeighbor: () => {
-                const acceptP = 0.6 + ((clusterRng() || Math.random) - 0.5) * 0.2; // 0.5..0.7
-                if ((clusterRng() || Math.random) > acceptP) return false;
+                const acceptP = 0.6 + (clusterRng() - 0.5) * 0.2; // 0.5..0.7
+                if (clusterRng() > acceptP) return false;
                 return true;
             },
             canFill: canExpand,

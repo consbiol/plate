@@ -1,15 +1,12 @@
 // 小さな数値ユーティリティ
+import { clamp as clampValue, clamp01 as clamp01Value } from '../../math.js';
 
 export function clamp01(x) {
-    if (x <= 0) return 0;
-    if (x >= 1) return 1;
-    return x;
+    return clamp01Value(x);
 }
 
 export function clamp(min, x, max) {
-    if (x < min) return min;
-    if (x > max) return max;
-    return x;
+    return clampValue(x, min, max);
 }
 
 

@@ -1,3 +1,5 @@
+import { pickRng } from '../rng.js';
+
 function isSeedStrictEra(era) {
   return (era === '文明時代' || era === '海棲文明時代');
 }
@@ -28,14 +30,15 @@ export function dilateLandMask(ctx, {
   maxIterations = 10
 }) {
   const { gridWidth, gridHeight, torusWrap } = getGridContext(ctx);
+  let current = landMask.slice();
   for (let iter = 0; iter < maxIterations; iter++) {
-    const newLandMask = landMask.slice();
+    const newLandMask = current.slice();
     let changed = false;
     for (let gy = 0; gy < gridHeight; gy++) {
       for (let gx = 0; gx < gridWidth; gx++) {
         const idx = gy * gridWidth + gx;
-        if (landMask[idx]) continue;
-        const landNeighborCount = countLandNeighbors(gx, gy, landMask, gridWidth, torusWrap);
+        if (current[idx]) continue;
+        const landNeighborCount = countLandNeighbors(gx, gy, current, gridWidth, torusWrap);
         const scoreClose = scores[idx] >= threshold - expansionBias;
         if ((landNeighborCount >= 3 && scoreClose) || landNeighborCount >= 4) {
           newLandMask[idx] = true;
@@ -43,9 +46,10 @@ export function dilateLandMask(ctx, {
         }
       }
     }
-    for (let i = 0; i < landMask.length; i++) landMask[i] = newLandMask[i];
+    current = newLandMask;
     if (!changed) break;
   }
+  return current;
 }
 
 export function removeSingleCellIslands(ctx, {
@@ -55,17 +59,19 @@ export function removeSingleCellIslands(ctx, {
 }) {
   const { gridWidth, gridHeight, torusWrap, _getDerivedRng } = getGridContext(ctx);
   const singleCellRemovalProbClamped = Math.max(0, Math.min(1, singleCellRemovalProb));
+  const next = landMask.slice();
   for (let gy = 0; gy < gridHeight; gy++) {
     for (let gx = 0; gx < gridWidth; gx++) {
       const idx = gy * gridWidth + gx;
-      if (!landMask[idx]) continue;
-      const hasLandNeighbor = countLandNeighbors(gx, gy, landMask, gridWidth, torusWrap) > 0;
+      if (!next[idx]) continue;
+      const hasLandNeighbor = countLandNeighbors(gx, gy, next, gridWidth, torusWrap) > 0;
       if (!hasLandNeighbor) {
-        const pickRng = _getDerivedRng('coast-island', gx, gy) || seededRng || Math.random;
-        if (pickRng() < singleCellRemovalProbClamped) landMask[idx] = false;
+        const pick = pickRng(_getDerivedRng('coast-island', gx, gy), seededRng);
+        if (pick() < singleCellRemovalProbClamped) next[idx] = false;
       }
     }
   }
+  return next;
 }
 
 export function jitterCoastline(ctx, {
@@ -75,6 +81,7 @@ export function jitterCoastline(ctx, {
   seededRng
 }) {
   const { gridWidth, gridHeight, torusWrap, _getDerivedRng, era } = getGridContext(ctx);
+  const next = landMask.slice();
   let minScore = Infinity, maxScore = -Infinity;
   for (let i = 0; i < scores.length; i++) {
     const s = scores[i];
@@ -92,7 +99,7 @@ export function jitterCoastline(ctx, {
         if (!w) continue;
         const a = y * gridWidth + x;
         const b = w.y * gridWidth + w.x;
-        if (landMask[a] !== landMask[b]) return true;
+        if (next[a] !== next[b]) return true;
       }
     }
     return false;
@@ -104,13 +111,16 @@ export function jitterCoastline(ctx, {
       const s = scores[idx];
       if (Math.abs(s - threshold) <= scoreBand && hasOppNeighbor(gx, gy)) {
         const strict = isSeedStrictEra(era) && !!seededRng;
-        const r = strict ? (_getDerivedRng('coast-flip', gx, gy) || seededRng) : Math.random;
+        const r = strict
+          ? pickRng(_getDerivedRng('coast-flip', gx, gy), seededRng)
+          : pickRng();
         if (r() < flipProb) {
-          landMask[idx] = !landMask[idx];
+          next[idx] = !next[idx];
         }
       }
     }
   }
+  return next;
 }
 
 

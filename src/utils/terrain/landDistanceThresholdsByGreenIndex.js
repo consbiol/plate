@@ -1,10 +1,5 @@
 import { PARAM_DEFAULTS } from '../paramsDefaults.js';
-
-function clamp(num, lo, hi) {
-    const n = Number(num);
-    if (!Number.isFinite(n)) return lo;
-    return Math.max(lo, Math.min(hi, n));
-}
+import { clamp } from '../math.js';
 
 /**
  * GI区分(A..J)を返す

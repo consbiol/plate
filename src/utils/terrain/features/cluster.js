@@ -1,6 +1,7 @@
 // クラスタ生成（BFS拡張）関連
 
 import { getClusterRng } from './vmRng';
+import { pickRng } from '../../rng.js';
 
 export function growCluster({
     ctx,
@@ -71,7 +72,7 @@ export function maybeStartClusterAtCell({
         dirs,
         acceptNeighbor: () => {
             // 隣接セルを確率的に拡張（密になり過ぎないよう acceptP で採択）
-            const rand = (clusterRng || seededRng || Math.random);
+            const rand = pickRng(clusterRng, seededRng);
             return rand() <= acceptP;
         },
         canFill,

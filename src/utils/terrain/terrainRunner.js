@@ -35,11 +35,10 @@ const torusMean1D = (vals, mod) => {
  * Run full generation via a runtime-compatible object.
  * @param {object} runtime - must provide the same methods/fields as Grids_Calculation.vue
  * @param {{preserveCenterCoordinates?: boolean, runContext?: any}} [options]
- * @returns {TerrainEventPayload}
+ * @returns {{payload: TerrainEventPayload, state: object}}
  */
 export function runGenerate(runtime, { preserveCenterCoordinates = false, runContext = null } = {}) {
   const { generationInputs, N } = runtime._buildGenerationJobSpec();
-  runtime.lastGenerationInputs = generationInputs;
   const seededRng = runtime._getSeededRng();
   runtime._resetDriftStateForGenerate({ preserveCenterCoordinates });
   const seededLog = runtime._buildSeededLog(runtime.centersY);
@@ -64,7 +63,7 @@ export function runGenerate(runtime, { preserveCenterCoordinates = false, runCon
     runContext,
     defaultRunMode: preserveCenterCoordinates ? 'update' : 'generate'
   });
-  return runtime._buildWorldAndEmit({
+  const payload = runtime._buildWorldAndEmit({
     emitEvent: 'generated',
     runContext: ensured,
     N,
@@ -79,13 +78,14 @@ export function runGenerate(runtime, { preserveCenterCoordinates = false, runCon
     tundraNoiseTopTable,
     tundraNoiseBottomTable
   });
+  return { payload, state: { lastGenerationInputs: generationInputs } };
 }
 
 /**
  * Run one drift turn via a runtime-compatible object.
  * @param {object} runtime
  * @param {{runContext?: any}} [options]
- * @returns {TerrainEventPayload}
+ * @returns {{payload: TerrainEventPayload, state: object}}
  */
 export function runDrift(runtime, { runContext = null } = {}) {
   const N = runtime.gridWidth * runtime.gridHeight;
@@ -99,6 +99,13 @@ export function runDrift(runtime, { runContext = null } = {}) {
   // Drift中は deterministicSeed 由来の派生RNG（shape-profile等）を無効化
   const prevForce = runtime.forceRandomDerivedRng;
   runtime.forceRandomDerivedRng = true;
+  let state = {
+    driftTurn: Number.isFinite(runtime.driftTurn) ? (runtime.driftTurn | 0) : 0,
+    driftIsApproach: (typeof runtime.driftIsApproach === 'boolean') ? runtime.driftIsApproach : true,
+    superPloom_calc: Number.isFinite(runtime.superPloom_calc) ? runtime.superPloom_calc : 0,
+    superPloom_history: Array.isArray(runtime.superPloom_history) ? runtime.superPloom_history.slice() : [],
+    driftMetrics: runtime.driftMetrics || null
+  };
   try {
     // centers はキャッシュ優先。無ければ通常サンプリングにフォールバック。
     const prevCenters = (runtime.hfCache && Array.isArray(runtime.hfCache.centers)) ? runtime.hfCache.centers : null;
@@ -112,10 +119,13 @@ export function runDrift(runtime, { runContext = null } = {}) {
 
     // 初回（Generateを経ずにDriftした等）はドリフト状態をリセット
     if (!prevCenters || prevCenters.length <= 0) {
-      runtime.driftTurn = 0;
-      runtime.superPloom_calc = 0;
-      runtime.superPloom_history = [];
-      runtime.driftMetrics = null;
+      state = {
+        ...state,
+        driftTurn: 0,
+        superPloom_calc: 0,
+        superPloom_history: [],
+        driftMetrics: null
+      };
     }
 
     const WIDTH = runtime.gridWidth;
@@ -129,8 +139,8 @@ export function runDrift(runtime, { runContext = null } = {}) {
     }));
 
     // フェーズ判定: 動的に切り替える（runtime.driftIsApproach により管理）
-    const turn0 = Number.isFinite(runtime.driftTurn) ? (runtime.driftTurn | 0) : 0;
-    const isApproach = (typeof runtime.driftIsApproach === 'boolean') ? runtime.driftIsApproach : true;
+    const turn0 = state.driftTurn | 0;
+    const isApproach = !!state.driftIsApproach;
     const phaseName = isApproach ? 'Approach' : 'Repel';
     // 距離計算: xは常にトーラス、yは Repel のみトーラス
     const useYtorus = !isApproach;
@@ -315,7 +325,7 @@ export function runDrift(runtime, { runContext = null } = {}) {
       }
     }
     const avgDist = cnt > 0 ? (sum / cnt) : 0;
-    let spc = Number.isFinite(runtime.superPloom_calc) ? runtime.superPloom_calc : 0;
+    let spc = Number.isFinite(state.superPloom_calc) ? state.superPloom_calc : 0;
     // 既定値は minCenterDistance に依存
     const minCD = Number.isFinite(Number(runtime.minCenterDistance)) ? Number(runtime.minCenterDistance) : 20;
     let baseDefault = 50 + (((minCD - 20) / 5) * 2);
@@ -330,26 +340,23 @@ export function runDrift(runtime, { runContext = null } = {}) {
       spc -= 1;
     }
     spc = Math.max(spc, 0);
-    runtime.superPloom_calc = spc;
-    if (!Array.isArray(runtime.superPloom_history)) runtime.superPloom_history = [];
-    runtime.superPloom_history.push(spc);
+    const superPloomHistory = Array.isArray(state.superPloom_history) ? state.superPloom_history.slice() : [];
+    superPloomHistory.push(spc);
     // 厳密な遅延を1ターンにする: 直前ターンの値を参照する
-    const superPloom = (runtime.superPloom_history.length > 1)
-      ? runtime.superPloom_history[runtime.superPloom_history.length - 2]
+    const superPloom = (superPloomHistory.length > 1)
+      ? superPloomHistory[superPloomHistory.length - 2]
       : 0;
 
     // フェーズ切替: 接近側で superPloom > 30 -> 反発へ。反発で superPloom == 0 -> 接近へ。
-    if (isApproach && superPloom > 20) {
-      runtime.driftIsApproach = false;
-    } else if (!isApproach && superPloom === 0) {
-      runtime.driftIsApproach = true;
-    }
+    const nextDriftIsApproach = (isApproach && superPloom > 20)
+      ? false
+      : (!isApproach && superPloom === 0)
+        ? true
+        : isApproach;
 
     // ターンを進める（ドリフト実行1回 = 1ターン）
-    runtime.driftTurn = turn0 + 1;
-
     // 出力用メトリクス（Parameters Output で表示）
-    runtime.driftMetrics = {
+    const driftMetrics = {
       superPloom_calc: spc,
       superPloom,
       phase: phaseName,
@@ -364,7 +371,7 @@ export function runDrift(runtime, { runContext = null } = {}) {
     // Driftでは「ノイズは全再抽選」だが、高地の個数/クラスター（開始セル/サイズ）は
     // deterministicSeed が指定されている場合に限りシード固定にする。
     const seededRngHighlands = runtime._getSeededRng();
-    return runtime._buildWorldAndEmit({
+    const payload = runtime._buildWorldAndEmit({
       emitEvent: 'drifted',
       runContext: runtime._ensureRunContext({ runContext, defaultRunMode: 'drift' }),
       N,
@@ -378,10 +385,21 @@ export function runDrift(runtime, { runContext = null } = {}) {
       glacierNoiseTable,
       tundraNoiseTopTable,
       tundraNoiseBottomTable,
-      driftMetrics: runtime.driftMetrics,
+      driftMetrics,
       highlandsSeededRng: seededRngHighlands || null,
       enableDerivedRngDuringHighlands: !!seededRngHighlands
     });
+    return {
+      payload,
+      state: {
+        ...state,
+        driftTurn: turn0 + 1,
+        driftIsApproach: nextDriftIsApproach,
+        superPloom_calc: spc,
+        superPloom_history: superPloomHistory,
+        driftMetrics
+      }
+    };
   } finally {
     runtime.forceRandomDerivedRng = prevForce;
   }

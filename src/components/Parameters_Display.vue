@@ -41,6 +41,10 @@
       <input type="number" min="0.01" max="0.99" step="0.1" v-model.number="local.seaLandRatio" />
     </div>
     <div class="param-row">
+      <label>単独1セル島の削除確率: </label>
+      <input type="number" min="0" max="1" step="0.01" v-model.number="local.singleCellRemovalProb" />
+    </div>
+    <div class="param-row">
       <label>中心間の排他距離 (グリッド): </label>
       <input type="number" min="1" max="50" step="1" :value="computedMinCenterDistance" disabled />
       <span class="hint">(自動計算)</span>
@@ -184,6 +188,7 @@
       :minCenterDistance="computedMinCenterDistance"
       :noiseAmp="0.15"
       :kDecay="3.0"
+      :singleCellRemovalProb="local.singleCellRemovalProb"
       :baseSeaDistanceThreshold="local.baseSeaDistanceThreshold"
       :baseLandDistanceThreshold="landDistanceThresholdAverage"
       :tundraExtraRows="local.tundraExtraRows"
@@ -245,6 +250,7 @@ import TurnPanel from './ui/TurnPanel.vue';
 import { deriveDisplayColorsFromGridData, getEraTerrainColors } from '../utils/colors.js';
 import { ERAS, GRID_DEFAULTS, PARAM_DEFAULTS, createLocalParams } from '../utils/paramsDefaults.js';
 import { computeGlacierBaseRowsFromTemperature } from '../utils/terrain/glacierAnchors.js';
+import { computeEffectiveMinCenterDistance } from '../utils/terrain/centers.js';
 import { computeLandDistanceThresholdsByGreenIndex } from '../utils/terrain/landDistanceThresholdsByGreenIndex.js';
 import { buildParametersStatsFromTerrainPayload, buildParametersStatsWithGridTypeCounts } from '../features/stats/parametersStats.js';
 import { buildParametersOutputHtml } from '../features/popup/parametersOutputHtml.js';
@@ -316,6 +322,8 @@ export default {
     centersY: { type: Number, required: false, default: PARAM_DEFAULTS.centersY },
     // 陸の割合: 全グリッド中、陸地が占める割合の指標
     seaLandRatio: { type: Number, required: false, default: PARAM_DEFAULTS.seaLandRatio },
+    // 単独1セル島の削除確率（0..1）
+    singleCellRemovalProb: { type: Number, required: false, default: PARAM_DEFAULTS.singleCellRemovalProb },
     // 中心間の排他距離: 各中心点間の最小距離。近すぎると重複した地形になります。
     minCenterDistance: { type: Number, required: false, default: PARAM_DEFAULTS.minCenterDistance },
     // 浅瀬・深海間の距離閾値: 海グリッドが浅瀬か深海かを判定する距離の基準値。大きいほど浅瀬が広がります。
@@ -670,12 +678,7 @@ export default {
     },
     // 陸の割合 x に応じた中心間の排他距離（自動計算）
     computedMinCenterDistance() {
-      // 元の実装に合わせる:
-      // seaLandRatio を 0.2..1.0 にクランプし、20..40 に線形補間して四捨五入する
-      const raw = (this.effectiveSeaLandRatio) ? Number(this.effectiveSeaLandRatio) : Number(PARAM_DEFAULTS && PARAM_DEFAULTS.seaLandRatio);
-      const x = Math.max(0.2, Math.min(1.0, raw));
-      const minDistance = 20 + (x - 0.2) * 25; // 20..40
-      return Math.round(minDistance);
+      return computeEffectiveMinCenterDistance(this.effectiveSeaLandRatio, PARAM_DEFAULTS && PARAM_DEFAULTS.seaLandRatio);
     }
   },
   watch: {

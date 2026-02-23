@@ -4,6 +4,8 @@
 import { DIRS8 } from './features/constants';
 import { makeIsAdjacent, isOneCellIsland } from './features/adjacency';
 import { clamp01 } from './features/math';
+import { pickRng } from '../rng.js';
+import { toCoords } from './gridIndex.js';
 import { getStartRng } from './features/vmRng';
 import { maybeStartClusterAtCell } from './features/cluster';
 import { getBiasedCityProbability } from './features/probability';
@@ -18,9 +20,9 @@ export function generateFeatures(
     const cultivatedMask = new Array(N).fill(false);
     const bryophyteMask = new Array(N).fill(false);
     const pollutedMask = new Array(N).fill(false);
-    const rCity = ctx._getDerivedRng('city') || Math.random;
-    const rCult = ctx._getDerivedRng('cultivated') || Math.random;
-    const rBryo = ctx._getDerivedRng('bryophyte') || Math.random;
+    const rCity = pickRng(ctx._getDerivedRng('city'));
+    const rCult = pickRng(ctx._getDerivedRng('cultivated'));
+    const rBryo = pickRng(ctx._getDerivedRng('bryophyte'));
     // 地域差ノイズ（都市の発生率に地域バイアスを付与）
     // fractalNoise2D は [-1,1] を返す。これを [cityBiasMin, cityBiasMax] に線形マップして倍率とする
     const cityBiasScale = 0.01; // 小さいほど広域パッチ
@@ -154,8 +156,7 @@ export function generateFeatures(
                 countAreas: countPolluted,
                 isEligible: (i) => (colors[i] === lowlandColor || cityMask[i] || cultivatedMask[i]),
                 weightFn: (idx0) => {
-                    const sx = idx0 % ctx.gridWidth;
-                    const sy = Math.floor(idx0 / ctx.gridWidth);
+                    const { x: sx, y: sy } = toCoords(idx0, ctx.gridWidth);
                     return isAdjacentToSea(sx, sy) ? 10 : 1;
                 },
                 pickRngKey: 'polluted-pick',
@@ -173,8 +174,8 @@ export function generateFeatures(
     const seaCityMask = new Array(N).fill(false);
     const seaCultivatedMask = new Array(N).fill(false);
     const seaPollutedMask = new Array(N).fill(false);
-    const rSeaCity = ctx._getDerivedRng('sea-city') || Math.random;
-    const rSeaCult = ctx._getDerivedRng('sea-cultivated') || Math.random;
+    const rSeaCity = pickRng(ctx._getDerivedRng('sea-city'));
+    const rSeaCult = pickRng(ctx._getDerivedRng('sea-cultivated'));
     // 海棲文明時代のみ seaCity/seaCultivated/seaPolluted を生成
     const isSeaCivilizationEra = (ctx.era === '海棲文明時代');
     if (isSeaCivilizationEra) {
@@ -262,8 +263,7 @@ export function generateFeatures(
                 countAreas: countSeaPolluted,
                 isEligible: (i) => (colors[i] === shallowSeaColor || seaCityMask[i] || seaCultivatedMask[i]),
                 weightFn: (idx0) => {
-                    const sx = idx0 % ctx.gridWidth;
-                    const sy = Math.floor(idx0 / ctx.gridWidth);
+                    const { x: sx, y: sy } = toCoords(idx0, ctx.gridWidth);
                     return isAdjacentToLand(sx, sy) ? 10 : 1;
                 },
                 pickRngKey: 'sea-polluted-pick',

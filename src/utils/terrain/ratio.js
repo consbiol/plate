@@ -1,8 +1,5 @@
 // UIの seaLandRatio を内部の生成用比率へスムーズにマッピング（機能不変）
-
-function clamp(v, a, b) {
-    return Math.min(b, Math.max(a, v));
-}
+import { clamp } from '../math.js';
 
 export function mapSeaLandRatio(ui) {
     ui = clamp(Number(ui) || 0, 0, 1);

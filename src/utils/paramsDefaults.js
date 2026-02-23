@@ -28,6 +28,8 @@ export const GRID_DEFAULTS = Object.freeze({
 export const PARAM_DEFAULTS = Object.freeze({
     centersY: 7,
     seaLandRatio: 0.3,
+    // 単独1セル島の削除確率（0..1）
+    singleCellRemovalProb: 0.5,
     minCenterDistance: 20,
     baseSeaDistanceThreshold: 5,
     baseLandDistanceThreshold: 10,
@@ -70,6 +72,7 @@ export function createLocalParams(vm) {
         centersY: vm.centersY,
         seaLandRatio: vm.seaLandRatio,
         f_cloud: vm.f_cloud,
+        singleCellRemovalProb: vm.singleCellRemovalProb,
         minCenterDistance: vm.minCenterDistance,
         baseSeaDistanceThreshold: vm.baseSeaDistanceThreshold,
         baseLandDistanceThreshold: vm.baseLandDistanceThreshold,

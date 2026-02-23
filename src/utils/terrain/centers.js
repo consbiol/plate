@@ -1,3 +1,5 @@
+import { pickRng } from '../rng.js';
+
 export function sampleLandCenters(ctx, rng, minDistanceOverride) {
   const { gridWidth, gridHeight, centersY, minCenterDistance, torusDistance } = ctx;
   const centers = [];
@@ -7,7 +9,7 @@ export function sampleLandCenters(ctx, rng, minDistanceOverride) {
     : minCenterDistance;
   const maxAttempts = 1000;
   const edgeMargin = 10;
-  const random = rng || Math.random;
+  const random = pickRng(rng);
 
   for (let i = 0; i < yCenters; i++) {
     let newCenter;
@@ -74,7 +76,7 @@ export function computeScoresForCenters(ctx, centers, centerParameters) {
   });
   const centerShapeProfiles = centers.map((c, ci) => {
     const rng = _getDerivedRng('shape-profile', ci);
-    const r = rng || Math.random;
+    const r = pickRng(rng);
     const numTerms = 2 + Math.floor(r() * 3);
     const maxK = 7;
     const used = new Set();
@@ -152,6 +154,15 @@ export function computeOwnerCenterIdx(ctx, centers) {
     }
   }
   return ownerCenterIdx;
+}
+
+export function computeEffectiveMinCenterDistance(seaLandRatio, fallbackSeaLandRatio) {
+  const raw = Number.isFinite(Number(seaLandRatio))
+    ? Number(seaLandRatio)
+    : Number(fallbackSeaLandRatio);
+  const x = Math.max(0.2, Math.min(1.0, raw));
+  const minDistance = 20 + (x - 0.2) * 25; // 20..40
+  return Math.round(minDistance);
 }
 
 

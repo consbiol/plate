@@ -19,7 +19,7 @@ import { computeDistanceMap } from '../utils/pathfinding/distanceMap.js';
 import { applyGlaciers } from '../utils/terrain/glaciers.js';
 import { applyTundra } from '../utils/terrain/tundra.js';
 import { dilateLandMask, removeSingleCellIslands, jitterCoastline } from '../utils/terrain/landmask.js';
-import { sampleLandCenters, computeScoresForCenters, computeOwnerCenterIdx } from '../utils/terrain/centers.js';
+import { sampleLandCenters, computeScoresForCenters, computeOwnerCenterIdx, computeEffectiveMinCenterDistance } from '../utils/terrain/centers.js';
 import { mapSeaLandRatio } from '../utils/terrain/ratio.js';
 import { buildVisualNoiseGrid, getDirections8 } from '../utils/terrain/noiseGrid.js';
 import { classifyBaseColors } from '../utils/terrain/classifyColors.js';
@@ -76,6 +76,8 @@ export default {
     minCenterDistance: { type: Number, required: true },
     noiseAmp: { type: Number, required: true, default: 0.08 },
     kDecay: { type: Number, required: true, default: 2.0 },
+    // 単独1セル島の削除確率（0..1）
+    singleCellRemovalProb: { type: Number, required: false, default: 0.5 },
     baseSeaDistanceThreshold: { type: Number, required: true },
     baseLandDistanceThreshold: { type: Number, required: true },
     // 平均気温(°C): 氷河行数の大本パラメータ
@@ -460,10 +462,7 @@ export default {
     // seaLandRatio に応じて中心間の最低距離を計算する
     // マッピング: 0.2 -> 20, 0.6 -> 30, 1.0 -> 40（線形補間）。範囲外はクランプ。
     _computeEffectiveMinCenterDistance() {
-      const raw = Number.isFinite(this.seaLandRatio) ? Number(this.seaLandRatio) : Number(PARAM_DEFAULTS && PARAM_DEFAULTS.seaLandRatio);
-      const x = Math.max(0.2, Math.min(1.0, raw));
-      const minDistance = 20 + (x - 0.2) * 25; // 20..40
-      return Math.round(minDistance);
+      return computeEffectiveMinCenterDistance(this.seaLandRatio, PARAM_DEFAULTS && PARAM_DEFAULTS.seaLandRatio);
     },
     // ノイズ実装は `src/utils/noise.js` に集約（機能不変）。
     // 既存コード（features/centers等）が vm.noise2D / vm.fractalNoise2D を参照するため、ここは薄い委譲として残す。
@@ -698,19 +697,28 @@ export default {
       };
       const stage1 = () => {
         // Stage 1: land mask refinement (dilate/island/jitter)
-        dilateLandMask(this, {
+        const dilated = dilateLandMask(this, {
           landMask,
           scores,
           threshold,
           expansionBias: 0.12,
           maxIterations: 10
         });
-        removeSingleCellIslands(this, { landMask, seededRng });
-        const preJitterLandMask = landMask.slice();
-        jitterCoastline(this, { landMask, scores, threshold, seededRng });
-        return { preJitterLandMask };
+        const noIslands = removeSingleCellIslands(this, {
+          landMask: dilated,
+          seededRng,
+          singleCellRemovalProb: this.singleCellRemovalProb
+        });
+        const preJitterLandMask = noIslands.slice();
+        const jittered = jitterCoastline(this, {
+          landMask: noIslands,
+          scores,
+          threshold,
+          seededRng
+        });
+        return { landMask: jittered, preJitterLandMask };
       };
-      const stage2 = ({ noiseGrid }) => {
+      const stage2 = ({ noiseGrid, landMask }) => {
         // Stage 2: distance maps + base classification
         const seaNoiseAmplitude = 1.5;
         const landNoiseAmplitude = 2.5;
@@ -781,7 +789,7 @@ export default {
       };
 
       const { noiseGrid, ownerCenterIdx } = stage0();
-      const { preJitterLandMask } = stage1();
+      const { landMask: refinedLandMask, preJitterLandMask } = stage1();
       const {
         seaNoiseAmplitude,
         landNoiseAmplitude,
@@ -796,17 +804,17 @@ export default {
         distanceToSea,
         distanceToLand,
         colors
-      } = stage2({ noiseGrid });
+      } = stage2({ noiseGrid, landMask: refinedLandMask });
 
       // 各中心の陸セル一覧を前計算（湖/高地で再利用）
       const { centerLandCells, centerLandCellsPre } = buildCenterLandCells(this._buildCenterCellsCtx(), {
         centers,
         ownerCenterIdx,
-        landMask,
+        landMask: refinedLandMask,
         preLandMask: preJitterLandMask
       });
       // 湖生成と適用（ジッター後のマスクに基づく）
-      const lakeMask = this._generateLakes(centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog);
+      const lakeMask = this._generateLakes(centers, centerLandCells, refinedLandMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog);
 
       // 高地生成と適用
       // - Generate: seededRng をそのまま渡す
@@ -824,45 +832,32 @@ export default {
       }
 
       // 高山生成と適用
-      // NOTE: `directions` used to be a local var; after stage refactor keep it explicit here.
       this._generateAlpines(colors, highlandColor, lowlandColor, desertColor, alpineColor, getDirections8());
 
       // Revise用に「ツンドラ/氷河適用前」の色を保存（湖/高地/高山の結果は保持）
       const preTundraColors = colors.slice();
 
       // --- 先に氷河row（基準）を計算 ---
-      const preGlacierStats = computePreGlacierStats({ N, landMask, lakeMask });
+      const preGlacierStats = computePreGlacierStats({ N, landMask: refinedLandMask, lakeMask });
       const ratioOcean = preGlacierStats.seaCount / (preGlacierStats.total || 1);
       // 海率の影響は「陸の氷河形成」にのみ適用し、海/湖は標準（0.7相当）で固定する
       // 要件: generate 時は「平滑化なし（放射平衡温度由来）」の topGlacierRows を使いたい。
       // ここでは store の気候モデルが出す averageTemperature_calc (K) があればそれを優先して使い、
       // 一時的に this.averageTemperature と this.glacier_alpha を上書きして computeTopGlacierRowsFromAverageTemperature を呼び、
       // 平滑化を実質無効（glacier_alpha=1）にして即値を取得します。
-      let computedTopGlacierRowsLand;
-      let computedTopGlacierRowsWater;
-      let computedSmoothedTopGlacierRowsLand;
-      let computedSmoothedTopGlacierRowsWater;
+      let glacierRows;
       try {
         const climateRawC = this._getClimateAverageTemperatureCelsius();
-        if (Number.isFinite(climateRawC)) {
-          // use pure computation (no smoothing, no vm mutation)
-          computedTopGlacierRowsLand = computeTopGlacierRowsPure(climateRawC, ratioOcean, 'land');
-          computedTopGlacierRowsWater = computeTopGlacierRowsPure(climateRawC, 0.7, 'water');
-          computedSmoothedTopGlacierRowsLand = computedTopGlacierRowsLand;
-          computedSmoothedTopGlacierRowsWater = computedTopGlacierRowsWater;
-        } else {
-          computedTopGlacierRowsLand = computeTopGlacierRowsFromAverageTemperature(this, ratioOcean, 'land');
-          computedTopGlacierRowsWater = computeTopGlacierRowsFromAverageTemperature(this, 0.7, 'water');
-          computedSmoothedTopGlacierRowsLand = getSmoothedGlacierRows(this, ratioOcean, 'land');
-          computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
-        }
+        glacierRows = this._computeGlacierRowsForRatio({ ratioOcean, climateRawC });
       } catch (e) {
-        // fallback to default behaviour on error
-        computedTopGlacierRowsLand = computeTopGlacierRowsFromAverageTemperature(this, ratioOcean, 'land');
-        computedTopGlacierRowsWater = computeTopGlacierRowsFromAverageTemperature(this, 0.7, 'water');
-        computedSmoothedTopGlacierRowsLand = getSmoothedGlacierRows(this, ratioOcean, 'land');
-        computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
+        glacierRows = this._computeGlacierRowsForRatio({ ratioOcean, climateRawC: null });
       }
+      const {
+        computedTopGlacierRowsLand,
+        computedTopGlacierRowsWater,
+        computedSmoothedTopGlacierRowsLand,
+        computedSmoothedTopGlacierRowsWater
+      } = glacierRows;
 
       // --- ツンドラの適用（上端・下端） ---
       const tundraExtraRows = Number.isFinite(Number(this.tundraExtraRows))
@@ -898,7 +893,7 @@ export default {
         highlandColor,
         alpineColor,
         glacierColor,
-        landMask,
+        landMask: refinedLandMask,
         lakeMask
       });
 
@@ -911,13 +906,20 @@ export default {
         seaCityMask,
         seaCultivatedMask,
         seaPollutedMask
-      } = generateFeatures(this._buildFeaturesCtx(), { N, landMask, colors, lowlandColor, shallowSeaColor, seededRng });
+      } = generateFeatures(this._buildFeaturesCtx(), {
+        N,
+        landMask: refinedLandMask,
+        colors,
+        lowlandColor,
+        shallowSeaColor,
+        seededRng
+      });
 
       // 各グリッドのプロパティ構造を作成
       const gridData = buildGridData(this, {
         N,
         colors,
-        landMask,
+        landMask: refinedLandMask,
         lakeMask,
         shallowSeaColor,
         lowlandColor,
@@ -945,7 +947,7 @@ export default {
       this.hfCache = {
         N,
         centers,
-        landMask,
+        landMask: refinedLandMask,
         lakeMask,
         lakesList: this._lastLakesList || [],
         noiseGrid,
@@ -1056,7 +1058,9 @@ export default {
      * @returns {TerrainEventPayload} emitted payload
      */
     runGenerate({ preserveCenterCoordinates = false, runContext = null } = {}) {
-      return runGenerateTerrain(this, { preserveCenterCoordinates, runContext });
+      const result = runGenerateTerrain(this, { preserveCenterCoordinates, runContext });
+      if (result && result.state) Object.assign(this, result.state);
+      return result && result.payload ? result.payload : result;
     },
     // Drift:
     // - 前回Generateの中心点（hfCache.centers）をキャッシュとして使用
@@ -1071,7 +1075,9 @@ export default {
      * @returns {TerrainEventPayload} emitted payload
      */
     runDrift({ runContext = null } = {}) {
-      return runDriftTerrain(this, { runContext });
+      const result = runDriftTerrain(this, { runContext });
+      if (result && result.state) Object.assign(this, result.state);
+      return result && result.payload ? result.payload : result;
     },
     // --- Revise helpers（高頻度更新。できるだけデータを引数で受け渡しして見通しを良くする） ---
     _reviseReclassifyDesert({ c, colors }) {
@@ -1106,35 +1112,34 @@ export default {
         });
       });
     },
+    _computeGlacierRowsForRatio({ ratioOcean, climateRawC }) {
+      if (Number.isFinite(climateRawC)) {
+        const computedTopGlacierRowsLand = computeTopGlacierRowsPure(climateRawC, ratioOcean, 'land');
+        const computedTopGlacierRowsWater = computeTopGlacierRowsPure(climateRawC, 0.7, 'water');
+        return {
+          computedTopGlacierRowsLand,
+          computedTopGlacierRowsWater,
+          computedSmoothedTopGlacierRowsLand: computedTopGlacierRowsLand,
+          computedSmoothedTopGlacierRowsWater: computedTopGlacierRowsWater
+        };
+      }
+      return {
+        computedTopGlacierRowsLand: computeTopGlacierRowsFromAverageTemperature(this, ratioOcean, 'land'),
+        computedTopGlacierRowsWater: computeTopGlacierRowsFromAverageTemperature(this, 0.7, 'water'),
+        computedSmoothedTopGlacierRowsLand: getSmoothedGlacierRows(this, ratioOcean, 'land'),
+        computedSmoothedTopGlacierRowsWater: getSmoothedGlacierRows(this, 0.7, 'water')
+      };
+    },
     _reviseComputeGlacierRows({ c }) {
       const ratioOcean = (c.preGlacierStats && c.preGlacierStats.total)
         ? (c.preGlacierStats.seaCount / (c.preGlacierStats.total || 1))
         : 0.7;
       // Prefer climate raw radiative temperature (averageTemperature_calc) when available to avoid using smoothed store averageTemperature.
       const climateVars = getClimateVars(this.$store);
-      let computedTopGlacierRowsLand;
-      let computedTopGlacierRowsWater;
-      let computedSmoothedTopGlacierRowsLand;
-      let computedSmoothedTopGlacierRowsWater;
-      if (climateVars && typeof climateVars.averageTemperature_calc === 'number') {
-        const rawC = climateVars.averageTemperature_calc - 273.15;
-        computedTopGlacierRowsLand = computeTopGlacierRowsPure(rawC, ratioOcean, 'land');
-        computedTopGlacierRowsWater = computeTopGlacierRowsPure(rawC, 0.7, 'water');
-        // For revise application we treat smoothed values as equal to pure when using climate raw temp
-        computedSmoothedTopGlacierRowsLand = computedTopGlacierRowsLand;
-        computedSmoothedTopGlacierRowsWater = computedTopGlacierRowsWater;
-      } else {
-        computedTopGlacierRowsLand = computeTopGlacierRowsFromAverageTemperature(this, ratioOcean, 'land');
-        computedTopGlacierRowsWater = computeTopGlacierRowsFromAverageTemperature(this, 0.7, 'water');
-        computedSmoothedTopGlacierRowsLand = getSmoothedGlacierRows(this, ratioOcean, 'land');
-        computedSmoothedTopGlacierRowsWater = getSmoothedGlacierRows(this, 0.7, 'water');
-      }
-      return {
-        computedTopGlacierRowsLand,
-        computedTopGlacierRowsWater,
-        computedSmoothedTopGlacierRowsLand,
-        computedSmoothedTopGlacierRowsWater
-      };
+      const climateRawC = (climateVars && typeof climateVars.averageTemperature_calc === 'number')
+        ? (climateVars.averageTemperature_calc - 273.15)
+        : null;
+      return this._computeGlacierRowsForRatio({ ratioOcean, climateRawC });
     },
     _reviseApplyTundra({ c, colors, computedTopGlacierRowsWater }) {
       const tundraExtraRows = Number.isFinite(Number(this.tundraExtraRows))
