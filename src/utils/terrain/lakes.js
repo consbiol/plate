@@ -1,5 +1,3 @@
-import { bestEffort } from '../bestEffort.js';
-
 const LAKE_DIRS_8 = [
   { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
   { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
@@ -29,7 +27,7 @@ const findLakeStart = ({
   }
   return null;
 };
-export function generateLakes(ctx, centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog) {
+export function generateLakes(ctx, centers, centerLandCells, landMask, seededRng, seededLog) {
   const N = ctx.gridWidth * ctx.gridHeight;
   const lakeMask = new Array(N).fill(false);
   const lakesList = [];
@@ -101,23 +99,13 @@ export function generateLakes(ctx, centers, centerLandCells, landMask, colors, s
     }
   }
 
+  return { lakeMask, lakesList };
+}
+
+export function applyLakeColors(colors, lakeMask, shallowSeaColor) {
   for (let i = 0; i < lakeMask.length; i++) {
     if (lakeMask[i]) colors[i] = shallowSeaColor;
   }
-
-  bestEffort(() => {
-    applyLowlandAroundLakes(ctx, {
-      colors,
-      lakesList,
-      lakeMask,
-      baseLandThr: ctx.baseLandDistanceThreshold,
-      desertColor,
-      lowlandColor
-    });
-  });
-
-  bestEffort(() => { ctx._lastLakesList = lakesList; });
-  return lakeMask;
 }
 
 export function applyLowlandAroundLakes(ctx, options) {

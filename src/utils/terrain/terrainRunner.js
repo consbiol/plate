@@ -11,10 +11,10 @@ const clampRange = (value, min, max) => Math.max(min, Math.min(max, value));
 const wrapMod = (value, mod) => ((value % mod) + mod) % mod;
 const isFiniteNumber = (value) => Number.isFinite(Number(value));
 const toFiniteNumber = (value, fallback) => (isFiniteNumber(value) ? Number(value) : fallback);
-const deriveEffectiveMinCenterDistance = (runtime) => (
-  isFiniteNumber(runtime.minCenterDistance)
-    ? Number(runtime.minCenterDistance)
-    : runtime._computeEffectiveMinCenterDistance()
+const deriveEffectiveMinCenterDistance = ({ minCenterDistance, computeEffectiveMinCenterDistance, fallback }) => (
+  isFiniteNumber(minCenterDistance)
+    ? Number(minCenterDistance)
+    : (typeof computeEffectiveMinCenterDistance === 'function' ? computeEffectiveMinCenterDistance() : fallback)
 );
 
 const torusMean1D = (vals, mod) => {
@@ -35,26 +35,66 @@ const torusMean1D = (vals, mod) => {
  * @typedef {import('../../types/index.js').TerrainEventPayload} TerrainEventPayload
  */
 
+const resolveFn = (runtime, publicName, privateName, deps) => (
+  (deps && typeof deps[publicName] === 'function')
+    ? deps[publicName]
+    : ((runtime && typeof runtime[publicName] === 'function') ? runtime[publicName] : runtime[privateName])
+);
+const readProp = (runtime, deps, key, fallback = undefined) => {
+  if (deps && deps.props && Object.prototype.hasOwnProperty.call(deps.props, key)) return deps.props[key];
+  if (runtime && Object.prototype.hasOwnProperty.call(runtime, key)) return runtime[key];
+  return fallback;
+};
+const readState = (runtime, deps, key, fallback = undefined) => {
+  if (deps && deps.state && Object.prototype.hasOwnProperty.call(deps.state, key)) return deps.state[key];
+  if (runtime && Object.prototype.hasOwnProperty.call(runtime, key)) return runtime[key];
+  return fallback;
+};
+const buildRuntimeFromDeps = (deps) => {
+  if (!deps) return {};
+  return {
+    deps,
+    ...(deps.props || {}),
+    ...(deps.state || {}),
+    hfCache: deps.hfCache
+  };
+};
+
 /**
  * Run full generation via a runtime-compatible object.
  * @param {object} runtime - must provide the same methods/fields as Grids_Calculation.vue
  * @param {{preserveCenterCoordinates?: boolean, runContext?: any}} [options]
  * @returns {{payload: TerrainEventPayload, state: object}}
  */
-export function runGenerate(runtime, { preserveCenterCoordinates = false, runContext = null } = {}) {
-  const { generationInputs, N } = runtime._buildGenerationJobSpec();
-  const seededRng = runtime._getSeededRng();
-  runtime._resetDriftStateForGenerate({ preserveCenterCoordinates });
-  const seededLog = runtime._buildSeededLog(runtime.centersY);
+export function runGenerate(runtime, { preserveCenterCoordinates = false, runContext = null, deps = null } = {}) {
+  const resolvedDeps = deps || runtime.deps || null;
+  const buildGenerationJobSpec = resolveFn(runtime, 'buildGenerationJobSpec', '_buildGenerationJobSpec', resolvedDeps);
+  const getSeededRng = resolveFn(runtime, 'getSeededRng', '_getSeededRng', resolvedDeps);
+  const resetDriftStateForGenerate = resolveFn(runtime, 'resetDriftStateForGenerate', '_resetDriftStateForGenerate', resolvedDeps);
+  const buildSeededLog = resolveFn(runtime, 'buildSeededLog', '_buildSeededLog', resolvedDeps);
+  const precomputeGenerateFixedTables = resolveFn(runtime, 'precomputeGenerateFixedTables', '_precomputeGenerateFixedTables', resolvedDeps);
+  const computeCentersAndParamsForGenerate = resolveFn(runtime, 'computeCentersAndParamsForGenerate', '_computeCentersAndParamsForGenerate', resolvedDeps);
+  const computeScoresThresholdAndLandMaskForGenerate = resolveFn(runtime, 'computeScoresThresholdAndLandMaskForGenerate', '_computeScoresThresholdAndLandMaskForGenerate', resolvedDeps);
+  const ensureRunContext = resolveFn(runtime, 'ensureRunContext', '_ensureRunContext', resolvedDeps);
+  const buildWorld = resolveFn(runtime, 'buildWorld', '_buildWorld', resolvedDeps)
+    || resolveFn(runtime, 'buildWorldAndEmit', '_buildWorldAndEmit', resolvedDeps);
+
+  const { generationInputs, N } = buildGenerationJobSpec.call(runtime);
+  const seededRng = getSeededRng.call(runtime);
+  resetDriftStateForGenerate.call(runtime, { preserveCenterCoordinates });
+  const centersY = (generationInputs && Number.isFinite(Number(generationInputs.centersY)))
+    ? Number(generationInputs.centersY)
+    : readProp(runtime, resolvedDeps, 'centersY', runtime.centersY);
+  const seededLog = buildSeededLog.call(runtime, centersY);
   const { glacierNoiseTable, tundraNoiseTopTable, tundraNoiseBottomTable } =
-    runtime._precomputeGenerateFixedTables({ N, seededRng });
+    precomputeGenerateFixedTables.call(runtime, { N, seededRng });
   const {
     centers: centers0,
     localCenterParameters,
     seedStrictCenters,
     effectiveMinCenterDistance
-  } = runtime._computeCentersAndParamsForGenerate({ preserveCenterCoordinates, seededRng });
-  const { centers, scores, threshold, landMask } = runtime._computeScoresThresholdAndLandMaskForGenerate({
+  } = computeCentersAndParamsForGenerate.call(runtime, { preserveCenterCoordinates, seededRng });
+  const { centers, scores, threshold, landMask } = computeScoresThresholdAndLandMaskForGenerate.call(runtime, {
     N,
     centers: centers0,
     localCenterParameters,
@@ -63,11 +103,11 @@ export function runGenerate(runtime, { preserveCenterCoordinates = false, runCon
     seededRng,
     effectiveMinCenterDistance
   });
-  const ensured = runtime._ensureRunContext({
+  const ensured = ensureRunContext.call(runtime, {
     runContext,
     defaultRunMode: preserveCenterCoordinates ? 'update' : 'generate'
   });
-  const payload = runtime._buildWorldAndEmit({
+  const built = buildWorld.call(runtime, {
     emitEvent: 'generated',
     runContext: ensured,
     N,
@@ -82,29 +122,72 @@ export function runGenerate(runtime, { preserveCenterCoordinates = false, runCon
     tundraNoiseTopTable,
     tundraNoiseBottomTable
   });
-  return { payload, state: { lastGenerationInputs: generationInputs } };
+  const payload = (built && built.payload) ? built.payload : built;
+  const state = { lastGenerationInputs: generationInputs };
+  if (built && built.hfCache) state.hfCache = built.hfCache;
+  return { payload, state };
 }
 
-export function runDrift(runtime, { runContext = null } = {}) {
-  const N = runtime.gridWidth * runtime.gridHeight;
-  const seededRng = null;
-  const deterministicSeedForMoves = runtime.deterministicSeed;
+export function runGenerateWithDeps(deps, { preserveCenterCoordinates = false, runContext = null } = {}) {
+  const runtime = buildRuntimeFromDeps(deps);
+  return runGenerate(runtime, { preserveCenterCoordinates, runContext, deps });
+}
 
-  const prevForce = runtime.forceRandomDerivedRng;
-  runtime.forceRandomDerivedRng = true;
+export function runDrift(runtime, { runContext = null, deps = null } = {}) {
+  const resolvedDeps = deps || runtime.deps || null;
+  const gridWidth = readProp(runtime, resolvedDeps, 'gridWidth', runtime.gridWidth);
+  const gridHeight = readProp(runtime, resolvedDeps, 'gridHeight', runtime.gridHeight);
+  const N = gridWidth * gridHeight;
+  const seededRng = null;
+  const deterministicSeedForMoves = readProp(runtime, resolvedDeps, 'deterministicSeed', runtime.deterministicSeed);
+
+  const setForceRandomDerivedRng = (value) => {
+    if (resolvedDeps && typeof resolvedDeps.setForceRandomDerivedRng === 'function') {
+      resolvedDeps.setForceRandomDerivedRng(value);
+    } else if (typeof runtime.setForceRandomDerivedRng === 'function') {
+      runtime.setForceRandomDerivedRng(value);
+    } else {
+      runtime.forceRandomDerivedRng = value;
+    }
+  };
+  const prevForce = readProp(runtime, resolvedDeps, 'forceRandomDerivedRng', runtime.forceRandomDerivedRng);
+  setForceRandomDerivedRng(true);
   let state = {
-    driftTurn: Number.isFinite(runtime.driftTurn) ? (runtime.driftTurn | 0) : 0,
-    driftIsApproach: (typeof runtime.driftIsApproach === 'boolean') ? runtime.driftIsApproach : true,
-    superPloom_calc: Number.isFinite(runtime.superPloom_calc) ? runtime.superPloom_calc : 0,
-    superPloom_history: Array.isArray(runtime.superPloom_history) ? runtime.superPloom_history.slice() : [],
-    driftMetrics: runtime.driftMetrics || null
+    driftTurn: Number.isFinite(readState(runtime, resolvedDeps, 'driftTurn', 0)) ? (readState(runtime, resolvedDeps, 'driftTurn', 0) | 0) : 0,
+    driftIsApproach: (typeof readState(runtime, resolvedDeps, 'driftIsApproach', true) === 'boolean')
+      ? readState(runtime, resolvedDeps, 'driftIsApproach', true)
+      : true,
+    superPloom_calc: Number.isFinite(readState(runtime, resolvedDeps, 'superPloom_calc', 0))
+      ? readState(runtime, resolvedDeps, 'superPloom_calc', 0)
+      : 0,
+    superPloom_history: Array.isArray(readState(runtime, resolvedDeps, 'superPloom_history', null))
+      ? readState(runtime, resolvedDeps, 'superPloom_history', []).slice()
+      : [],
+    driftMetrics: readState(runtime, resolvedDeps, 'driftMetrics', null) || null
   };
   try {
-    const prevCenters = (runtime.hfCache && Array.isArray(runtime.hfCache.centers)) ? runtime.hfCache.centers : null;
-    const effectiveMinCenterDistance = deriveEffectiveMinCenterDistance(runtime);
+    const hfCache = (resolvedDeps && resolvedDeps.hfCache) ? resolvedDeps.hfCache : runtime.hfCache;
+    const prevCenters = (hfCache && Array.isArray(hfCache.centers)) ? hfCache.centers : null;
+    const effectiveMinCenterDistance = deriveEffectiveMinCenterDistance({
+      minCenterDistance: readProp(runtime, resolvedDeps, 'minCenterDistance', runtime.minCenterDistance),
+      computeEffectiveMinCenterDistance: (resolvedDeps && typeof resolvedDeps.computeEffectiveMinCenterDistance === 'function')
+        ? resolvedDeps.computeEffectiveMinCenterDistance
+        : null,
+      fallback: (typeof runtime._computeEffectiveMinCenterDistance === 'function')
+        ? runtime._computeEffectiveMinCenterDistance()
+        : 20
+    });
     const baseCenters = (prevCenters && prevCenters.length > 0)
       ? prevCenters
-      : sampleLandCenters(runtime, null, effectiveMinCenterDistance);
+      : sampleLandCenters({
+        gridWidth,
+        gridHeight,
+        centersY: readProp(runtime, resolvedDeps, 'centersY', runtime.centersY),
+        minCenterDistance: readProp(runtime, resolvedDeps, 'minCenterDistance', runtime.minCenterDistance),
+        torusDistance: (x1, y1, x2, y2) => (resolvedDeps && resolvedDeps.torusDistance)
+          ? resolvedDeps.torusDistance(x1, y1, x2, y2)
+          : runtime.torusDistance(x1, y1, x2, y2)
+      }, null, effectiveMinCenterDistance);
 
     if (!prevCenters || prevCenters.length <= 0) {
       state = {
@@ -116,8 +199,8 @@ export function runDrift(runtime, { runContext = null } = {}) {
       };
     }
 
-    const WIDTH = runtime.gridWidth;
-    const HEIGHT = runtime.gridHeight;
+    const WIDTH = gridWidth;
+    const HEIGHT = gridHeight;
     const MIN_DIST = toFiniteNumber(effectiveMinCenterDistance, 1) || 1;
 
     const points = baseCenters.map((c) => ({
@@ -317,16 +400,25 @@ export function runDrift(runtime, { runContext = null } = {}) {
       phase: phaseName,
       avgDist
     };
-    const seededLog = runtime._buildSeededLog(centers.length);
-    const { glacierNoiseTable, tundraNoiseTopTable, tundraNoiseBottomTable } =
-      runtime._precomputeDriftFixedTables({ N });
-    const localCenterParameters = runtime._computeCenterParametersForDrift({ centers });
-    const { scores, threshold, landMask } = runtime._computeScoresThresholdAndLandMaskForDrift({ N, centers, localCenterParameters });
+    const buildSeededLog = resolveFn(runtime, 'buildSeededLog', '_buildSeededLog', resolvedDeps);
+    const precomputeDriftFixedTables = resolveFn(runtime, 'precomputeDriftFixedTables', '_precomputeDriftFixedTables', resolvedDeps);
+    const computeCenterParametersForDrift = resolveFn(runtime, 'computeCenterParametersForDrift', '_computeCenterParametersForDrift', resolvedDeps);
+    const computeScoresThresholdAndLandMaskForDrift = resolveFn(runtime, 'computeScoresThresholdAndLandMaskForDrift', '_computeScoresThresholdAndLandMaskForDrift', resolvedDeps);
+    const getSeededRng = resolveFn(runtime, 'getSeededRng', '_getSeededRng', resolvedDeps);
+    const ensureRunContext = resolveFn(runtime, 'ensureRunContext', '_ensureRunContext', resolvedDeps);
+    const buildWorld = resolveFn(runtime, 'buildWorld', '_buildWorld', resolvedDeps)
+      || resolveFn(runtime, 'buildWorldAndEmit', '_buildWorldAndEmit', resolvedDeps);
 
-    const seededRngHighlands = runtime._getSeededRng();
-    const payload = runtime._buildWorldAndEmit({
+    const seededLog = buildSeededLog.call(runtime, centers.length);
+    const { glacierNoiseTable, tundraNoiseTopTable, tundraNoiseBottomTable } =
+      precomputeDriftFixedTables.call(runtime, { N });
+    const localCenterParameters = computeCenterParametersForDrift.call(runtime, { centers });
+    const { scores, threshold, landMask } = computeScoresThresholdAndLandMaskForDrift.call(runtime, { N, centers, localCenterParameters });
+
+    const seededRngHighlands = getSeededRng.call(runtime);
+    const built = buildWorld.call(runtime, {
       emitEvent: 'drifted',
-      runContext: runtime._ensureRunContext({ runContext, defaultRunMode: 'drift' }),
+      runContext: ensureRunContext.call(runtime, { runContext, defaultRunMode: 'drift' }),
       N,
       centers,
       localCenterParameters,
@@ -342,6 +434,7 @@ export function runDrift(runtime, { runContext = null } = {}) {
       highlandsSeededRng: seededRngHighlands || null,
       enableDerivedRngDuringHighlands: !!seededRngHighlands
     });
+    const payload = (built && built.payload) ? built.payload : built;
     return {
       payload,
       state: {
@@ -350,12 +443,18 @@ export function runDrift(runtime, { runContext = null } = {}) {
         driftIsApproach: nextDriftIsApproach,
         superPloom_calc: spc,
         superPloom_history: superPloomHistory,
-        driftMetrics
+        driftMetrics,
+        ...(built && built.hfCache ? { hfCache: built.hfCache } : null)
       }
     };
   } finally {
-    runtime.forceRandomDerivedRng = prevForce;
+    setForceRandomDerivedRng(prevForce);
   }
+}
+
+export function runDriftWithDeps(deps, { runContext = null } = {}) {
+  const runtime = buildRuntimeFromDeps(deps);
+  return runDrift(runtime, { runContext, deps });
 }
 
 /**
@@ -364,21 +463,31 @@ export function runDrift(runtime, { runContext = null } = {}) {
  * @param {{emit?: boolean, runContext?: any}} [options]
  * @returns {TerrainEventPayload|undefined}
  */
-export function runReviseHighFrequency(runtime, { emit = true, runContext = null } = {}) {
+export function runReviseHighFrequency(runtime, { emit = true, runContext = null, deps = null } = {}) {
+  void emit;
+  const resolvedDeps = deps || runtime.deps || null;
   const c = runtime.hfCache;
   if (!c || !c.N || !Array.isArray(c.preTundraColors)) return;
 
   const colors = c.preTundraColors.slice();
-  runtime._reviseReclassifyDesert({ c, colors });
-  runtime._reviseRestoreLowlandAroundLakes({ c, colors });
+  const reviseReclassifyDesert = resolveFn(runtime, 'reviseReclassifyDesert', '_reviseReclassifyDesert', resolvedDeps);
+  const reviseRestoreLowlandAroundLakes = resolveFn(runtime, 'reviseRestoreLowlandAroundLakes', '_reviseRestoreLowlandAroundLakes', resolvedDeps);
+  const reviseComputeGlacierRows = resolveFn(runtime, 'reviseComputeGlacierRows', '_reviseComputeGlacierRows', resolvedDeps);
+  const reviseApplyTundra = resolveFn(runtime, 'reviseApplyTundra', '_reviseApplyTundra', resolvedDeps);
+  const reviseApplyGlaciers = resolveFn(runtime, 'reviseApplyGlaciers', '_reviseApplyGlaciers', resolvedDeps);
+  const reviseRebuildGridDataAndSanitizeFeatures = resolveFn(runtime, 'reviseRebuildGridDataAndSanitizeFeatures', '_reviseRebuildGridDataAndSanitizeFeatures', resolvedDeps);
+  const ensureRunContext = resolveFn(runtime, 'ensureRunContext', '_ensureRunContext', resolvedDeps);
+
+  reviseReclassifyDesert.call(runtime, { c, colors });
+  reviseRestoreLowlandAroundLakes.call(runtime, { c, colors });
   const {
     computedTopGlacierRowsLand,
     computedTopGlacierRowsWater,
     computedSmoothedTopGlacierRowsLand,
     computedSmoothedTopGlacierRowsWater
-  } = runtime._reviseComputeGlacierRows({ c });
-  runtime._reviseApplyTundra({ c, colors, computedTopGlacierRowsWater });
-  const { computedTopGlacierRows } = runtime._reviseApplyGlaciers({
+  } = reviseComputeGlacierRows.call(runtime, { c });
+  reviseApplyTundra.call(runtime, { c, colors, computedTopGlacierRowsWater });
+  const { computedTopGlacierRows } = reviseApplyGlaciers.call(runtime, {
     c,
     colors,
     computedTopGlacierRowsLand,
@@ -386,8 +495,8 @@ export function runReviseHighFrequency(runtime, { emit = true, runContext = null
     computedSmoothedTopGlacierRowsLand,
     computedSmoothedTopGlacierRowsWater
   });
-  const { gridData } = runtime._reviseRebuildGridDataAndSanitizeFeatures({ c, colors });
-  const ensured = runtime._ensureRunContext({ runContext, defaultRunMode: 'revise' });
+  const { gridData } = reviseRebuildGridDataAndSanitizeFeatures.call(runtime, { c, colors });
+  const ensured = ensureRunContext.call(runtime, { runContext, defaultRunMode: 'revise' });
   const payload = buildTerrainEventPayload({
     eventType: 'revised',
     runMode: ensured.runMode,
@@ -401,6 +510,10 @@ export function runReviseHighFrequency(runtime, { emit = true, runContext = null
     driftMetrics: null,
     lowlandDistanceToSeaStats: null
   });
-  if (emit && typeof runtime.$emit === 'function') runtime.$emit('revised', payload);
   return payload;
+}
+
+export function runReviseHighFrequencyWithDeps(deps, { emit = true, runContext = null } = {}) {
+  const runtime = buildRuntimeFromDeps(deps);
+  return runReviseHighFrequency(runtime, { emit, runContext, deps });
 }

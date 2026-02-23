@@ -10,7 +10,11 @@ const isWaterCell = (colors, idx, landMask, lakeMask, shallowSeaColor, deepSeaCo
     : (colors[idx] === shallowSeaColor || colors[idx] === deepSeaColor)
 );
 
-const getAdditionalGlacierRowsForCell = (ctx, col, {
+const getAdditionalGlacierRowsForCell = ({
+  landGlacierExtraRows,
+  highlandGlacierExtraRows,
+  alpineGlacierExtraRows
+}, col, {
   shallowSeaColor,
   deepSeaColor,
   lowlandColor,
@@ -20,15 +24,21 @@ const getAdditionalGlacierRowsForCell = (ctx, col, {
   alpineColor
 }) => {
   if (col === shallowSeaColor || col === deepSeaColor) return 0;
-  if (col === lowlandColor) return ctx.landGlacierExtraRows;
-  if (col === tundraColor) return ctx.landGlacierExtraRows;
-  if (col === desertColor) return ctx.landGlacierExtraRows;
-  if (col === highlandColor) return ctx.highlandGlacierExtraRows;
-  if (col === alpineColor) return ctx.alpineGlacierExtraRows;
+  if (col === lowlandColor) return landGlacierExtraRows;
+  if (col === tundraColor) return landGlacierExtraRows;
+  if (col === desertColor) return landGlacierExtraRows;
+  if (col === highlandColor) return highlandGlacierExtraRows;
+  if (col === alpineColor) return alpineGlacierExtraRows;
   return 0;
 };
 
-function applyGlacierPass(ctx, {
+function applyGlacierPass({
+  gridWidth,
+  gridHeight,
+  landGlacierExtraRows,
+  highlandGlacierExtraRows,
+  alpineGlacierExtraRows
+}, {
   colors,
   glacierNoiseTable,
   landNoiseAmplitude,
@@ -46,17 +56,21 @@ function applyGlacierPass(ctx, {
   lakeMask,
   fromTop
 }) {
-  for (let gy = 0; gy < ctx.gridHeight; gy++) {
-    for (let gx = 0; gx < ctx.gridWidth; gx++) {
-      const idx = gy * ctx.gridWidth + gx;
-      const distance = fromTop ? gy : (ctx.gridHeight - 1 - gy);
+  for (let gy = 0; gy < gridHeight; gy++) {
+    for (let gx = 0; gx < gridWidth; gx++) {
+      const idx = gy * gridWidth + gx;
+      const distance = fromTop ? gy : (gridHeight - 1 - gy);
       const noise = glacierNoiseTable[idx] * landNoiseAmplitude;
 
       const isWater = isWaterCell(colors, idx, landMask, lakeMask, shallowSeaColor, deepSeaColor);
 
       const additionalGrids = isWater
         ? 0
-        : getAdditionalGlacierRowsForCell(ctx, colors[idx], {
+        : getAdditionalGlacierRowsForCell({
+          landGlacierExtraRows,
+          highlandGlacierExtraRows,
+          alpineGlacierExtraRows
+        }, colors[idx], {
           shallowSeaColor,
           deepSeaColor,
           lowlandColor,
@@ -76,7 +90,13 @@ function applyGlacierPass(ctx, {
   }
 }
 
-export function applyGlaciers(ctx, {
+export function applyGlaciers({
+  gridWidth,
+  gridHeight,
+  landGlacierExtraRows,
+  highlandGlacierExtraRows,
+  alpineGlacierExtraRows
+}, {
   colors,
   glacierNoiseTable,
   landNoiseAmplitude,
@@ -107,7 +127,13 @@ export function applyGlaciers(ctx, {
     (typeof computedTopGlacierRows === 'number') ? computedTopGlacierRows : landRows
   );
 
-  applyGlacierPass(ctx, {
+  applyGlacierPass({
+    gridWidth,
+    gridHeight,
+    landGlacierExtraRows,
+    highlandGlacierExtraRows,
+    alpineGlacierExtraRows
+  }, {
     colors,
     glacierNoiseTable,
     landNoiseAmplitude,
@@ -126,7 +152,13 @@ export function applyGlaciers(ctx, {
     fromTop: true
   });
 
-  applyGlacierPass(ctx, {
+  applyGlacierPass({
+    gridWidth,
+    gridHeight,
+    landGlacierExtraRows,
+    highlandGlacierExtraRows,
+    alpineGlacierExtraRows
+  }, {
     colors,
     glacierNoiseTable,
     landNoiseAmplitude,

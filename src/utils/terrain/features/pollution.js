@@ -4,7 +4,12 @@ import { growCluster } from './cluster';
 import { pickRng } from '../../rng.js';
 import { toCoords } from '../gridIndex.js';
 
-export function generatePollutedAreas(ctx, {
+export function generatePollutedAreas({
+    gridWidth,
+    torusWrap,
+    poissonSample,
+    derivedRng
+}, {
     N,
     countAreas,
     isEligible,
@@ -31,7 +36,7 @@ export function generatePollutedAreas(ctx, {
         totalWeight += w;
     }
 
-    const pick = pickRng(ctx._getDerivedRng(pickRngKey));
+    const pick = pickRng(derivedRng ? derivedRng(pickRngKey) : null);
     const chosen = new Set();
 
     for (let k = 0; k < countAreas && eligible.length > 0; k++) {
@@ -66,12 +71,13 @@ export function generatePollutedAreas(ctx, {
             weights[pickedEi] = 0;
         }
 
-        const { x: sx, y: sy } = toCoords(startIdx, ctx.gridWidth);
-        const clusterRng = pickRng(ctx._getDerivedRng(clusterRngKey, sx, sy));
-        const targetSize = Math.max(1, ctx._poissonSample(targetMean, targetMax, clusterRng));
+        const { x: sx, y: sy } = toCoords(startIdx, gridWidth);
+        const clusterRng = pickRng(derivedRng ? derivedRng(clusterRngKey, sx, sy) : null);
+        const targetSize = Math.max(1, poissonSample(targetMean, targetMax, clusterRng));
 
         growCluster({
-            ctx,
+            gridWidth,
+            torusWrap,
             startX: sx,
             startY: sy,
             startIdx,

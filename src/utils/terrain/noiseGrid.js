@@ -5,7 +5,7 @@ const FALLBACK_DIRS_8 = [
   { dx: -1, dy: 1 }, { dx: 0, dy: 1 }, { dx: 1, dy: 1 }
 ];
 
-const isSeedStrictEra = (ctx) => SEED_STRICT_ERAS.has(ctx.era);
+const isSeedStrictEra = (era) => SEED_STRICT_ERAS.has(era);
 
 export function getDirections8() {
   try {
@@ -17,16 +17,24 @@ export function getDirections8() {
   return FALLBACK_DIRS_8;
 }
 
-export function buildVisualNoiseGrid(ctx, {
+export function buildVisualNoiseGrid({
+  gridWidth,
+  gridHeight,
+  era,
+  derivedRng
+}, {
   N,
   seededRng
 }) {
   const noiseGrid = new Array(N);
-  for (let gy = 0; gy < ctx.gridHeight; gy++) {
-    for (let gx = 0; gx < ctx.gridWidth; gx++) {
-      const idx = gy * ctx.gridWidth + gx;
-      const strict = isSeedStrictEra(ctx) && !!seededRng;
-      const vrng = strict ? (ctx._getDerivedRng('vis-noise', gx, gy) || seededRng) : Math.random;
+  const getRng = derivedRng || null;
+  for (let gy = 0; gy < gridHeight; gy++) {
+    for (let gx = 0; gx < gridWidth; gx++) {
+      const idx = gy * gridWidth + gx;
+      const strict = isSeedStrictEra(era) && !!seededRng;
+      const vrng = strict
+        ? ((getRng && getRng('vis-noise', gx, gy)) || seededRng)
+        : Math.random;
       noiseGrid[idx] = (vrng() * 2 - 1);
     }
   }

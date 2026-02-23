@@ -9,8 +9,13 @@ const DISTANCE_WARP_AMPLITUDE = 0.03;
 const FRACTAL_NOISE_SCALE = 0.06;
 const BIAS_SHARPNESS = 6.0;
 
-export function sampleLandCenters(ctx, rng, minDistanceOverride) {
-  const { gridWidth, gridHeight, centersY, minCenterDistance, torusDistance } = ctx;
+export function sampleLandCenters({
+  gridWidth,
+  gridHeight,
+  centersY,
+  minCenterDistance,
+  torusDistance
+}, rng, minDistanceOverride) {
   const centers = [];
   const yCenters = Math.max(
     MIN_CENTERS_Y,
@@ -57,19 +62,18 @@ export function sampleLandCenters(ctx, rng, minDistanceOverride) {
   return centers;
 }
 
-export function computeScoresForCenters(ctx, centers, centerParameters) {
-  const {
-    gridWidth,
-    gridHeight,
-    kDecay,
-    centerBias,
-    fractalNoise2D,
-    noise2D,
-    noiseAmp,
-    torusDistance,
-    torusDirection,
-    _getDerivedRng
-  } = ctx;
+export function computeScoresForCenters({
+  gridWidth,
+  gridHeight,
+  kDecay,
+  centerBias,
+  fractalNoise2D,
+  noise2D,
+  noiseAmp,
+  torusDistance,
+  torusDirection,
+  derivedRng
+}, centers, centerParameters) {
   const N = gridWidth * gridHeight;
   const maxTorusDistance = Math.sqrt(Math.pow(gridWidth / 2, 2) + Math.pow(gridHeight - 1, 2));
   const maxDistance = maxTorusDistance || 1;
@@ -83,7 +87,7 @@ export function computeScoresForCenters(ctx, centers, centerParameters) {
     };
   });
   const centerShapeProfiles = centers.map((c, ci) => {
-    const rng = _getDerivedRng('shape-profile', ci);
+    const rng = derivedRng ? derivedRng('shape-profile', ci) : null;
     const r = pickRng(rng);
     const numTerms = 2 + Math.floor(r() * 3);
     const maxK = 7;
@@ -140,8 +144,7 @@ export function computeScoresForCenters(ctx, centers, centerParameters) {
   return { scores };
 }
 
-export function computeOwnerCenterIdx(ctx, centers) {
-  const { gridWidth, gridHeight, torusDistance } = ctx;
+export function computeOwnerCenterIdx({ gridWidth, gridHeight, torusDistance }, centers) {
   const N = gridWidth * gridHeight;
   const ownerCenterIdx = new Array(N).fill(-1);
   for (let gy = 0; gy < gridHeight; gy++) {

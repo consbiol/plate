@@ -1,5 +1,3 @@
-import { torusDistance, torusWrap } from '../torus.js';
-
 const createMinHeap = () => {
   const heap = [];
   const swap = (i, j) => {
@@ -57,7 +55,8 @@ export function computeDistanceMap({
   N,
   directions,
   gridWidth,
-  gridHeight
+  torusWrap,
+  torusDistance
 }) {
   const dist = new Array(N).fill(Infinity);
   if (!sources || sources.length === 0) return dist;
@@ -74,10 +73,10 @@ export function computeDistanceMap({
     if (!current) break;
     if (current.dist !== dist[current.idx]) continue;
     for (const dir of directions) {
-      const wrapped = torusWrap(gridWidth, gridHeight, current.x + dir.dx, current.y + dir.dy);
+      const wrapped = torusWrap(current.x + dir.dx, current.y + dir.dy);
       if (!wrapped) continue;
       const nIdx = wrapped.y * gridWidth + wrapped.x;
-      const w = torusDistance(gridWidth, gridHeight, current.x, current.y, wrapped.x, wrapped.y);
+      const w = torusDistance(current.x, current.y, wrapped.x, wrapped.y);
       const nd = current.dist + w;
       if (nd < dist[nIdx]) {
         dist[nIdx] = nd;

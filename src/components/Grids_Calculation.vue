@@ -10,7 +10,7 @@ import {
   torusDirection as torusDirectionUtil,
   torusWrap as torusWrapUtil
 } from '../utils/torus.js';
-import { generateLakes, applyLowlandAroundLakes } from '../utils/terrain/lakes.js';
+import { generateLakes, applyLakeColors, applyLowlandAroundLakes } from '../utils/terrain/lakes.js';
 import { generateHighlands } from '../utils/terrain/highlands.js';
 import { generateAlpines } from '../utils/terrain/alpines.js';
 import { generateFeatures } from '../utils/terrain/features.js';
@@ -29,6 +29,7 @@ import { applySeededLogToCenterParameters } from '../utils/terrain/centerParams.
 import { computePreGlacierStats, buildGeneratedPayload } from '../utils/terrain/output.js';
 import { computeTopGlacierRowsFromAverageTemperature, getSmoothedGlacierRows, computeTopGlacierRowsPure } from '../utils/terrain/glacierRows.js';
 import { buildGenerationJobInputs, GENERATION_JOB_INPUT_KEYS } from '../utils/terrain/jobInputs.js';
+import { buildDriftStateSnapshot, buildWorkerInputs, buildDepsSnapshot } from '../utils/terrain/workerPayload.js';
 import { runGenerate as runGenerateTerrain, runDrift as runDriftTerrain, runReviseHighFrequency as runReviseHighFrequencyTerrain } from '../utils/terrain/terrainRunner.js';
 import { noise2D as noise2DUtil, fractalNoise2D as fractalNoise2DUtil } from '../utils/noise.js';
 import { poissonSample } from '../utils/stats/poisson.js';
@@ -134,7 +135,9 @@ export default {
     // 指定要素のみ決定化するためのシード（未指定時は従来通り）
     deterministicSeed: { type: [Number, String], required: false, default: null },
     // 時代（パレット切替用、未指定ならデフォルト色）
-    era: { type: String, required: false, default: null }
+    era: { type: String, required: false, default: null },
+    // Web Worker を使用するかどうか
+    useTerrainWorker: { type: Boolean, required: false, default: true }
   },
   data() {
     return {
@@ -168,7 +171,13 @@ export default {
       emitSeq: 0,
 
       // Parent UI hook: busy/idle (for debugging and safer UI gating)
-      isRunBusy: false
+      isRunBusy: false,
+      isDrainRunning: false,
+      terrainWorker: null,
+      terrainWorkerSeq: 0,
+      terrainWorkerPending: {},
+      terrainWorkerFailed: false,
+      workerHasHfCache: false
     };
   },
   watch: {
@@ -176,12 +185,96 @@ export default {
       this._drainRunQueue();
     }
   },
+  beforeUnmount() {
+    this._terminateTerrainWorker();
+  },
   methods: {
     _setRunBusy(busy, payload = null) {
       const next = !!busy;
       if (this.isRunBusy === next) return;
       this.isRunBusy = next;
       this.$emit(next ? 'run-busy' : 'run-idle', payload);
+    },
+    _getTerrainWorker() {
+      if (this.terrainWorkerFailed) return null;
+      if (this.terrainWorker) return this.terrainWorker;
+      if (typeof Worker === 'undefined') return null;
+      try {
+        const worker = new Worker(new URL('../utils/terrain/terrainWorker.js', import.meta.url), { type: 'module' });
+        worker.onmessage = (event) => this._onTerrainWorkerMessage(event);
+        worker.onerror = (err) => {
+          this.terrainWorkerFailed = true;
+          this.workerHasHfCache = false;
+          this.$emit('run-worker-error', { error: err || new Error('Worker error') });
+          this._rejectAllTerrainWorkerPending(err || new Error('Worker error'));
+        };
+        this.terrainWorker = worker;
+        return worker;
+      } catch (e) {
+        this.terrainWorkerFailed = true;
+        this.workerHasHfCache = false;
+        this.$emit('run-worker-error', { error: e || new Error('Worker error') });
+        return null;
+      }
+    },
+    _rejectAllTerrainWorkerPending(err) {
+      const pending = this.terrainWorkerPending || {};
+      for (const id of Object.keys(pending)) {
+        const p = pending[id];
+        if (p && p.timeoutId) clearTimeout(p.timeoutId);
+        if (p && typeof p.reject === 'function') p.reject(err);
+      }
+      this.terrainWorkerPending = {};
+    },
+    _onTerrainWorkerMessage(event) {
+      const data = event && event.data ? event.data : {};
+      const { id, outputs, error, missing } = data;
+      if (!id) return;
+      const pending = this.terrainWorkerPending && this.terrainWorkerPending[id];
+      if (!pending) return;
+      if (pending.timeoutId) clearTimeout(pending.timeoutId);
+      delete this.terrainWorkerPending[id];
+      if (error) {
+        const details = Array.isArray(missing) && missing.length > 0 ? `: ${missing.join(', ')}` : '';
+        pending.reject(new Error(`${error}${details}`));
+        return;
+      }
+      pending.resolve(outputs || null);
+    },
+    _postTerrainWorkerJob({ runMode, runContext, timeoutMs = 30000 }) {
+      const worker = this._getTerrainWorker();
+      if (!worker) return null;
+      const includeHfCache = !this.workerHasHfCache;
+      const inputs = this._buildWorkerInputs({ runMode, runContext, includeHfCache });
+      if (inputs && inputs.generationInputs) this.lastGenerationInputs = inputs.generationInputs;
+      const depsSnapshot = this._buildWorkerDepsSnapshot({ includeHfCache });
+      const id = `${Date.now()}-${++this.terrainWorkerSeq}`;
+      return new Promise((resolve, reject) => {
+        const timeoutId = Number.isFinite(timeoutMs) && timeoutMs > 0
+          ? setTimeout(() => {
+            if (this.terrainWorkerPending && this.terrainWorkerPending[id]) {
+              delete this.terrainWorkerPending[id];
+              reject(new Error('Worker timeout'));
+            }
+          }, timeoutMs)
+          : null;
+        this.terrainWorkerPending[id] = { resolve, reject, timeoutId };
+        try {
+          worker.postMessage({ id, inputs, depsSnapshot });
+        } catch (e) {
+          if (timeoutId) clearTimeout(timeoutId);
+          delete this.terrainWorkerPending[id];
+          reject(e);
+        }
+      });
+    },
+    _terminateTerrainWorker() {
+      if (this.terrainWorker) {
+        this.terrainWorker.terminate();
+        this.terrainWorker = null;
+      }
+      this.terrainWorkerPending = {};
+      this.workerHasHfCache = false;
     },
     _normalizeRunCommand(cmd) {
       const c = cmd || {};
@@ -215,9 +308,14 @@ export default {
       }
       return null;
     },
-    _drainRunQueue() {
+    async _drainRunQueue() {
+      if (this.isDrainRunning) return;
+      this.isDrainRunning = true;
       const q = Array.isArray(this.runQueue) ? this.runQueue : [];
-      if (q.length === 0) return;
+      if (q.length === 0) {
+        this.isDrainRunning = false;
+        return;
+      }
 
       let consumed = 0;
       this._setRunBusy(true, { queueLength: q.length });
@@ -231,12 +329,12 @@ export default {
           if (!mode) { consumed++; continue; }
 
           if (mode === RUN_MODES.REVISE) {
-            this.runReviseHighFrequency({ ...(options || {}), runContext: rc });
+            await this.runReviseHighFrequency({ ...(options || {}), runContext: rc });
             consumed++;
             continue;
           }
           if (mode === RUN_MODES.DRIFT) {
-            this.runDrift({ runContext: rc });
+            await this.runDrift({ runContext: rc });
             consumed++;
             continue;
           }
@@ -244,7 +342,7 @@ export default {
             const preserve = (options && typeof options.preserveCenterCoordinates === 'boolean')
               ? !!options.preserveCenterCoordinates
               : (mode === RUN_MODES.UPDATE);
-            this._scheduleGenerate({ preserveCenterCoordinates: preserve, runContext: rc });
+            await this._scheduleGenerate({ preserveCenterCoordinates: preserve, runContext: rc });
             consumed++;
             continue;
           }
@@ -253,6 +351,7 @@ export default {
         }
       } finally {
         this._setRunBusy(false, { consumed });
+        this.isDrainRunning = false;
       }
       if (consumed > 0) this.$emit('run-consumed', consumed);
     },
@@ -271,7 +370,7 @@ export default {
       const runId = hasRunId ? rc.runId : this._makeFallbackRunId();
       return { runMode, runId };
     },
-    _scheduleGenerate(options = {}) {
+    async _scheduleGenerate(options = {}) {
       const opts = {
         preserveCenterCoordinates: false,
         runContext: null,
@@ -284,7 +383,7 @@ export default {
       this._setRunBusy(true, { mode: opts.preserveCenterCoordinates ? 'update' : 'generate' });
       this.isGenerateRunning = true;
       try {
-        this.runGenerate(opts);
+        await this.runGenerate(opts);
       } finally {
         this.isGenerateRunning = false;
         this._setRunBusy(false, { mode: opts.preserveCenterCoordinates ? 'update' : 'generate' });
@@ -292,7 +391,7 @@ export default {
       if (this.pendingGenerateOptions) {
         const next = this.pendingGenerateOptions;
         this.pendingGenerateOptions = null;
-        this._scheduleGenerate(next);
+        await this._scheduleGenerate(next);
       }
     },
     // --- ctx builders: ctx 化のために依存を明示する（挙動は変えない） ---
@@ -306,9 +405,7 @@ export default {
         torusWrap: (...args) => this.torusWrap(...args),
         _poissonSample: (...args) => this._poissonSample(...args),
         _getDerivedRng: (...args) => this._getDerivedRng(...args),
-        _getLandDistanceThresholdForRow: (...args) => this._getLandDistanceThresholdForRow(...args),
-        // 結果の持ち帰り（従来互換）
-        _lastLakesList: null
+        _getLandDistanceThresholdForRow: (...args) => this._getLandDistanceThresholdForRow(...args)
       };
     },
     _buildClassifyCtx() {
@@ -349,6 +446,10 @@ export default {
         seaPollutedAreasCount: this.seaPollutedAreasCount
       };
     },
+    _getDerivedRngForFeatures(...labels) {
+      if (this.forceRandomDerivedRng) return null;
+      return createDerivedRng(this.deterministicSeed, ...labels);
+    },
     _buildLakeLowlandCtx() {
       return {
         gridWidth: this.gridWidth,
@@ -361,6 +462,57 @@ export default {
     _buildGenerationJobInputs() {
       const source = this._collectGenerationJobInputSource();
       return buildGenerationJobInputs(source);
+    },
+    _buildWorkerInputs({ runMode, runContext, includeHfCache = true }) {
+      const generationInputs = this._buildGenerationJobInputs();
+      const driftState = buildDriftStateSnapshot({
+        driftTurn: this.driftTurn,
+        driftIsApproach: this.driftIsApproach,
+        superPloom_calc: this.superPloom_calc,
+        superPloom_history: this.superPloom_history,
+        driftMetrics: this.driftMetrics
+      });
+      return buildWorkerInputs({
+        runMode,
+        runContext,
+        generationInputs,
+        hfCache: includeHfCache ? this.hfCache : null,
+        driftState
+      });
+    },
+    _buildWorkerDepsSnapshot({ includeHfCache = true } = {}) {
+      return buildDepsSnapshot({
+        props: {
+          gridWidth: this.gridWidth,
+          gridHeight: this.gridHeight,
+          centersY: this.centersY,
+          minCenterDistance: this.minCenterDistance,
+          deterministicSeed: this.deterministicSeed
+        },
+        state: {
+          driftTurn: this.driftTurn,
+          driftIsApproach: this.driftIsApproach,
+          superPloom_calc: this.superPloom_calc,
+          superPloom_history: this.superPloom_history,
+          driftMetrics: this.driftMetrics
+        },
+        hfCache: includeHfCache ? this.hfCache : null
+      });
+    },
+    _applyWorkerOutputs(outputs) {
+      if (!outputs || typeof outputs !== 'object') return;
+      const { hfCache, driftState } = outputs;
+      if (hfCache && typeof hfCache === 'object') {
+        this.hfCache = hfCache;
+        this.workerHasHfCache = true;
+      }
+      if (driftState && typeof driftState === 'object') {
+        if (Number.isFinite(driftState.driftTurn)) this.driftTurn = driftState.driftTurn;
+        if (typeof driftState.driftIsApproach === 'boolean') this.driftIsApproach = driftState.driftIsApproach;
+        if (Number.isFinite(driftState.superPloom_calc)) this.superPloom_calc = driftState.superPloom_calc;
+        if (Array.isArray(driftState.superPloom_history)) this.superPloom_history = driftState.superPloom_history.slice();
+        if (typeof driftState.driftMetrics !== 'undefined') this.driftMetrics = driftState.driftMetrics;
+      }
     },
     _collectGenerationJobInputSource() {
       const source = {};
@@ -401,6 +553,70 @@ export default {
     _getDerivedRng(...labels) {
       if (this.forceRandomDerivedRng) return null;
       return createDerivedRng(this.deterministicSeed, ...labels);
+    },
+    _buildRunnerDeps() {
+      return {
+        buildGenerationJobSpec: () => this._buildGenerationJobSpec(),
+        getSeededRng: () => this._getSeededRng(),
+        resetDriftStateForGenerate: (opts) => this._resetDriftStateForGenerate(opts),
+        buildSeededLog: (...args) => this._buildSeededLog(...args),
+        precomputeGenerateFixedTables: (opts) => this._precomputeGenerateFixedTables(opts),
+        computeCentersAndParamsForGenerate: (opts) => this._computeCentersAndParamsForGenerate(opts),
+        computeScoresThresholdAndLandMaskForGenerate: (opts) => this._computeScoresThresholdAndLandMaskForGenerate(opts),
+        ensureRunContext: (opts) => this._ensureRunContext(opts),
+        buildWorld: (opts) => this._buildWorld(opts),
+        precomputeDriftFixedTables: (opts) => this._precomputeDriftFixedTables(opts),
+        computeCenterParametersForDrift: (opts) => this._computeCenterParametersForDrift(opts),
+        computeScoresThresholdAndLandMaskForDrift: (opts) => this._computeScoresThresholdAndLandMaskForDrift(opts),
+        reviseReclassifyDesert: (opts) => this._reviseReclassifyDesert(opts),
+        reviseRestoreLowlandAroundLakes: (opts) => this._reviseRestoreLowlandAroundLakes(opts),
+        reviseComputeGlacierRows: (opts) => this._reviseComputeGlacierRows(opts),
+        reviseApplyTundra: (opts) => this._reviseApplyTundra(opts),
+        reviseApplyGlaciers: (opts) => this._reviseApplyGlaciers(opts),
+        reviseRebuildGridDataAndSanitizeFeatures: (opts) => this._reviseRebuildGridDataAndSanitizeFeatures(opts),
+        computeEffectiveMinCenterDistance: () => this._computeEffectiveMinCenterDistance(),
+        torusDistance: (x1, y1, x2, y2) => this.torusDistance(x1, y1, x2, y2),
+        setForceRandomDerivedRng: (value) => { this.forceRandomDerivedRng = value; },
+        props: {
+          gridWidth: this.gridWidth,
+          gridHeight: this.gridHeight,
+          centersY: this.centersY,
+          minCenterDistance: this.minCenterDistance,
+          deterministicSeed: this.deterministicSeed
+        },
+        state: {
+          driftTurn: this.driftTurn,
+          driftIsApproach: this.driftIsApproach,
+          superPloom_calc: this.superPloom_calc,
+          superPloom_history: this.superPloom_history,
+          driftMetrics: this.driftMetrics
+        },
+        hfCache: this.hfCache
+      };
+    },
+    _getGlacierRowsStateAccessors(stateKey) {
+      if (stateKey == null) {
+        return {
+          getInternal: () => this.internalTopGlacierRows,
+          setInternal: (v) => { this.internalTopGlacierRows = v; },
+          getLast: () => this.lastReturnedGlacierRows,
+          setLast: (v) => { this.lastReturnedGlacierRows = v; }
+        };
+      }
+      if (!this._glacierRowsState) this._glacierRowsState = {};
+      if (!this._glacierRowsState[stateKey]) {
+        this._glacierRowsState[stateKey] = {
+          internalTopGlacierRows: null,
+          lastReturnedGlacierRows: null
+        };
+      }
+      const s = this._glacierRowsState[stateKey];
+      return {
+        getInternal: () => s.internalTopGlacierRows,
+        setInternal: (v) => { s.internalTopGlacierRows = v; },
+        getLast: () => s.lastReturnedGlacierRows,
+        setLast: (v) => { s.lastReturnedGlacierRows = v; }
+      };
     },
     // --- シード対応RNG（mulberry32 + xmur3） ---
     // 実装は `src/utils/rng.js` に集約（機能は同一、乱数列の再現性も同じ）。
@@ -484,21 +700,22 @@ export default {
       return poissonSample(lambda, maxK, rng);
     },
     // 湖の生成（各中心ごと）＋周囲低地化（縁取り）
-    _generateLakes(centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog) {
-      // 実装は `src/utils/terrain/lakes.js` に分離（機能不変）
-      // ctx を作って依存を明示（挙動不変）
+    _generateLakes(centers, centerLandCells, landMask, seededRng, seededLog) {
       const ctx = this._buildLakesCtx();
-      const lakeMask = generateLakes(ctx, centers, centerLandCells, landMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog);
-      // 高頻度Revise用に従来の場所へ反映（挙動不変）
-      this._lastLakesList = ctx._lastLakesList;
-      return lakeMask;
+      return generateLakes(ctx, centers, centerLandCells, landMask, seededRng, seededLog);
     },
     // 高地生成（各中心ごと）
     _generateHighlands(centers, centerLandCellsPre, preLandMask, lakeMask, colors, highlandColor, seededRng, seededLog) {
       // 実装は `src/utils/terrain/highlands.js` に分離（機能不変）
       // ctx を作って依存を明示（挙動不変）
       const ctx = this._buildHighlandsCtx();
-      return generateHighlands(ctx, centers, centerLandCellsPre, preLandMask, lakeMask, colors, highlandColor, seededRng, seededLog);
+      const highlandMask = generateHighlands(ctx, centers, centerLandCellsPre, preLandMask, lakeMask, seededRng, seededLog);
+      if (highlandMask) {
+        for (let i = 0; i < highlandMask.length; i++) {
+          if (highlandMask[i]) colors[i] = highlandColor;
+        }
+      }
+      return highlandMask;
     },
     // 高山生成（高地に隣接しない高地セル）
     _generateAlpines(colors, highlandColor, lowlandColor, desertColor, alpineColor, directions) {
@@ -523,7 +740,6 @@ export default {
         this.driftIsApproach = true; // start with Approach phase
         // clear high-frequency caches so Generate starts from fresh state
         bestEffort(() => { this.hfCache = null; });
-        bestEffort(() => { this._lastLakesList = null; });
         // reset glacier smoothing/internal state to avoid carrying previous generate's cache
         bestEffort(() => { this._glacierRowsState = null; });
         bestEffort(() => { this.internalTopGlacierRows = null; });
@@ -594,7 +810,13 @@ export default {
           y: centers[i].y
         }));
       } else {
-        centers = sampleLandCenters(this, seedStrictCenters ? seededRng : null, effectiveMinCenterDistance);
+        centers = sampleLandCenters({
+          gridWidth: this.gridWidth,
+          gridHeight: this.gridHeight,
+          centersY: this.centersY,
+          minCenterDistance: this.minCenterDistance,
+          torusDistance: (x1, y1, x2, y2) => this.torusDistance(x1, y1, x2, y2)
+        }, seedStrictCenters ? seededRng : null, effectiveMinCenterDistance);
         // ノイズから中心パラメータを生成（propsは直接変更しない）
         localCenterParameters = centers.map((c) => {
           if (seededRng) {
@@ -633,7 +855,18 @@ export default {
       let success = false;
       let nextCenters = centers;
       for (let attempt = 0; attempt < 5 && !success; attempt++) {
-        const res = computeScoresForCenters(this, nextCenters, localCenterParameters);
+        const res = computeScoresForCenters({
+          gridWidth: this.gridWidth,
+          gridHeight: this.gridHeight,
+          kDecay: this.kDecay,
+          centerBias: this.centerBias,
+          fractalNoise2D: (x, y, octaves, persistence) => this.fractalNoise2D(x, y, octaves, persistence),
+          noise2D: (x, y) => this.noise2D(x, y),
+          noiseAmp: this.noiseAmp,
+          torusDistance: (x1, y1, x2, y2) => this.torusDistance(x1, y1, x2, y2),
+          torusDirection: (x1, y1, x2, y2) => this.torusDirection(x1, y1, x2, y2),
+          derivedRng: (...labels) => this._getDerivedRng(...labels)
+        }, nextCenters, localCenterParameters);
         scores = res.scores;
         const sorted = scores.slice().sort((a, b) => a - b);
         // UI の seaLandRatio を内部の生成用比率へスムーズにマッピング（アンカー: 0.3->0.07, 0.9->0.7）
@@ -653,7 +886,13 @@ export default {
           if (preserveCenterCoordinates) {
             success = true;
           } else {
-            nextCenters = sampleLandCenters(this, seedStrictCenters ? seededRng : null, effectiveMinCenterDistance);
+            nextCenters = sampleLandCenters({
+              gridWidth: this.gridWidth,
+              gridHeight: this.gridHeight,
+              centersY: this.centersY,
+              minCenterDistance: this.minCenterDistance,
+              torusDistance: (x1, y1, x2, y2) => this.torusDistance(x1, y1, x2, y2)
+            }, seedStrictCenters ? seededRng : null, effectiveMinCenterDistance);
           }
         }
       }
@@ -661,7 +900,7 @@ export default {
       for (let i = 0; i < N; i++) landMask[i] = scores[i] >= threshold;
       return { centers: nextCenters, scores, threshold, landMask };
     },
-    _buildWorldAndEmit({
+    _buildWorld({
       emitEvent,
       runContext = null,
       N,
@@ -683,8 +922,17 @@ export default {
     }) {
       const stage0 = () => {
         // Stage 0: shared precomputations
-        const noiseGrid = buildVisualNoiseGrid(this, { N, seededRng });
-        const ownerCenterIdx = computeOwnerCenterIdx(this, centers);
+        const noiseGrid = buildVisualNoiseGrid({
+          gridWidth: this.gridWidth,
+          gridHeight: this.gridHeight,
+          era: this.era,
+          derivedRng: (...args) => this._getDerivedRng(...args)
+        }, { N, seededRng });
+        const ownerCenterIdx = computeOwnerCenterIdx({
+          gridWidth: this.gridWidth,
+          gridHeight: this.gridHeight,
+          torusDistance: (x1, y1, x2, y2) => this.torusDistance(x1, y1, x2, y2)
+        }, centers);
         return { noiseGrid, ownerCenterIdx };
       };
       const stage1 = () => {
@@ -731,7 +979,8 @@ export default {
           N,
           directions,
           gridWidth: this.gridWidth,
-          gridHeight: this.gridHeight
+          torusWrap: (x, y) => this.torusWrap(x, y),
+          torusDistance: (x1, y1, x2, y2) => this.torusDistance(x1, y1, x2, y2)
         });
 
         const seaSources = [];
@@ -746,10 +995,16 @@ export default {
           N,
           directions,
           gridWidth: this.gridWidth,
-          gridHeight: this.gridHeight
+          torusWrap: (x, y) => this.torusWrap(x, y),
+          torusDistance: (x1, y1, x2, y2) => this.torusDistance(x1, y1, x2, y2)
         });
 
-        const colors = classifyBaseColors(this._buildClassifyCtx(), {
+        const colors = classifyBaseColors({
+          gridWidth: this.gridWidth,
+          gridHeight: this.gridHeight,
+          baseSeaDistanceThreshold: this.baseSeaDistanceThreshold,
+          getLandDistanceThresholdForRow: (gy, gx) => this._getLandDistanceThresholdForRow(gy, gx)
+        }, {
           N,
           landMask,
           noiseGrid,
@@ -806,7 +1061,24 @@ export default {
         preLandMask: preJitterLandMask
       });
       // 湖生成と適用（ジッター後のマスクに基づく）
-      const lakeMask = this._generateLakes(centers, centerLandCells, refinedLandMask, colors, shallowSeaColor, lowlandColor, desertColor, seededRng, seededLog);
+      const { lakeMask, lakesList } = this._generateLakes(
+        centers,
+        centerLandCells,
+        refinedLandMask,
+        seededRng,
+        seededLog
+      );
+      applyLakeColors(colors, lakeMask, shallowSeaColor);
+      bestEffort(() => {
+        applyLowlandAroundLakes(this._buildLakeLowlandCtx(), {
+          colors,
+          lakesList,
+          lakeMask,
+          baseLandThr: this.baseLandDistanceThreshold,
+          desertColor,
+          lowlandColor
+        });
+      });
 
       // 高地生成と適用
       // - Generate: seededRng をそのまま渡す
@@ -856,7 +1128,13 @@ export default {
         ? Math.max(0, Number(this.tundraExtraRows))
         : Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
       const computedTopTundraRows = Math.max(0, computedTopGlacierRowsWater + tundraExtraRows);
-      applyTundra(this, {
+      applyTundra({
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        era: this.era,
+        derivedRng: (...args) => this._getDerivedRng(...args),
+        topTundraRows: this.topTundraRows
+      }, {
         colors,
         landNoiseAmplitude,
         lowlandColor,
@@ -868,7 +1146,13 @@ export default {
 
       // --- 氷河の適用（上端/下端） ---
       const computedTopGlacierRows = computedTopGlacierRowsLand;
-      applyGlaciers(this, {
+      applyGlaciers({
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        landGlacierExtraRows: this.landGlacierExtraRows,
+        highlandGlacierExtraRows: this.highlandGlacierExtraRows,
+        alpineGlacierExtraRows: this.alpineGlacierExtraRows
+      }, {
         colors,
         glacierNoiseTable,
         landNoiseAmplitude,
@@ -904,11 +1188,15 @@ export default {
         colors,
         lowlandColor,
         shallowSeaColor,
-        seededRng
+        seededRng,
+        derivedRng: (...labels) => this._getDerivedRngForFeatures(...labels)
       });
 
       // 各グリッドのプロパティ構造を作成
-      const gridData = buildGridData(this, {
+      const gridData = buildGridData({
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight
+      }, {
         N,
         colors,
         landMask: refinedLandMask,
@@ -933,15 +1221,19 @@ export default {
         centerParameters: localCenterParameters,
         seededLog
       });
-      markCentersOnGridData(this, { gridData, centers });
+      markCentersOnGridData({
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        showCentersRed: this.showCentersRed
+      }, { gridData, centers });
 
       // 高頻度更新に必要なデータをキャッシュ
-      this.hfCache = {
+      const hfCache = {
         N,
         centers,
         landMask: refinedLandMask,
         lakeMask,
-        lakesList: this._lastLakesList || [],
+        lakesList: lakesList || [],
         noiseGrid,
         distanceToSea,
         distanceToLand,
@@ -983,8 +1275,14 @@ export default {
         computedTopGlacierRows,
         ...(driftMetrics ? { driftMetrics } : null)
       });
-      this.$emit(emitEvent, payload);
-      return payload;
+      return { payload, hfCache };
+    },
+    _emitTerrainPayload(payload) {
+      if (!payload) return;
+      const type = (payload.eventType === 'generated' || payload.eventType === 'revised' || payload.eventType === 'drifted')
+        ? payload.eventType
+        : 'generated';
+      this.$emit(type, payload);
     },
     // --- Drift helpers（中心点移動と、Drift用の前計算/再生成を分離） ---
     _precomputeDriftFixedTables({ N }) {
@@ -1034,7 +1332,18 @@ export default {
     },
     _computeScoresThresholdAndLandMaskForDrift({ N, centers, localCenterParameters }) {
       // スコアと閾値計算（中心点は固定）。中心点が陸にならないケースでも resample はしない。
-      const res = computeScoresForCenters(this, centers, localCenterParameters);
+      const res = computeScoresForCenters({
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        kDecay: this.kDecay,
+        centerBias: this.centerBias,
+        fractalNoise2D: (x, y, octaves, persistence) => this.fractalNoise2D(x, y, octaves, persistence),
+        noise2D: (x, y) => this.noise2D(x, y),
+        noiseAmp: this.noiseAmp,
+        torusDistance: (x1, y1, x2, y2) => this.torusDistance(x1, y1, x2, y2),
+        torusDirection: (x1, y1, x2, y2) => this.torusDirection(x1, y1, x2, y2),
+        derivedRng: (...labels) => this._getDerivedRng(...labels)
+      }, centers, localCenterParameters);
       const scores = res.scores;
       const sorted = scores.slice().sort((a, b) => a - b);
       const effectiveSeaLandRatio = Math.min(0.999, Math.max(0.0, mapSeaLandRatio(this.seaLandRatio)));
@@ -1049,10 +1358,41 @@ export default {
      * @param {{preserveCenterCoordinates?: boolean}} [options]
      * @returns {TerrainEventPayload} emitted payload
      */
-    runGenerate({ preserveCenterCoordinates = false, runContext = null } = {}) {
-      const result = runGenerateTerrain(this, { preserveCenterCoordinates, runContext });
-      if (result && result.state) Object.assign(this, result.state);
-      return result && result.payload ? result.payload : result;
+    async runGenerate({ preserveCenterCoordinates = false, runContext = null } = {}) {
+      const runMode = preserveCenterCoordinates ? 'update' : 'generate';
+      const worker = this.useTerrainWorker ? this._getTerrainWorker() : null;
+      if (!worker && this.useTerrainWorker) {
+        this.$emit('run-worker-error', { error: new Error('Worker unavailable') });
+        return null;
+      }
+      if (worker) {
+        try {
+          const outputs = await this._postTerrainWorkerJob({ runMode, runContext });
+          if (outputs) {
+            this._applyWorkerOutputs(outputs);
+            const payload = outputs.payload || null;
+            this._emitTerrainPayload(payload);
+            return payload;
+          }
+        } catch (e) {
+          this.terrainWorkerFailed = true;
+          this.$emit('run-worker-error', { error: e || new Error('Worker error') });
+          this._terminateTerrainWorker();
+          return null;
+        }
+      }
+      if (!this.useTerrainWorker) {
+        const result = runGenerateTerrain(this, {
+          preserveCenterCoordinates,
+          runContext,
+          deps: this._buildRunnerDeps()
+        });
+        if (result && result.state) Object.assign(this, result.state);
+        const payload = result && result.payload ? result.payload : result;
+        this._emitTerrainPayload(payload);
+        return payload;
+      }
+      return null;
     },
     // Drift:
     // - 前回Generateの中心点（hfCache.centers）をキャッシュとして使用
@@ -1066,10 +1406,39 @@ export default {
      * One drift turn. Called by runSignal watcher (mode: drift) and emits `drifted`.
      * @returns {TerrainEventPayload} emitted payload
      */
-    runDrift({ runContext = null } = {}) {
-      const result = runDriftTerrain(this, { runContext });
-      if (result && result.state) Object.assign(this, result.state);
-      return result && result.payload ? result.payload : result;
+    async runDrift({ runContext = null } = {}) {
+      const worker = this.useTerrainWorker ? this._getTerrainWorker() : null;
+      if (!worker && this.useTerrainWorker) {
+        this.$emit('run-worker-error', { error: new Error('Worker unavailable') });
+        return null;
+      }
+      if (worker) {
+        try {
+          const outputs = await this._postTerrainWorkerJob({ runMode: 'drift', runContext });
+          if (outputs) {
+            this._applyWorkerOutputs(outputs);
+            const payload = outputs.payload || null;
+            this._emitTerrainPayload(payload);
+            return payload;
+          }
+        } catch (e) {
+          this.terrainWorkerFailed = true;
+          this.$emit('run-worker-error', { error: e || new Error('Worker error') });
+          this._terminateTerrainWorker();
+          return null;
+        }
+      }
+      if (!this.useTerrainWorker) {
+        const result = runDriftTerrain(this, {
+          runContext,
+          deps: this._buildRunnerDeps()
+        });
+        if (result && result.state) Object.assign(this, result.state);
+        const payload = result && result.payload ? result.payload : result;
+        this._emitTerrainPayload(payload);
+        return payload;
+      }
+      return null;
     },
     // --- Revise helpers（高頻度更新。できるだけデータを引数で受け渡しして見通しを良くする） ---
     _reviseReclassifyDesert({ c, colors }) {
@@ -1116,10 +1485,24 @@ export default {
         };
       }
       return {
-        computedTopGlacierRowsLand: computeTopGlacierRowsFromAverageTemperature(this, ratioOcean, 'land'),
-        computedTopGlacierRowsWater: computeTopGlacierRowsFromAverageTemperature(this, 0.7, 'water'),
-        computedSmoothedTopGlacierRowsLand: getSmoothedGlacierRows(this, ratioOcean, 'land'),
-        computedSmoothedTopGlacierRowsWater: getSmoothedGlacierRows(this, 0.7, 'water')
+        computedTopGlacierRowsLand: computeTopGlacierRowsFromAverageTemperature({
+          averageTemperature: this.averageTemperature,
+          glacierAlpha: this.glacier_alpha,
+          seaLandRatio: this.seaLandRatio,
+          state: this._getGlacierRowsStateAccessors('land')
+        }, ratioOcean, 'land'),
+        computedTopGlacierRowsWater: computeTopGlacierRowsFromAverageTemperature({
+          averageTemperature: this.averageTemperature,
+          glacierAlpha: this.glacier_alpha,
+          seaLandRatio: this.seaLandRatio,
+          state: this._getGlacierRowsStateAccessors('water')
+        }, 0.7, 'water'),
+        computedSmoothedTopGlacierRowsLand: getSmoothedGlacierRows({
+          state: this._getGlacierRowsStateAccessors('land')
+        }, ratioOcean, 'land'),
+        computedSmoothedTopGlacierRowsWater: getSmoothedGlacierRows({
+          state: this._getGlacierRowsStateAccessors('water')
+        }, 0.7, 'water')
       };
     },
     _reviseComputeGlacierRows({ c }) {
@@ -1138,7 +1521,13 @@ export default {
         ? Math.max(0, Number(this.tundraExtraRows))
         : Math.max(0, (this.topTundraRows || 0) - (this.topGlacierRows || 0));
       const computedTopTundraRows = Math.max(0, computedTopGlacierRowsWater + tundraExtraRows);
-      applyTundra(this, {
+      applyTundra({
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        era: this.era,
+        derivedRng: (...args) => this._getDerivedRng(...args),
+        topTundraRows: this.topTundraRows
+      }, {
         colors,
         landNoiseAmplitude: c.landNoiseAmplitude,
         lowlandColor: c.lowlandColor,
@@ -1158,7 +1547,13 @@ export default {
       computedSmoothedTopGlacierRowsWater
     }) {
       const computedTopGlacierRows = computedTopGlacierRowsLand;
-      applyGlaciers(this, {
+      applyGlaciers({
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        landGlacierExtraRows: this.landGlacierExtraRows,
+        highlandGlacierExtraRows: this.highlandGlacierExtraRows,
+        alpineGlacierExtraRows: this.alpineGlacierExtraRows
+      }, {
         colors,
         glacierNoiseTable: c.glacierNoiseTable,
         landNoiseAmplitude: c.landNoiseAmplitude,
@@ -1203,7 +1598,10 @@ export default {
         seaCultivatedMask[i] = !!cell.seaCultivated;
         seaPollutedMask[i] = !!cell.seaPolluted;
       }
-      const gridData = buildGridData(this, {
+      const gridData = buildGridData({
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight
+      }, {
         N,
         colors,
         landMask: c.landMask,
@@ -1224,7 +1622,11 @@ export default {
         seaPollutedMask
       });
       // 中心点マーキングは維持
-      markCentersOnGridData(this, { gridData, centers: c.centers });
+      markCentersOnGridData({
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        showCentersRed: this.showCentersRed
+      }, { gridData, centers: c.centers });
 
       // --- 苔類進出（軽量版） ---
       // Generate の「苔クラスター生成」は重いので、Revise では
@@ -1340,7 +1742,7 @@ export default {
               // city（後で）
               if (!cell.city) {
                 const pcCity = getBiasedCityProbability({
-                  ctx: this,
+                  fractalNoise2D: (x, y, o, p, s) => this.fractalNoise2D(x, y, o, p, s),
                   gx,
                   gy,
                   baseProbability: baseCity,
@@ -1399,7 +1801,7 @@ export default {
               // seaCity（後で）
               if (!cell.seaCity) {
                 const pcSeaCity = getBiasedCityProbability({
-                  ctx: this,
+                  fractalNoise2D: (x, y, o, p, s) => this.fractalNoise2D(x, y, o, p, s),
                   gx,
                   gy,
                   baseProbability: baseSeaCity,
@@ -1448,8 +1850,38 @@ export default {
      * @param {{emit?: boolean}} [options] - emit `revised` if true
      * @returns {TerrainEventPayload|undefined} payload when cache is available; otherwise undefined
      */
-    runReviseHighFrequency({ emit = true, runContext = null } = {}) {
-      return runReviseHighFrequencyTerrain(this, { emit, runContext });
+    async runReviseHighFrequency({ emit = true, runContext = null } = {}) {
+      const worker = this.useTerrainWorker ? this._getTerrainWorker() : null;
+      if (!worker && this.useTerrainWorker) {
+        this.$emit('run-worker-error', { error: new Error('Worker unavailable') });
+        return null;
+      }
+      if (worker) {
+        try {
+          const outputs = await this._postTerrainWorkerJob({ runMode: 'revise', runContext });
+          if (outputs) {
+            this._applyWorkerOutputs(outputs);
+            const payload = outputs.payload || null;
+            if (emit) this._emitTerrainPayload(payload);
+            return payload;
+          }
+        } catch (e) {
+          this.terrainWorkerFailed = true;
+          this.$emit('run-worker-error', { error: e || new Error('Worker error') });
+          this._terminateTerrainWorker();
+          return null;
+        }
+      }
+      if (!this.useTerrainWorker) {
+        const payload = runReviseHighFrequencyTerrain(this, {
+          emit,
+          runContext,
+          deps: this._buildRunnerDeps()
+        });
+        if (emit) this._emitTerrainPayload(payload);
+        return payload;
+      }
+      return null;
     }
   }
 }

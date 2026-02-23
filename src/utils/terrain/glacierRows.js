@@ -25,22 +25,32 @@ const computeSeaBoost = (
   return seaExcessScaled * seaBoostFactor * positiveDelta;
 };
 
-function getGlacierRowsState(vm, stateKey) {
-  if (stateKey == null) {
+function resolveGlacierRowsState(state, stateKey) {
+  if (state && typeof state.getInternal === 'function') return state;
+  if (!state) {
     return {
-      getInternal: () => vm.internalTopGlacierRows,
-      setInternal: (v) => { vm.internalTopGlacierRows = v; },
-      getLast: () => vm.lastReturnedGlacierRows,
-      setLast: (v) => { vm.lastReturnedGlacierRows = v; }
+      getInternal: () => null,
+      setInternal: () => {},
+      getLast: () => null,
+      setLast: () => {}
     };
   }
-
-  if (vm._glacierRowsState == null) vm._glacierRowsState = {};
-  if (vm._glacierRowsState[stateKey] == null) vm._glacierRowsState[stateKey] = {
-    internalTopGlacierRows: null,
-    lastReturnedGlacierRows: null
-  };
-  const s = vm._glacierRowsState[stateKey];
+  if (stateKey == null) {
+    return {
+      getInternal: () => state.internalTopGlacierRows,
+      setInternal: (v) => { state.internalTopGlacierRows = v; },
+      getLast: () => state.lastReturnedGlacierRows,
+      setLast: (v) => { state.lastReturnedGlacierRows = v; }
+    };
+  }
+  if (!state.byKey) state.byKey = {};
+  if (!state.byKey[stateKey]) {
+    state.byKey[stateKey] = {
+      internalTopGlacierRows: null,
+      lastReturnedGlacierRows: null
+    };
+  }
+  const s = state.byKey[stateKey];
   return {
     getInternal: () => s.internalTopGlacierRows,
     setInternal: (v) => { s.internalTopGlacierRows = v; },
@@ -58,10 +68,15 @@ const smoothAndQuantize = (st, target, alpha) => {
   return st.getLast();
 };
 
-export function computeTopGlacierRowsFromAverageTemperature(vm, ratioOceanOverride, stateKey = null) {
-  const t = (typeof vm.averageTemperature === 'number') ? vm.averageTemperature : DEFAULT_AVG_TEMP;
-  const glacier_alpha = vm.glacier_alpha ?? DEFAULT_GLACIER_ALPHA;
-  const st = getGlacierRowsState(vm, stateKey);
+export function computeTopGlacierRowsFromAverageTemperature({
+  averageTemperature,
+  glacierAlpha,
+  seaLandRatio,
+  state
+}, ratioOceanOverride, stateKey = null) {
+  const t = (typeof averageTemperature === 'number') ? averageTemperature : DEFAULT_AVG_TEMP;
+  const glacier_alpha = (typeof glacierAlpha === 'number') ? glacierAlpha : DEFAULT_GLACIER_ALPHA;
+  const st = resolveGlacierRowsState(state, stateKey);
 
   if (stateKey === 'water') {
     const v_calc = computeGlacierBaseRowsFromTemperature(t);
@@ -71,7 +86,7 @@ export function computeTopGlacierRowsFromAverageTemperature(vm, ratioOceanOverri
   const v_calc = GLACIER_LAND_ANCHOR.val + (t - GLACIER_LAND_ANCHOR.t) * (-1);
   const ratio_ocean = (typeof ratioOceanOverride === 'number')
     ? clamp01(ratioOceanOverride)
-    : clamp01(vm.seaLandRatio ?? DEFAULT_RATIO_OCEAN);
+    : clamp01((typeof seaLandRatio === 'number') ? seaLandRatio : DEFAULT_RATIO_OCEAN);
 
   const glacierSlope = computeGlacierSlope(ratio_ocean, DEFAULT_RATIO_OCEAN);
   const v_eff_slope = V_REF + (v_calc - V_REF) * glacierSlope;
@@ -99,8 +114,9 @@ export function computeTopGlacierRowsPure(temperature, ratioOceanOverride, state
   return Math.round(v_eff);
 }
 
-export function getSmoothedGlacierRows(vm, ratioOceanOverride, stateKey = null) {
-  const st = getGlacierRowsState(vm, stateKey);
+export function getSmoothedGlacierRows({ state }, ratioOceanOverride, stateKey = null) {
+  void ratioOceanOverride;
+  const st = resolveGlacierRowsState(state, stateKey);
   const internal = st.getInternal();
   return (typeof internal === 'number') ? internal : 0;
 }

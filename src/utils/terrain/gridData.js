@@ -1,4 +1,7 @@
-export function buildGridData(ctx, {
+export function buildGridData({
+  gridWidth,
+  gridHeight
+}, {
   N,
   colors,
   landMask,
@@ -19,8 +22,6 @@ export function buildGridData(ctx, {
   seaPollutedMask
 }) {
   const gridData = new Array(N);
-  const gridWidth = ctx.gridWidth;
-  const gridHeight = ctx.gridHeight;
   for (let gy = 0; gy < gridHeight; gy++) {
     for (let gx = 0; gx < gridWidth; gx++) {
       const idx = gy * gridWidth + gx;
@@ -70,11 +71,9 @@ export function buildGridData(ctx, {
   return gridData;
 }
 
-export function markCentersOnGridData(ctx, { gridData, centers }) {
-  if (!ctx.showCentersRed) return;
+export function markCentersOnGridData({ gridWidth, gridHeight, showCentersRed }, { gridData, centers }) {
+  if (!showCentersRed) return;
   if (!Array.isArray(centers)) return;
-  const gridWidth = ctx.gridWidth;
-  const gridHeight = ctx.gridHeight;
   for (let ci = 0; ci < centers.length; ci++) {
     const c = centers[ci];
     if (!c) continue;

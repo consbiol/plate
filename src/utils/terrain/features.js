@@ -22,24 +22,43 @@ const ADJACENCY_MULTIPLIER = 5;
 
 export function generateFeatures(
     ctx,
-    { N, landMask, colors, lowlandColor, shallowSeaColor, seededRng }
+    { N, landMask, colors, lowlandColor, shallowSeaColor, seededRng, derivedRng }
 ) {
-    const isAdjacentToSea = makeIsAdjacent(ctx, landMask, false);
-    const isAdjacentToLand = makeIsAdjacent(ctx, landMask, true);
+    const adjacencyInputs = {
+        gridWidth: ctx.gridWidth,
+        torusWrap: (x, y) => ctx.torusWrap(x, y)
+    };
+    const clusterInputs = {
+        gridWidth: ctx.gridWidth,
+        torusWrap: (x, y) => ctx.torusWrap(x, y),
+        poissonSample: (...args) => ctx._poissonSample(...args)
+    };
+    const resolvedDerivedRng = derivedRng || ((...args) => ctx._getDerivedRng(...args));
+    const isAdjacentToSea = makeIsAdjacent(adjacencyInputs, landMask, false);
+    const isAdjacentToLand = makeIsAdjacent(adjacencyInputs, landMask, true);
     const land = buildLandFeatureMasks(ctx, {
         N,
         landMask,
         colors,
         lowlandColor,
         seededRng,
-        isAdjacentToSea
+        derivedRng,
+        fractalNoise2D: (x, y, o, p, s) => ctx.fractalNoise2D(x, y, o, p, s),
+        isAdjacentToSea,
+        adjacencyInputs,
+        clusterInputs,
+        resolvedDerivedRng
     });
     const sea = buildSeaFeatureMasks(ctx, {
         N,
         colors,
         shallowSeaColor,
         seededRng,
-        isAdjacentToLand
+        derivedRng,
+        fractalNoise2D: (x, y, o, p, s) => ctx.fractalNoise2D(x, y, o, p, s),
+        isAdjacentToLand,
+        clusterInputs,
+        resolvedDerivedRng
     });
     return { ...land, ...sea };
 }
@@ -51,15 +70,21 @@ function buildLandFeatureMasks(ctx, {
     colors,
     lowlandColor,
     seededRng,
-    isAdjacentToSea
+    derivedRng,
+    fractalNoise2D,
+    isAdjacentToSea,
+    adjacencyInputs,
+    clusterInputs,
+    resolvedDerivedRng
 }) {
     const cityMask = createMask(N);
     const cultivatedMask = createMask(N);
     const bryophyteMask = createMask(N);
     const pollutedMask = createMask(N);
-    const rCity = pickRng(ctx._getDerivedRng('city'));
-    const rCult = pickRng(ctx._getDerivedRng('cultivated'));
-    const rBryo = pickRng(ctx._getDerivedRng('bryophyte'));
+    const getRng = derivedRng || ((...args) => ctx._getDerivedRng(...args));
+    const rCity = pickRng(getRng('city'));
+    const rCult = pickRng(getRng('cultivated'));
+    const rBryo = pickRng(getRng('bryophyte'));
     const isCivilizationEra = (ctx.era === '文明時代');
     const isBryophyteEra = (ctx.era === '苔類進出時代');
     const baseBryo = Math.max(0, ctx.bryophyteGenerationProbability || 0);
@@ -72,10 +97,10 @@ function buildLandFeatureMasks(ctx, {
                 const idx = gy * ctx.gridWidth + gx;
                 if (colors[idx] !== lowlandColor) continue;
                 const pcBryo = isAdjacentToSea(gx, gy) ? clamp01(baseBryo * 100) : baseBryo;
-                const startBryoRng = getStartRng(ctx, 'bryophyte-start', gx, gy, rBryo);
+                const startBryoRng = getStartRng(null, 'bryophyte-start', gx, gy, rBryo, derivedRng);
                 if (!bryophyteMask[idx]) {
                     maybeStartClusterAtCell({
-                        ctx,
+                        ...clusterInputs,
                         gx,
                         gy,
                         idx,
@@ -86,6 +111,7 @@ function buildLandFeatureMasks(ctx, {
                         poissonMax: CULTIVATED_MAX,
                         dirs: DIRS8,
                         seededRng,
+                        derivedRng: resolvedDerivedRng,
                         acceptP: CLUSTER_ACCEPT_P,
                         canFill: (nIdx) => {
                             if (colors[nIdx] !== lowlandColor) return false;
@@ -106,10 +132,10 @@ function buildLandFeatureMasks(ctx, {
                 const idx = gy * ctx.gridWidth + gx;
                 if (colors[idx] !== lowlandColor) continue;
                 const pcCult = isAdjacentToSea(gx, gy) ? clamp01(baseCult * 5) : baseCult;
-                const startCultRng = getStartRng(ctx, 'cultivated-start', gx, gy, rCult);
+                const startCultRng = getStartRng(null, 'cultivated-start', gx, gy, rCult, derivedRng);
                 if (!cultivatedMask[idx]) {
                     maybeStartClusterAtCell({
-                        ctx,
+                        ...clusterInputs,
                         gx,
                         gy,
                         idx,
@@ -120,6 +146,7 @@ function buildLandFeatureMasks(ctx, {
                         poissonMax: CULTIVATED_MAX,
                         dirs: DIRS8,
                         seededRng,
+                        derivedRng: resolvedDerivedRng,
                         acceptP: CLUSTER_ACCEPT_P,
                         canFill: (nIdx) => {
                             if (colors[nIdx] !== lowlandColor) return false;
@@ -132,7 +159,7 @@ function buildLandFeatureMasks(ctx, {
                 }
                 if (cityMask[idx]) continue;
                 const pcCity = getBiasedCityProbability({
-                    ctx,
+                    fractalNoise2D,
                     gx,
                     gy,
                     baseProbability: baseCity,
@@ -142,10 +169,10 @@ function buildLandFeatureMasks(ctx, {
                     biasMax: CITY_BIAS_MAX,
                     adjacencyMultiplier: ADJACENCY_MULTIPLIER
                 });
-                const startCityRng = getStartRng(ctx, 'city-start', gx, gy, rCity);
-                if (pcCity > 0 && !isOneCellIsland(ctx, landMask, gx, gy) && !cityMask[idx]) {
+                const startCityRng = getStartRng(null, 'city-start', gx, gy, rCity, derivedRng);
+                if (pcCity > 0 && !isOneCellIsland(adjacencyInputs, landMask, gx, gy) && !cityMask[idx]) {
                     maybeStartClusterAtCell({
-                        ctx,
+                        ...clusterInputs,
                         gx,
                         gy,
                         idx,
@@ -156,6 +183,7 @@ function buildLandFeatureMasks(ctx, {
                         poissonMax: CITY_MAX,
                         dirs: DIRS8,
                         seededRng,
+                        derivedRng: resolvedDerivedRng,
                         acceptP: CLUSTER_ACCEPT_P,
                         canFill: (nIdx) => {
                             if (colors[nIdx] !== lowlandColor) return false;
@@ -169,7 +197,10 @@ function buildLandFeatureMasks(ctx, {
         }
         const countPolluted = Math.max(0, Math.floor(Number(ctx.pollutedAreasCount || 0)));
         if (countPolluted > 0) {
-            generatePollutedAreas(ctx, {
+            generatePollutedAreas({
+                ...clusterInputs,
+                derivedRng: resolvedDerivedRng
+            }, {
                 N,
                 countAreas: countPolluted,
                 isEligible: (i) => (colors[i] === lowlandColor || cityMask[i] || cultivatedMask[i]),
@@ -195,13 +226,18 @@ function buildSeaFeatureMasks(ctx, {
     colors,
     shallowSeaColor,
     seededRng,
-    isAdjacentToLand
+    derivedRng,
+    fractalNoise2D,
+    isAdjacentToLand,
+    clusterInputs,
+    resolvedDerivedRng
 }) {
     const seaCityMask = createMask(N);
     const seaCultivatedMask = createMask(N);
     const seaPollutedMask = createMask(N);
-    const rSeaCity = pickRng(ctx._getDerivedRng('sea-city'));
-    const rSeaCult = pickRng(ctx._getDerivedRng('sea-cultivated'));
+    const getRng = derivedRng || ((...args) => ctx._getDerivedRng(...args));
+    const rSeaCity = pickRng(getRng('sea-city'));
+    const rSeaCult = pickRng(getRng('sea-cultivated'));
     const isSeaCivilizationEra = (ctx.era === '海棲文明時代');
     const baseSeaCult = Math.max(0, ctx.seaCultivatedGenerationProbability || 0);
     const baseSeaCity = Math.max(0, ctx.seaCityGenerationProbability || 0);
@@ -212,10 +248,10 @@ function buildSeaFeatureMasks(ctx, {
                 const idx = gy * ctx.gridWidth + gx;
                 if (colors[idx] !== shallowSeaColor) continue;
                 const pcSeaCult = isAdjacentToLand(gx, gy) ? clamp01(baseSeaCult * 5) : baseSeaCult;
-                const startSeaCultRng = getStartRng(ctx, 'sea-cultivated-start', gx, gy, rSeaCult);
+                const startSeaCultRng = getStartRng(null, 'sea-cultivated-start', gx, gy, rSeaCult, derivedRng);
                 if (!seaCultivatedMask[idx]) {
                     maybeStartClusterAtCell({
-                        ctx,
+                        ...clusterInputs,
                         gx,
                         gy,
                         idx,
@@ -226,6 +262,7 @@ function buildSeaFeatureMasks(ctx, {
                         poissonMax: CULTIVATED_MAX,
                         dirs: DIRS8,
                         seededRng,
+                        derivedRng: resolvedDerivedRng,
                         acceptP: CLUSTER_ACCEPT_P,
                         canFill: (nIdx) => {
                             if (colors[nIdx] !== shallowSeaColor) return false;
@@ -238,7 +275,7 @@ function buildSeaFeatureMasks(ctx, {
                 }
                 if (seaCityMask[idx]) continue;
                 const pcSeaCity = getBiasedCityProbability({
-                    ctx,
+                    fractalNoise2D,
                     gx,
                     gy,
                     baseProbability: baseSeaCity,
@@ -248,10 +285,10 @@ function buildSeaFeatureMasks(ctx, {
                     biasMax: CITY_BIAS_MAX,
                     adjacencyMultiplier: ADJACENCY_MULTIPLIER
                 });
-                const startSeaCityRng = getStartRng(ctx, 'sea-city-start', gx, gy, rSeaCity);
+                const startSeaCityRng = getStartRng(null, 'sea-city-start', gx, gy, rSeaCity, derivedRng);
                 if (!seaCityMask[idx]) {
                     maybeStartClusterAtCell({
-                        ctx,
+                        ...clusterInputs,
                         gx,
                         gy,
                         idx,
@@ -262,6 +299,7 @@ function buildSeaFeatureMasks(ctx, {
                         poissonMax: CITY_MAX,
                         dirs: DIRS8,
                         seededRng,
+                        derivedRng: resolvedDerivedRng,
                         acceptP: CLUSTER_ACCEPT_P,
                         canFill: (nIdx) => {
                             if (colors[nIdx] !== shallowSeaColor) return false;
@@ -275,7 +313,10 @@ function buildSeaFeatureMasks(ctx, {
         }
         const countSeaPolluted = Math.max(0, Math.floor(Number(ctx.seaPollutedAreasCount || 0)));
         if (countSeaPolluted > 0) {
-            generatePollutedAreas(ctx, {
+            generatePollutedAreas({
+                ...clusterInputs,
+                derivedRng: resolvedDerivedRng
+            }, {
                 N,
                 countAreas: countSeaPolluted,
                 isEligible: (i) => (colors[i] === shallowSeaColor || seaCityMask[i] || seaCultivatedMask[i]),

@@ -18,6 +18,13 @@
         </div>
       </template>
     </GeneratorActions>
+    <div
+      v-if="workerErrorMessage"
+      class="worker-error-banner"
+      style="margin: 8px 0; padding: 8px; background: #2b1b1b; color: #ffb0b0; border: 1px solid #5a2b2b; border-radius: 4px;"
+    >
+      {{ workerErrorMessage }}
+    </div>
 
     <TurnPanel
       :climateTurn="climateTurn"
@@ -174,6 +181,11 @@
       <input type="number" min="0" max="3" step="0.1" v-model.number="local.centerBias" />
       <span class="hint">{{ (local.centerBias || 0).toFixed(2) }}</span>
     </div>
+    <div class="param-row">
+      <label>地形計算をWeb Workerで実行: </label>
+      <input type="checkbox" v-model="useTerrainWorker" />
+      <span class="hint">（OFFでメインスレッド実行）</span>
+    </div>
     
 
     <Grids_Calculation
@@ -222,7 +234,9 @@
       :seaPollutedAreasCount="local.seaPollutedAreasCount"
       :showCentersRed="local.showCentersRed"
       :centerBias="local.centerBias"
+      :useTerrainWorker="useTerrainWorker"
       @run-consumed="onRunConsumed"
+      @run-worker-error="onRunWorkerError"
       
       @generated="onGenerated"
       @revised="onRevised"
@@ -451,7 +465,9 @@ export default {
       turnTimer: null,
       sphereUpdateCount: 0,
       sphereMaxUpdates: SPHERE_MAX_NON_RELOAD_UPDATES,
-      stats: null
+      stats: null,
+      useTerrainWorker: true,
+      workerErrorMessage: ''
     };
   },
   computed: {
@@ -878,12 +894,18 @@ export default {
       // 中心点をドリフトさせてフル再生成（ノイズは全てランダム）
       this.planeBuildVersion = (this.planeBuildVersion || 0) + 1;
     },
+    onRunWorkerError(payload) {
+      const err = payload && payload.error ? payload.error : null;
+      const msg = err && err.message ? err.message : (err ? String(err) : 'Worker error');
+      this.workerErrorMessage = `Terrain worker error: ${msg}`;
+    },
     
     // ---------------------------
     // Terrain event handlers
     // ---------------------------
     /** @param {TerrainEventPayload} payload */
     onGenerated(payload) {
+      if (this.workerErrorMessage) this.workerErrorMessage = '';
       const runMode = this._getRunModeFromPayload(payload);
 
       // 1) パラメータの出力HTMLをポップアップ表示・更新
@@ -901,6 +923,7 @@ export default {
 
     /** @param {TerrainEventPayload} payload */
     async onRevised(payload) {
+      if (this.workerErrorMessage) this.workerErrorMessage = '';
       // Revise は Plane map のみ更新（Sphereは更新しない）
       await this._applyRevisedPayload(payload, { updatePlane: true });
     },
@@ -983,7 +1006,7 @@ export default {
         if (calc && typeof calc.runReviseHighFrequency === 'function') {
           // turn tick 内の revise も必ず runContext を付与して payload を自己記述化する
           this._setRunContext(RUN_MODES.REVISE);
-          const revisedPayload = calc.runReviseHighFrequency({ emit: false, runContext: this.runContext });
+          const revisedPayload = await calc.runReviseHighFrequency({ emit: false, runContext: this.runContext });
           if (revisedPayload) {
             await this._applyRevisedPayload(revisedPayload, { updatePlane: shouldUpdatePlane });
           }

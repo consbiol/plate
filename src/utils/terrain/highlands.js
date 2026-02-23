@@ -7,7 +7,7 @@ const CLUSTER_NOISE_SCALE = 2.0;
 const LAND_RATIO_DEFAULT = 0.3;
 
 const defaultRng = (rng) => (rng || Math.random);
-export function generateHighlands(ctx, centers, centerLandCellsPre, preLandMask, lakeMask, colors, highlandColor, seededRng, seededLog) {
+export function generateHighlands(ctx, centers, centerLandCellsPre, preLandMask, lakeMask, seededRng, seededLog) {
   const N = ctx.gridWidth * ctx.gridHeight;
   const highlandMask = new Array(N).fill(false);
   const seedStrict = (ctx.era === '文明時代' || ctx.era === '海棲文明時代') && !!seededRng;
@@ -94,10 +94,5 @@ export function generateHighlands(ctx, centers, centerLandCellsPre, preLandMask,
     }
   }
 
-  for (let i = 0; i < N; i++) {
-    if (highlandMask[i]) {
-      colors[i] = highlandColor;
-    }
-  }
   return highlandMask;
 }

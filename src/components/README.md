@@ -37,10 +37,12 @@ Vueコンポーネント置き場です。
   - **runQueue上限**: 親はキューが一定数を超えたら古い要求を捨て、無限増加を防ぐ
   - **turn中enqueueガード**: `climateTurn.isRunning` 中は原則 enqueue しない（内部の自動update/driftなどは allow する）
   - **busy/idle**: 子は `run-busy` / `run-idle` を emit し、親は状態把握に使える
+  - **workerエラー通知**: 子は `run-worker-error` を emit（ワーカー失敗時の可視化）
+  - `useTerrainWorker` が true の場合は **worker必須**（失敗時はメイン処理にフォールバックしない）
 
 - **ターン進行中の特殊ケース（直呼びrevise）**
   - 気候ターン進行（turn tick）では「同一ターン内の順序保証」のため、
-    `Parameters_Display.vue` が `calc.runReviseHighFrequency({ emit:false, ... })` を **直接呼び出して戻り値を同期反映**する
+    `Parameters_Display.vue` が `calc.runReviseHighFrequency({ emit:false, ... })` を **直接呼び出して await 反映**する
   - これは「キュー経由にしない」意図的な例外（結果を同一tick内で確実に使うため）
 
 ### `Sphere_Display.vue`（球体ビュー）の構成メモ
