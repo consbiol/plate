@@ -12,7 +12,7 @@ import {
     getEraStartTime
 } from '../../utils/climate/eraPresets.js';
 import { clamp } from '../../utils/climate/math.js';
-import { computeNextClimateTurn, computeRadiativeEquilibriumTempK } from '../../utils/climate/model.js';
+import { computeNextClimateTurnCore, computeRadiativeEquilibriumTempK } from '../../utils/climate/model.js';
 import { buildTerrainFractionsFromTypeCounts } from '../../utils/climate/terrainFractions.js';
 import {
     VOLCANO_EVENT_MAG_DEFAULT_INDEX,
@@ -25,6 +25,9 @@ function buildDefaultClimateState() {
     return {
         // UI側の時代と同期（Generate時に初期化される）
         era: '大森林時代',
+
+        // 再現性用のシード（未指定なら null/空）
+        deterministicSeed: null,
 
         // ターン状態
         Time_turn: 0,
@@ -423,6 +426,7 @@ export function createClimateSlice() {
             initClimateFromGenerate({ commit, state }, { era, deterministicSeed, Turn_yrOverride, resetTurnYrToEraDefault } = {}) {
                 const nextEra = (typeof era === 'string' && ERAS.includes(era)) ? era : defaults.era;
                 const constants = buildSeededConstants({ deterministicSeed });
+                const seedValue = (typeof deterministicSeed === 'undefined') ? null : deterministicSeed;
 
                 const initial = buildEraInitialClimate(nextEra);
                 const cur = (state && state.climate) ? state.climate : null;
@@ -461,6 +465,7 @@ export function createClimateSlice() {
                 const next = {
                     ...buildDefaultClimateState(),
                     era: nextEra,
+                    deterministicSeed: seedValue,
                     eraStartYr: resolvedEraStartYr,
                     Time_turn: 0,
                     Time_yr: initial.Time_yr,
@@ -522,7 +527,8 @@ export function createClimateSlice() {
             // 1ターン進める（Step1〜9）
             advanceClimateOneTurn({ commit, state }) {
                 const cur = state.climate || buildDefaultClimateState();
-                const next = computeNextClimateTurn(cur);
+                const rng = createDerivedRng(cur?.deterministicSeed, 'climate', 'turn', cur?.Time_turn);
+                const next = computeNextClimateTurnCore(cur, rng ? { random: rng } : undefined);
                 commit('setClimate', next);
             },
 

@@ -94,7 +94,17 @@ function computeOceanPhParams(era) {
     return ERA_OCEAN_PH_PARAMS[era] ?? ERA_OCEAN_PH_DEFAULT;
 }
 
-export function computeNextClimateTurn(cur) {
+function resolveRandom(random) {
+    return (typeof random === 'function') ? random : Math.random;
+}
+
+export function computeNextClimateTurn(cur, options = {}) {
+    return computeNextClimateTurnCore(cur, { random: resolveRandom(options.random) });
+}
+
+// Worker化を見据えた純粋計算コア（random を注入可能）
+export function computeNextClimateTurnCore(cur, deps = {}) {
+    const random = resolveRandom(deps.random);
     const state = cur && typeof cur === 'object' ? cur : {};
     const era = state.era || '大森林時代';
 
@@ -288,7 +298,7 @@ export function computeNextClimateTurn(cur) {
         * (Volcano_event + Volcano_event_manual)
         * Math.pow(4.55e9 / (Time_yr + 0.1e9), 1.25)
         * (1 + 0.4 * Math.tanh((f_land_original - 0.3) / 0.2))
-        * (0.5 + (Math.random() + Math.random()) / 2);
+        * (0.5 + (random() + random()) / 2);
 
     const CO2_release_ocean = Math.max(CO2_flux_ocean, 0);
     const CO2_release_carbonate = Math.max(CO2_flux_carbonate, 0);
