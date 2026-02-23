@@ -7,15 +7,15 @@ export function sampleLandCenters(ctx, rng, minDistanceOverride) {
     : minCenterDistance;
   const maxAttempts = 1000;
   const edgeMargin = 10;
+  const random = rng || Math.random;
 
   for (let i = 0; i < yCenters; i++) {
     let newCenter;
     let attempts = 0;
     let valid = false;
     while (!valid && attempts < maxAttempts) {
-      const r = rng || Math.random;
-      const cx = Math.floor(r() * gridWidth);
-      const cy = Math.floor(r() * gridHeight);
+      const cx = Math.floor(random() * gridWidth);
+      const cy = Math.floor(random() * gridHeight);
       newCenter = { x: cx, y: cy };
       const isNearEdge = cx < edgeMargin || cx >= gridWidth - edgeMargin ||
                          cy < edgeMargin || cy >= gridHeight - edgeMargin;
@@ -60,9 +60,8 @@ export function computeScoresForCenters(ctx, centers, centerParameters) {
   } = ctx;
   const N = gridWidth * gridHeight;
   const maxTorusDistance = Math.sqrt(Math.pow(gridWidth / 2, 2) + Math.pow(gridHeight - 1, 2));
-  const rMaxPerCenter = centers.map(() => {
-    return maxTorusDistance || 1;
-  });
+  const maxDistance = maxTorusDistance || 1;
+  const rMaxPerCenter = new Array(centers.length).fill(maxDistance);
   const scores = new Array(N);
   const distanceWarpAmplitude = 0.03;
   const fractalNoiseScale = 0.06;
@@ -91,7 +90,7 @@ export function computeScoresForCenters(ctx, centers, centerParameters) {
     const globalAmp = 0.35 + r() * 0.15;
     return { terms, globalAmp };
   });
-  const biasStrength = Math.max(0, Number(centerBias || 0));
+  const biasStrength = Math.max(0, Number(centerBias) || 0);
   const biasSharpness = 6.0;
   for (let gy = 0; gy < gridHeight; gy++) {
     for (let gx = 0; gx < gridWidth; gx++) {

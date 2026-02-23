@@ -5,6 +5,28 @@ import { createDerivedRng } from '../rng.js';
 import { sampleLandCenters } from './centers.js';
 import { buildTerrainEventPayload } from './output.js';
 
+const RAND_DIRS_8 = Object.freeze([
+  { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
+  { dx: 1, dy: 1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }, { dx: -1, dy: -1 }
+]);
+
+const clampRange = (value, min, max) => Math.max(min, Math.min(max, value));
+const wrapMod = (value, mod) => ((value % mod) + mod) % mod;
+
+const torusMean1D = (vals, mod) => {
+  const n = vals.length || 1;
+  let s = 0;
+  let c = 0;
+  for (let i = 0; i < vals.length; i++) {
+    const ang = (vals[i] / mod) * (Math.PI * 2);
+    s += Math.sin(ang);
+    c += Math.cos(ang);
+  }
+  let meanAng = Math.atan2(s / n, c / n);
+  if (meanAng < 0) meanAng += Math.PI * 2;
+  return (meanAng / (Math.PI * 2)) * mod;
+};
+
 /**
  * @typedef {import('../../types/index.js').TerrainEventPayload} TerrainEventPayload
  */
@@ -102,8 +124,8 @@ export function runDrift(runtime, { runContext = null } = {}) {
 
     // 点配列（整数格子上で動かす）
     const points = baseCenters.map((c) => ({
-      x: ((Math.floor(c.x) % WIDTH) + WIDTH) % WIDTH,
-      y: Math.max(0, Math.min(HEIGHT - 1, Math.floor(c.y)))
+      x: wrapMod(Math.floor(c.x), WIDTH),
+      y: clampRange(Math.floor(c.y), 0, HEIGHT - 1)
     }));
 
     // フェーズ判定: 動的に切り替える（runtime.driftIsApproach により管理）
@@ -112,14 +134,6 @@ export function runDrift(runtime, { runContext = null } = {}) {
     const phaseName = isApproach ? 'Approach' : 'Repel';
     // 距離計算: xは常にトーラス、yは Repel のみトーラス
     const useYtorus = !isApproach;
-
-    const clampY = (y) => {
-      if (y < 0) return 0;
-      if (y > HEIGHT - 1) return HEIGHT - 1;
-      return y;
-    };
-    // xはトーラス
-    const wrapX = (x) => ((x % WIDTH) + WIDTH) % WIDTH;
 
     // getDist: 最短距離（dx,dy）を返す。xは常にトーラス。yは useYtorus=true の場合のみトーラス。
     const getDist = (a, b, yTorus) => {
@@ -156,8 +170,8 @@ export function runDrift(runtime, { runContext = null } = {}) {
     //   端から離脱できず張り付く原因になる。
     // - そのため衝突判定は「xのみトーラス」「yは通常差分（非トーラス）」で行う。
     const move = (p, dx, dy) => {
-      const nx = wrapX(p.x + dx);
-      const ny = clampY(p.y + dy);
+      const nx = wrapMod(p.x + dx, WIDTH);
+      const ny = clampRange(p.y + dy, 0, HEIGHT - 1);
       // クランプ等で座標が変わらないなら「移動できなかった」とみなす（張り付き/空振り対策）
       if (nx === p.x && ny === p.y) return false;
       const collision = points.some((other) => {
@@ -172,19 +186,6 @@ export function runDrift(runtime, { runContext = null } = {}) {
       return false;
     };
 
-    // トーラス対応重心（xは常に円平均、yは Repel のみ円平均）
-    const torusMean1D = (vals, mod) => {
-      const n = vals.length || 1;
-      let s = 0, c = 0;
-      for (let i = 0; i < vals.length; i++) {
-        const ang = (vals[i] / mod) * (Math.PI * 2);
-        s += Math.sin(ang);
-        c += Math.cos(ang);
-      }
-      let meanAng = Math.atan2(s / n, c / n);
-      if (meanAng < 0) meanAng += Math.PI * 2;
-      return (meanAng / (Math.PI * 2)) * mod;
-    };
     const computeCenter = () => {
       const xs = points.map(p => p.x);
       const ys = points.map(p => p.y);
@@ -195,16 +196,11 @@ export function runDrift(runtime, { runContext = null } = {}) {
       return { x: cx, y: cy };
     };
 
-    const randDirs8 = [
-      { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
-      { dx: 1, dy: 1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }, { dx: -1, dy: -1 }
-    ];
-
     // 重心法/最近点法の「意図した1歩」が端クランプ等で無効になった時のフォールバック
     const movePrimary = (p, dx, dy, rng) => {
       if (move(p, dx, dy)) return true;
       // y方向が端でクランプされる（＝動けない）なら、横へ逃がす
-      if (dy !== 0 && clampY(p.y + dy) === p.y) {
+      if (dy !== 0 && clampRange(p.y + dy, 0, HEIGHT - 1) === p.y) {
         const dxAlt = (rng() < 0.5) ? -1 : 1;
         if (move(p, dxAlt, 0)) return true;
       }
@@ -245,7 +241,7 @@ export function runDrift(runtime, { runContext = null } = {}) {
         }
 
         for (let k = 0; k < 2; k++) {
-          const r = randDirs8[(rngForMoves() * randDirs8.length) | 0];
+          const r = RAND_DIRS_8[(rngForMoves() * RAND_DIRS_8.length) | 0];
           move(p, r.dx, r.dy);
         }
       } else {
@@ -274,7 +270,7 @@ export function runDrift(runtime, { runContext = null } = {}) {
 
         if (cycle === 2) {
           // third turn: random once + approach to second-nearest
-          const r = randDirs8[(rngForMoves() * randDirs8.length) | 0];
+          const r = RAND_DIRS_8[(rngForMoves() * RAND_DIRS_8.length) | 0];
           move(p, r.dx, r.dy);
           if (second) {
             const d2 = getDist(p, second, useYtorus);
@@ -284,7 +280,7 @@ export function runDrift(runtime, { runContext = null } = {}) {
         } else {
           // first two turns: random x2
           for (let k = 0; k < 2; k++) {
-            const r = randDirs8[(rngForMoves() * randDirs8.length) | 0];
+            const r = RAND_DIRS_8[(rngForMoves() * RAND_DIRS_8.length) | 0];
             move(p, r.dx, r.dy);
           }
         }
@@ -319,7 +315,6 @@ export function runDrift(runtime, { runContext = null } = {}) {
       }
     }
     const avgDist = cnt > 0 ? (sum / cnt) : 0;
-    // --- superPloom 更新（7点間平均距離） ---
     let spc = Number.isFinite(runtime.superPloom_calc) ? runtime.superPloom_calc : 0;
     // 既定値は minCenterDistance に依存
     const minCD = Number.isFinite(Number(runtime.minCenterDistance)) ? Number(runtime.minCenterDistance) : 20;

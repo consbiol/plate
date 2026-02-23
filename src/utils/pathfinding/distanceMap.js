@@ -1,5 +1,57 @@
 import { torusDistance, torusWrap } from '../torus.js';
 
+const createMinHeap = () => {
+  const heap = [];
+  const swap = (i, j) => {
+    const tmp = heap[i];
+    heap[i] = heap[j];
+    heap[j] = tmp;
+  };
+  const siftUp = (index) => {
+    let i = index;
+    while (i > 0) {
+      const p = Math.floor((i - 1) / 2);
+      if (heap[p].dist <= heap[i].dist) break;
+      swap(p, i);
+      i = p;
+    }
+  };
+  const siftDown = (index) => {
+    let i = index;
+    while (i < heap.length) {
+      const left = i * 2 + 1;
+      const right = i * 2 + 2;
+      let smallest = i;
+      if (left < heap.length && heap[left].dist < heap[smallest].dist) smallest = left;
+      if (right < heap.length && heap[right].dist < heap[smallest].dist) smallest = right;
+      if (smallest === i) break;
+      swap(i, smallest);
+      i = smallest;
+    }
+  };
+  const push = (node) => {
+    heap.push(node);
+    siftUp(heap.length - 1);
+  };
+  const pop = () => {
+    if (heap.length === 0) return null;
+    const top = heap[0];
+    const last = heap.pop();
+    if (heap.length > 0) {
+      heap[0] = last;
+      siftDown(0);
+    }
+    return top;
+  };
+  return {
+    push,
+    pop,
+    get size() {
+      return heap.length;
+    }
+  };
+};
+
 export function computeDistanceMap({
   sources,
   N,
@@ -8,52 +60,16 @@ export function computeDistanceMap({
   gridHeight
 }) {
   const dist = new Array(N).fill(Infinity);
-  const heap = [];
-
-  const heapPush = (node) => {
-    heap.push(node);
-    let i = heap.length - 1;
-    while (i > 0) {
-      const p = Math.floor((i - 1) / 2);
-      if (heap[p].dist <= heap[i].dist) break;
-      const tmp = heap[p]; heap[p] = heap[i]; heap[i] = tmp;
-      i = p;
-    }
-  };
-
-  const heapPop = () => {
-    if (heap.length === 0) return null;
-    const top = heap[0];
-    const last = heap.pop();
-    if (heap.length > 0) {
-      heap[0] = last;
-      let i = 0;
-      let moved = true;
-      while (moved) {
-        moved = false;
-        const left = i * 2 + 1;
-        const right = i * 2 + 2;
-        let smallest = i;
-        if (left < heap.length && heap[left].dist < heap[smallest].dist) smallest = left;
-        if (right < heap.length && heap[right].dist < heap[smallest].dist) smallest = right;
-        if (smallest !== i) {
-          const tmp = heap[i]; heap[i] = heap[smallest]; heap[smallest] = tmp;
-          i = smallest;
-          moved = true;
-        }
-      }
-    }
-    return top;
-  };
+  const heap = createMinHeap();
 
   for (const s of sources) {
     const sIdx = s.y * gridWidth + s.x;
     dist[sIdx] = 0;
-    heapPush({ x: s.x, y: s.y, idx: sIdx, dist: 0 });
+    heap.push({ x: s.x, y: s.y, idx: sIdx, dist: 0 });
   }
 
-  while (heap.length > 0) {
-    const current = heapPop();
+  while (heap.size > 0) {
+    const current = heap.pop();
     if (!current) break;
     if (current.dist !== dist[current.idx]) continue;
     for (const dir of directions) {
@@ -64,7 +80,7 @@ export function computeDistanceMap({
       const nd = current.dist + w;
       if (nd < dist[nIdx]) {
         dist[nIdx] = nd;
-        heapPush({ x: wrapped.x, y: wrapped.y, idx: nIdx, dist: nd });
+        heap.push({ x: wrapped.x, y: wrapped.y, idx: nIdx, dist: nd });
       }
     }
   }

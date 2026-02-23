@@ -72,6 +72,7 @@ const ERA_OCEAN_PH_PARAMS = Object.freeze({
     '海棲文明時代': { f_CO2_0: 0.0004, pH0: 8.25, alphaPh: 0.8 },
 });
 const ERA_OCEAN_PH_DEFAULT = ERA_OCEAN_PH_PARAMS['多細胞生物誕生時代'];
+const NO_HIGH_TEMP_ERAS = new Set(['爆撃時代', '生命発生前時代', '嫌気性細菌誕生時代']);
 
 
 function computePland_t(era) {
@@ -388,8 +389,7 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     O2_release_hightemp = Math.max(0, Math.min(O2_release_hightemp, o2HighTempMax));
 
     // 早期の時代（爆撃時代・生命発生前時代・嫌気性細菌誕生時代）では高温放出は無効化する
-    const _noHighTempEras = ['爆撃時代', '生命発生前時代', '嫌気性細菌誕生時代'];
-    if (_noHighTempEras.includes(era)) {
+    if (NO_HIGH_TEMP_ERAS.has(era)) {
         O2_release_hightemp = 0;
     }
 
