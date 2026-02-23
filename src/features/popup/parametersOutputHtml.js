@@ -13,6 +13,22 @@ function fmtPct(num, den) {
   return (num * 100 / den).toFixed(2) + '%';
 }
 
+const GREEN_ZERO_ERAS = new Set([
+  '爆撃時代',
+  '生命発生前時代',
+  '嫌気性細菌誕生時代',
+  '光合成細菌誕生時代',
+  '多細胞生物誕生時代',
+  '海洋生物多様化時代'
+]);
+
+const GREEN_LOWLAND_ERAS = new Set([
+  'シダ植物時代',
+  '大森林時代',
+  '文明時代',
+  '海棲文明時代'
+]);
+
 function buildCentersHtml(centers) {
   const escape = (v) => escapeHtml(v);
   return (centers || []).map((p, i) => `
@@ -66,11 +82,36 @@ export function buildParametersOutputHtml({
   const totalN = typeCounts ? (typeCounts.total || (gridWidth * gridHeight)) : (gridWidth * gridHeight);
   const centersHtml = buildCentersHtml(centers);
   const escape = (v) => escapeHtml(v);
-  const formatProbability = (val) => {
+  const formatProbability = (val, digits = 6) => {
     const numeric = (typeof val === 'number') ? val : Number(val);
-    return (Number.isFinite(numeric)) ? numeric.toFixed(6) : '-';
+    return (Number.isFinite(numeric)) ? numeric.toFixed(digits) : '-';
   };
   const bryophyteProbabilityDisplay = formatProbability(computedBryophyteProbability);
+  const numericGridWidth = Number(gridWidth);
+  const numericGridHeight = Number(gridHeight);
+  const gridCellsFallback = (Number.isFinite(numericGridWidth) && Number.isFinite(numericGridHeight)
+    && numericGridWidth > 0 && numericGridHeight > 0)
+    ? numericGridWidth * numericGridHeight
+    : 0;
+  const totalCellsForGreen = (Number.isFinite(Number(totalN)) && totalN > 0)
+    ? Number(totalN)
+    : gridCellsFallback;
+  const fractionFromCount = (count) => {
+    if (totalCellsForGreen <= 0) return 0;
+    const numeric = Number(count);
+    return Number.isFinite(numeric) ? numeric / totalCellsForGreen : 0;
+  };
+  const lowlandFraction = fractionFromCount(typeCounts && typeof typeCounts.lowland === 'number' ? typeCounts.lowland : 0);
+  const bryophyteFraction = fractionFromCount(typeCounts && typeof typeCounts.bryophyte === 'number' ? typeCounts.bryophyte : 0);
+  const eraForGreen = (params && typeof params.era === 'string') ? params.era : null;
+  const fGreen = (() => {
+    if (!eraForGreen) return 0;
+    if (GREEN_ZERO_ERAS.has(eraForGreen)) return 0;
+    if (eraForGreen === '苔類進出時代') return bryophyteFraction;
+    if (GREEN_LOWLAND_ERAS.has(eraForGreen)) return lowlandFraction;
+    return 0;
+  })();
+  const fGreenDisplay = formatProbability(fGreen, 3);
 
   return `
 <!doctype html>
@@ -107,8 +148,9 @@ export function buildParametersOutputHtml({
     <div class="row"><label>高山の氷河追加グリッド数:</label><span>${escape(params.alpineGlacierExtraRows)}</span></div>
     <div class="row"><label>苔類進出確率 (気候):</label><span>${escape(bryophyteProbabilityDisplay)}</span></div>
     <div class="row"><label>グリッド幅×高さ:</label><span>${escape(gridWidth)} × ${escape(gridHeight)}</span></div>
-    ${pre ? `<div class="row"><label>氷河上書き前 - 陸:</label><span>${escape(pre.landCount)} (${escape((pre.landRatio * 100).toFixed(2))}% )</span></div>
-             <div class="row"><label>氷河上書き前 - 海:</label><span>${escape(pre.seaCount)} (${escape((100 - (pre.landRatio * 100)).toFixed(2))}% )</span></div>` : ''
+    ${pre ? `<div class="row"><label>氷河上書き前 - 陸(pre.landCount):</label><span>${escape(pre.landCount)} (${escape((pre.landRatio * 100).toFixed(2))}% )</span></div>
+             <div class="row"><label>氷河上書き前 - 海(pre.seaCount):</label><span>${escape(pre.seaCount)} (${escape((100 - (pre.landRatio * 100)).toFixed(2))}% )</span></div>
+             <div class="row"><label>f_green:</label><span>${escape(fGreenDisplay)}</span></div>` : ''
     }
     <div class="row"><label>湖の数（平均）:</label><span>${escape(params.averageLakesPerCenter)}</span></div>
     <div class="row"><label>superPloom_calc:</label><span>${drift ? escape(drift.superPloom_calc) : '-'}</span></div>
@@ -137,22 +179,22 @@ export function buildParametersOutputHtml({
     <div class="row"><label>平均距離:</label><span>${drift ? escape(Number(drift.avgDist).toFixed(2)) : '-'}</span></div>
 
     <div class="section-title">グリッド種類の内訳（合計 ${escape(totalN)}）</div>
-    <div class="row"><label>深海:</label><span>${typeCounts ? escape(typeCounts.deepSea) : '-'} (${typeCounts ? fmtPct(typeCounts.deepSea, totalN) : '-'})</span></div>
-    <div class="row"><label>浅瀬:</label><span>${typeCounts ? escape(typeCounts.shallowSea) : '-'} (${typeCounts ? fmtPct(typeCounts.shallowSea, totalN) : '-'})</span></div>
-    <div class="row"><label>氷河:</label><span>${typeCounts ? escape(typeCounts.glacier) : '-'} (${typeCounts ? fmtPct(typeCounts.glacier, totalN) : '-'})</span></div>
-    <div class="row"><label>低地:</label><span>${typeCounts ? escape(typeCounts.lowland) : '-'} (${typeCounts ? fmtPct(typeCounts.lowland, totalN) : '-'})</span></div>
-    <div class="row"><label>乾燥地:</label><span>${typeCounts ? escape(typeCounts.desert) : '-'} (${typeCounts ? fmtPct(typeCounts.desert, totalN) : '-'})</span></div>
-    <div class="row"><label>高地:</label><span>${typeCounts ? escape(typeCounts.highland) : '-'} (${typeCounts ? fmtPct(typeCounts.highland, totalN) : '-'})</span></div>
-    <div class="row"><label>高山:</label><span>${typeCounts ? escape(typeCounts.alpine) : '-'} (${typeCounts ? fmtPct(typeCounts.alpine, totalN) : '-'})</span></div>
-    <div class="row"><label>ツンドラ:</label><span>${typeCounts ? escape(typeCounts.tundra) : '-'} (${typeCounts ? fmtPct(typeCounts.tundra, totalN) : '-'})</span></div>
-    <div class="row"><label>湖:</label><span>${typeCounts ? escape(typeCounts.lake) : '-'} (${typeCounts ? fmtPct(typeCounts.lake, totalN) : '-'})</span></div>
-    <div class="row"><label>都市:</label><span>${typeCounts ? escape(typeCounts.city) : '-'} (${typeCounts ? fmtPct(typeCounts.city, totalN) : '-'})</span></div>
-    <div class="row"><label>農地:</label><span>${typeCounts ? escape(typeCounts.cultivated) : '-'} (${typeCounts ? fmtPct(typeCounts.cultivated, totalN) : '-'})</span></div>
-    <div class="row"><label>苔類進出地:</label><span>${typeCounts ? escape(typeCounts.bryophyte) : '-'} (${typeCounts ? fmtPct(typeCounts.bryophyte, totalN) : '-'})</span></div>
-    <div class="row"><label>汚染地:</label><span>${typeCounts ? escape(typeCounts.polluted) : '-'} (${typeCounts ? fmtPct(typeCounts.polluted, totalN) : '-'})</span></div>
-    <div class="row"><label>海棲都市:</label><span>${typeCounts ? escape(typeCounts.seaCity) : '-'} (${typeCounts ? fmtPct(typeCounts.seaCity, totalN) : '-'})</span></div>
-    <div class="row"><label>海棲農地:</label><span>${typeCounts ? escape(typeCounts.seaCultivated) : '-'} (${typeCounts ? fmtPct(typeCounts.seaCultivated, totalN) : '-'})</span></div>
-    <div class="row"><label>海棲汚染地:</label><span>${typeCounts ? escape(typeCounts.seaPolluted) : '-'} (${typeCounts ? fmtPct(typeCounts.seaPolluted, totalN) : '-'})</span></div>
+    <div class="row"><label>深海(deepSea):</label><span>${typeCounts ? escape(typeCounts.deepSea) : '-'} (${typeCounts ? fmtPct(typeCounts.deepSea, totalN) : '-'})</span></div>
+    <div class="row"><label>浅瀬(shallowSea):</label><span>${typeCounts ? escape(typeCounts.shallowSea) : '-'} (${typeCounts ? fmtPct(typeCounts.shallowSea, totalN) : '-'})</span></div>
+    <div class="row"><label>氷河(glacier):</label><span>${typeCounts ? escape(typeCounts.glacier) : '-'} (${typeCounts ? fmtPct(typeCounts.glacier, totalN) : '-'})</span></div>
+    <div class="row"><label>低地(lowland):</label><span>${typeCounts ? escape(typeCounts.lowland) : '-'} (${typeCounts ? fmtPct(typeCounts.lowland, totalN) : '-'})</span></div>
+    <div class="row"><label>乾燥地(desert):</label><span>${typeCounts ? escape(typeCounts.desert) : '-'} (${typeCounts ? fmtPct(typeCounts.desert, totalN) : '-'})</span></div>
+    <div class="row"><label>高地(highland):</label><span>${typeCounts ? escape(typeCounts.highland) : '-'} (${typeCounts ? fmtPct(typeCounts.highland, totalN) : '-'})</span></div>
+    <div class="row"><label>高山(alpine):</label><span>${typeCounts ? escape(typeCounts.alpine) : '-'} (${typeCounts ? fmtPct(typeCounts.alpine, totalN) : '-'})</span></div>
+    <div class="row"><label>ツンドラ(tundra):</label><span>${typeCounts ? escape(typeCounts.tundra) : '-'} (${typeCounts ? fmtPct(typeCounts.tundra, totalN) : '-'})</span></div>
+    <div class="row"><label>湖(lake):</label><span>${typeCounts ? escape(typeCounts.lake) : '-'} (${typeCounts ? fmtPct(typeCounts.lake, totalN) : '-'})</span></div>
+    <div class="row"><label>都市(city):</label><span>${typeCounts ? escape(typeCounts.city) : '-'} (${typeCounts ? fmtPct(typeCounts.city, totalN) : '-'})</span></div>
+    <div class="row"><label>農地(cultivated):</label><span>${typeCounts ? escape(typeCounts.cultivated) : '-'} (${typeCounts ? fmtPct(typeCounts.cultivated, totalN) : '-'})</span></div>
+    <div class="row"><label>苔類進出地(bryophyte):</label><span>${typeCounts ? escape(typeCounts.bryophyte) : '-'} (${typeCounts ? fmtPct(typeCounts.bryophyte, totalN) : '-'})</span></div>
+    <div class="row"><label>汚染地(polluted):</label><span>${typeCounts ? escape(typeCounts.polluted) : '-'} (${typeCounts ? fmtPct(typeCounts.polluted, totalN) : '-'})</span></div>
+    <div class="row"><label>海棲都市(seaCity):</label><span>${typeCounts ? escape(typeCounts.seaCity) : '-'} (${typeCounts ? fmtPct(typeCounts.seaCity, totalN) : '-'})</span></div>
+    <div class="row"><label>海棲農地(seaCultivated):</label><span>${typeCounts ? escape(typeCounts.seaCultivated) : '-'} (${typeCounts ? fmtPct(typeCounts.seaCultivated, totalN) : '-'})</span></div>
+    <div class="row"><label>海棲汚染地(seaPolluted):</label><span>${typeCounts ? escape(typeCounts.seaPolluted) : '-'} (${typeCounts ? fmtPct(typeCounts.seaPolluted, totalN) : '-'})</span></div>
 
     <div class="section-title">各中心点のパラメーター:</div>
     ${centersHtml}

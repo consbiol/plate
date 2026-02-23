@@ -48,7 +48,6 @@ export function removeSingleCellIslands(vm, {
   landMask,
   seededRng
 }) {
-  // 小島（単独1グリッド）の90%を削除（ランダムに残す約10%）
   for (let gy = 0; gy < vm.gridHeight; gy++) {
     for (let gx = 0; gx < vm.gridWidth; gx++) {
       const idx = gy * vm.gridWidth + gx;
@@ -69,7 +68,7 @@ export function removeSingleCellIslands(vm, {
         // 一律で70%の確率で海に戻す（シードがあれば再現可能にする）
         // _getDerivedRng は常に存在する前提（念のためのガードは不要）
         const pickRng = vm._getDerivedRng('coast-island', gx, gy) || seededRng || Math.random;
-        if (pickRng() < 0.7) landMask[idx] = false;
+        if (pickRng() < 0.1) landMask[idx] = false;
       }
     }
   }
