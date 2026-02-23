@@ -1,5 +1,3 @@
-// - state構造は store/slices/climate.js の `climate` を前提
-
 import {
     buildEraInitialClimate,
     buildEraTurnYr,
@@ -17,12 +15,7 @@ function sq(x) {
     return v * v;
 }
 
-// -----------------------------------------------------------------------------
 // Era-dependent coefficients
-// - Keep era strings centralized here for readability and easy auditing.
-// - `?? 0` / `?? 1` defaults match the previous switch fallbacks.
-// -----------------------------------------------------------------------------
-
 const ERA_PLAND_T = /** @type {Record<string, number>} */ ({
     '苔類進出時代': 0.1,
     'シダ植物時代': 1,
@@ -99,6 +92,39 @@ function resolveRandom(random) {
     return (typeof random === 'function') ? random : Math.random;
 }
 
+function applyVolcanoDrift(baseVolcanoEvent, driftMetrics) {
+    if (!driftMetrics) return baseVolcanoEvent;
+    const superPloom = Number(driftMetrics.superPloom);
+    if (!Number.isFinite(superPloom)) return baseVolcanoEvent;
+    const phaseName = (typeof driftMetrics.phase === 'string') ? driftMetrics.phase : null;
+
+    if (phaseName === 'Approach') {
+        if (superPloom > 30) return 4.0;
+        if (superPloom > 20 && superPloom < 30) return 2.5;
+        return baseVolcanoEvent;
+    }
+
+    if (phaseName === 'Repel') {
+        if (superPloom > 30) return 5.0;
+        if (superPloom > 20 && superPloom < 30) return 4.0;
+        if (superPloom > 10 && superPloom < 20) return 2.5;
+        if (superPloom > 0 && superPloom < 10) return 1.5;
+        if (superPloom === 0) return 1.0;
+    }
+
+    return baseVolcanoEvent;
+}
+
+function applyOneShotReset(events, remainingKey, onEnd) {
+    const remaining = Number(events[remainingKey] || 0);
+    const nextRemaining = Math.max(0, remaining - 1);
+    if (remaining <= 0) return;
+    events[remainingKey] = nextRemaining;
+    if (nextRemaining === 0) {
+        onEnd(events);
+    }
+}
+
 export function computeNextClimateTurn(cur, options = {}) {
     return computeNextClimateTurnCore(cur, { random: resolveRandom(options.random) });
 }
@@ -139,7 +165,6 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
 
     const { GI_alpha, CO2_alpha, O2_alpha, Temp_alpha } = buildTurnAlphaParams(Turn_yr);
 
-    // 前ターン値
     let f_N2 = Number(v0.f_N2);
     let f_O2 = Number(v0.f_O2);
     let f_CO2 = Number(v0.f_CO2);
@@ -150,55 +175,25 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     let f_cloud = Number(v0.f_cloud);
     let averageTemperature = Number(v0.averageTemperature);
 
-    // --- Step1: 地質・天文学的パラメータ ---
+    // 地質・天文学的パラメータ
     const f_N2_fixed = Number(constants.f_N2_fixed);
     if (isFinite(f_N2_fixed)) f_N2 = f_N2_fixed * (1 - Math.exp(-(Time_yr * 1e-9) / 0.3));
 
-    // Consolidated solar / gas computation
-    const _gases = computeSolarAndGases(Time_yr, constants);
-    const solarEvolution = _gases.solarEvolution;
-    // override Ar/H2 based on computed values
-    f_Ar = _gases.f_Ar;
-    f_H2 = _gases.f_H2;
+    const gases = computeSolarAndGases(Time_yr, constants);
+    const solarEvolution = gases.solarEvolution;
+    f_Ar = gases.f_Ar;
+    f_H2 = gases.f_H2;
     if (f_H2 < 0.0001) f_H2 = 0;
 
-    // Volcano_event は terrain.driftMetrics.superPloom / phase によって上書きされる場合がある。
     let Volcano_event = Number(events.Volcano_event) || 1;
-    // Drift metrics 経由で superPloom を参照し、火山係数を段階的に増減する
-    try {
-        const driftMetrics = (terrain && terrain.driftMetrics) ? terrain.driftMetrics : null;
-        const superPloom = driftMetrics && typeof driftMetrics.superPloom !== 'undefined' ? Number(driftMetrics.superPloom) : null;
-        const phaseName = driftMetrics && typeof driftMetrics.phase === 'string' ? driftMetrics.phase : null;
-        if (phaseName === 'Approach') {
-            if (superPloom > 30) {
-                Volcano_event = 4.0; // Lv3
-            } else if (superPloom > 20 && superPloom < 30) {
-                Volcano_event = 2.5; // Lv2
-            }
-        } else if (phaseName === 'Repel') {
-            if (superPloom > 30) {
-                Volcano_event = 5.0; // Lv4
-            } else if (superPloom > 20 && superPloom < 30) {
-                Volcano_event = 4.0; // Lv3
-            } else if (superPloom > 10 && superPloom < 20) {
-                Volcano_event = 2.5; // Lv2
-            } else if (superPloom > 0 && superPloom < 10) {
-                Volcano_event = 1.5; // Lv1
-            } else if (superPloom === 0) {
-                Volcano_event = 1.0; // Lv0
-            }
-        }
-    } catch (e) {
-        // ignore and keep Volcano_event as-is
-    }
+    Volcano_event = applyVolcanoDrift(Volcano_event, terrain && terrain.driftMetrics);
 
     // マントル活動（Volcano_event倍率）: 13段階の倍率を乗算
-    // NOTE: 漂移由来の段階値(1.5, 2.5, 4.0...)を「ベース」とし、ここで倍率を掛ける
     const Volcano_event_mag_idx = events ? events.Volcano_event_mag_idx : null;
     const Volcano_event_mag = volcanoEventMagFromIndex(Volcano_event_mag_idx);
     Volcano_event = Volcano_event * Volcano_event_mag;
 
-    // --- Step2: イベント ---
+    // イベント
     const Meteo_eff = Number(events.Meteo_eff);
     const Fire_event_CO2 = Number(events.Fire_event_CO2);
     const Meteo_CO2_add = Number(events.Meteo_CO2_add) || 0;
@@ -206,21 +201,14 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     const sol_event = Number(events.sol_event);
     const CosmicRay = (typeof events.CosmicRay === 'number') ? events.CosmicRay : 1;
     const Volcano_event_manual = Number(events.Volcano_event_manual) || 0;
-    // 次 state が時代遷移で開始されるかを事前判定（時代変化直後の「初回ターン」扱いを検出するため）
     const nextTimeYrEra = Time_yr_era + Turn_yr;
     const eraWillChange = getNextEraByTime(era, nextTimeYrEra).didChange;
-    // Temp_alpha の上書き制御用（隕石イベントなどで Meteo_eff != 1 の場合は即時 Temp_alpha=1）
-    let temp_Alpha_event = Temp_alpha;
+    let tempAlphaEvent = Temp_alpha;
     if (Meteo_eff !== 1) {
-        temp_Alpha_event = 1;
+        tempAlphaEvent = 1;
     }
-    // NOTE:
-    // 「永続」イベント（例: sol_event）が継続する間は値が非ゼロのままなので、
-    // `sol_event !== 0` をトリガーにすると毎ターン延長されて永遠に戻らない。
-    // 発火点（=ユーザー操作でイベント値が加算/減算された瞬間）で forcedTurnsRemaining をセットするのが正しい。
-    // そのため、発火処理は store の mutation 側で行い、ここでは forcedTurnsRemaining のみを参照する。
 
-    // --- Step3: 植生 ---
+    // 植生
     const co2Factor = (1.5 * f_CO2) / (0.0002 + f_CO2);
     const co2FactorClamped = Math.max(0, Math.min(co2Factor, 1.5));
     const f_O2_norm = f_O2 / 0.21;
@@ -233,14 +221,13 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
             : tempSigmaHotSide
 
     const greenIndex_calc = 1.81 * Math.exp(-(sq(averageTemperature - 22.5)) / (2 * sq(tempSigma))) * f_cloud * co2FactorClamped * O2_suppression;
-    // 最初のターン（または時代変化による次state開始ターン）では平滑化を行わず、生値を採用する
     if (Time_turn === 0 || eraWillChange) {
         greenIndex = greenIndex_calc;
     } else {
         greenIndex = GI_alpha * greenIndex_calc + (1 - GI_alpha) * greenIndex;
     }
 
-    // --- Step4: 大気成分（収支） ---
+    // 大気成分（収支）
     const f_land = Number(terrain.f_land) || 0;
     const f_ocean = Number(terrain.f_ocean) || 0;
     const f_green = Number(terrain.f_green) || 0;
@@ -248,7 +235,6 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     const f_deepSea = Number(terrain.f_deepSea) || 0;
     const f_shallowSea = Number(terrain.f_shallowSea) || 0;
 
-    // CO2
     const CO2_carbonate_eq =
         0.00028 * Math.exp((averageTemperature - 15) / 60);
     const CO2_flux_ocean =
@@ -304,12 +290,11 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     const CO2_release_ocean = Math.max(CO2_flux_ocean, 0);
     const CO2_release_carbonate = Math.max(CO2_flux_carbonate, 0);
 
-    const CO2_release_civil = 0; // 未実装
+    const CO2_release_civil = 0;
 
     const CO2_release_total = CO2_release_volcano + CO2_release_ocean + CO2_release_carbonate + CO2_release_civil + Fire_event_CO2;
 
     const f_CO2_calc = f_CO2 - CO2_abs_total + CO2_release_total;
-    // 最初のターン（または時代変化による次state開始ターン）では平滑化を行わず、収支計算結果をそのまま採用する
     if (Time_turn === 0 || eraWillChange) {
         f_CO2 = f_CO2_calc;
     } else {
@@ -329,7 +314,7 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
 
     const ReducingFactor = 1 / (1 + Math.pow((f_O2_forAbs / 0.05), 2));
     const land_abs_eff = (20 * ReducingFactor) + 0.6 * land_abs_eff_planet;
-    const volcGate = f_O2_forAbs / (f_O2_forAbs + 0.1); // 火山項のゲート
+    const volcGate = f_O2_forAbs / (f_O2_forAbs + 0.1);
     const O2_abs =
         Turn_yr ** 0.5
         * 0.00008
@@ -351,7 +336,6 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
         * 0.0007
         * (
             0.6
-            // eslint-disable-next-line no-undef
             * (0.31 * f_deepSea + 2.6 * f_shallowSea)
             * Math.exp(-sq((averageTemperature - 20) / 18))
             * ocean_plantO2_base
@@ -367,20 +351,15 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
         * Math.pow((1 + f_O2 / 0.21), -0.25);
 
 
-    // NOTE: Step6 でも使用するため、ここで一度だけ計算して使い回す
-    // （高温O2放出式が H2O_eff を参照するため、先に定義して TDZ を避ける）
     const H2O_eff = computeH2Oeff(averageTemperature, f_ocean, constants, { conservative: false });
 
-    // --- 高温時O2放出（簡易） ---
-    // NOTE:
-    // - 暴走温暖化（高温・高水蒸気）での「水の光解離→H逸散→O2残留」などを粗く表現する用途
-    // - 値が小さすぎ/大きすぎになりやすいので、係数・温度閾値・上限は constants で調整可能にする
+    // 高温時O2放出（簡易）
     const o2HighTempCoef = Number(constants.o2_high_temp_coef) || 0.00002;
-    const o2HighTempAgeTau = Number(constants.o2_high_temp_age_tau) || 1e7; // yr (default reduced so effect can appear on simulation timescales)
-    const o2HighTempTth = Number(constants.o2_high_temp_Tth) || 40; // ℃
+    const o2HighTempAgeTau = Number(constants.o2_high_temp_age_tau) || 1e7;
+    const o2HighTempTth = Number(constants.o2_high_temp_Tth) || 40;
     const o2HighTempTscale = Number(constants.o2_high_temp_Tscale) || 15;
     const o2HighTempProdThresh = Number(constants.o2_high_temp_prod_thresh) || 1e-6;
-    const o2HighTempMax = Number(constants.o2_high_temp_max) || 1e-4; // 上限値
+    const o2HighTempMax = Number(constants.o2_high_temp_max) || 1e-4;
 
     const ageFactor = 1 - Math.exp(-Time_yr / o2HighTempAgeTau);
     const tempSigmoid = 1 / (1 + Math.exp(-(averageTemperature - o2HighTempTth) / o2HighTempTscale));
@@ -388,12 +367,10 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     let O2_release_hightemp = Turn_yr ** 0.5 * o2HighTempCoef * f_ocean * H2O_eff * tempSigmoid * ageFactor;
     O2_release_hightemp = Math.max(0, Math.min(O2_release_hightemp, o2HighTempMax));
 
-    // 早期の時代（爆撃時代・生命発生前時代・嫌気性細菌誕生時代）では高温放出は無効化する
     if (NO_HIGH_TEMP_ERAS.has(era)) {
         O2_release_hightemp = 0;
     }
 
-    // トリガー：生産が閾値以下なら有効、そうでなければ無効化（設計次第で常時有効も可）
     if (O2_prod > o2HighTempProdThresh) {
         O2_release_hightemp = 0;
     }
@@ -401,12 +378,10 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     const f_O2_calc = f_O2 - O2_abs + O2_prod + O2_release_hightemp;
     f_O2 = O2_alpha * f_O2_calc + (1 - O2_alpha) * f_O2;
 
-    // CH4
     const initial_CH4 = Number(constants.initial_CH4) || 0.01;
     f_CH4 = initial_CH4 / (1 + sq(f_O2 / 0.003)) * 1 / (1 + Math.pow((f_O2 / 0.05), 4)) + CH4_event;
     f_CH4 = Math.max(f_CH4, 0.0000001);
 
-    // H2O
     const f_H2O = H2O_eff * 0.01;
 
     f_O2 = Math.max(f_O2, 0);
@@ -414,21 +389,17 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     Pressure = f_Ar + f_H2 + f_N2 + f_O2 + f_CO2 + f_CH4 + f_H2O;
     Pressure = Math.max(Pressure, 0.001);
 
-    // --- Step5: 雲量・アルベド ---
+    // 雲量・アルベド
     const cloudRes = computeClouds({ Pressure, f_ocean, averageTemperature, CosmicRay, f_CH4, f_CO2 });
     const hazeFrac = cloudRes.hazeFrac;
     f_cloud = cloudRes.f_cloud;
-    // compute albedo from shared helper
     const albedo = computeAlbedo({ f_cloud, hazeFrac, terrain, Time_yr });
 
-    // --- Step6: 有効放射率 ---
-
-    // H2O_eff は Step4(O2) で計算済み（高温O2放出式で参照するため）
-
+    // 有効放射率
     const { lnCO2, lnCH4 } = computeLnGases(f_CO2, f_CH4);
     let Radiation_cooling = computeRadiationCooling(Pressure, lnCO2, lnCH4, H2O_eff, f_H2, f_N2, f_CO2, averageTemperature, solarEvolution, Time_yr);
 
-    // --- Step7: 平均気温 ---
+    // 平均気温
     const initialSolVal = Number(constants.initialSol) || 950;
     const { averageTemperature_calc, Sol } = computeRadiativeEquilibriumCalc({
         solarEvolution,
@@ -443,10 +414,9 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     if (Time_turn === 0) {
         averageTemperature = averageTemperature_calc - 273.15;
     } else {
-        averageTemperature = temp_Alpha_event * (averageTemperature_calc - 273.15) + (1 - temp_Alpha_event) * averageTemperature;
+        averageTemperature = tempAlphaEvent * (averageTemperature_calc - 273.15) + (1 - tempAlphaEvent) * averageTemperature;
     }
 
-    // --- Step8: ターン終了処理 ---
     const nextTimeYr = Time_yr + Turn_yr;
     let nextTimeTurn = Time_turn + 1;
 
@@ -457,17 +427,14 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     if (didChange) {
         nextEra = eraByTime;
         baseAverageTemperature = buildEraInitialClimate(nextEra).averageTemperature;
-        // 時代が変わったらターンカウントをリセットする
-        // （次 state は次時代開始時点の状態なので Time_turn を 0 にする）
         nextTimeTurn = 0;
         nextEraStartYr = nextTimeYr;
     }
 
-    // --- 強制 Turn_yr の継続/終了処理 ---
+    // 強制 Turn_yr の継続/終了処理
     let nextForcedTurnsRemaining = Math.max(0, Number(forcedTurnsRemaining) - 1);
     let nextTurnYrForState = Turn_yr;
     if (forcedTurnsRemaining > 0) {
-        // 終了する次 state では元の Turn_yr に戻す（保存済み original がある場合）
         if (nextForcedTurnsRemaining === 0 && (typeof forcedOriginalTurnYr === 'number' && forcedOriginalTurnYr > 0)) {
             nextTurnYrForState = forcedOriginalTurnYr;
             forcedOriginalTurnYr = null;
@@ -480,59 +447,25 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
             }
         }
     } else {
-        // 強制なし：ユーザー指定（baseTurnYr）を維持
         nextTurnYrForState = baseTurnYr;
     }
 
-
-
-    // --- Meteo (隕石落下) と Fire (森林火災) のワンショット残ターン処理 ---
+    // ワンショットイベントの残ターン処理
     const nextEvents = { ...events };
 
-    // Meteo
-    const meteoRemaining = Number(events.Meteo_one_shot_remaining || 0);
-    const nextMeteoRemaining = Math.max(0, meteoRemaining - 1);
-    if (meteoRemaining > 0) {
-        nextEvents.Meteo_one_shot_remaining = nextMeteoRemaining;
-        if (nextMeteoRemaining === 0) {
-            // ワンショットが終了したら Meteo_eff を Lv0 (=1) に戻し、CO2加算もリセット
-            nextEvents.Meteo_eff = 1;
-            nextEvents.Meteo_CO2_add = 0;
-        }
-    }
-
-    // Fire
-    const fireRemaining = Number(events.Fire_one_shot_remaining || 0);
-    const nextFireRemaining = Math.max(0, fireRemaining - 1);
-    if (fireRemaining > 0) {
-        nextEvents.Fire_one_shot_remaining = nextFireRemaining;
-        if (nextFireRemaining === 0) {
-            // ワンショットが終了したら Fire_event_CO2 を Lv0 (=0) に戻す
-            nextEvents.Fire_event_CO2 = 0;
-        }
-    }
-
-    // Volcano manual (ワンショット: Volcano_event_manual)
-    const volcanoRemaining = Number(events.Volcano_manual_remaining || 0);
-    const nextVolcanoRemaining = Math.max(0, volcanoRemaining - 1);
-    if (volcanoRemaining > 0) {
-        nextEvents.Volcano_manual_remaining = nextVolcanoRemaining;
-        if (nextVolcanoRemaining === 0) {
-            // ワンショットが終了したら Volcano_event_manual を Lv0 (=0) に戻す
-            nextEvents.Volcano_event_manual = 0;
-        }
-    }
-
-    // Cosmic (超新星 / ガンマ線バースト: CosmicRay ワンショット)
-    const cosmicRemaining = Number(events.Cosmic_one_shot_remaining || 0);
-    const nextCosmicRemaining = Math.max(0, cosmicRemaining - 1);
-    if (cosmicRemaining > 0) {
-        nextEvents.Cosmic_one_shot_remaining = nextCosmicRemaining;
-        if (nextCosmicRemaining === 0) {
-            // ワンショットが終了したら CosmicRay を 1 (デフォルト) に戻す
-            nextEvents.CosmicRay = 1;
-        }
-        }
+    applyOneShotReset(nextEvents, 'Meteo_one_shot_remaining', (e) => {
+        e.Meteo_eff = 1;
+        e.Meteo_CO2_add = 0;
+    });
+    applyOneShotReset(nextEvents, 'Fire_one_shot_remaining', (e) => {
+        e.Fire_event_CO2 = 0;
+    });
+    applyOneShotReset(nextEvents, 'Volcano_manual_remaining', (e) => {
+        e.Volcano_event_manual = 0;
+    });
+    applyOneShotReset(nextEvents, 'Cosmic_one_shot_remaining', (e) => {
+        e.CosmicRay = 1;
+    });
 
     return {
         ...state,
@@ -542,7 +475,6 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
         Time_turn: nextTimeTurn,
         Time_yr: nextTimeYr,
         Turn_yr: nextTurnYrForState,
-        // 保存して次ターンに受け渡す（強制が継続している/終了したことを store 側で把握できる）
         forcedTurnsRemaining: nextForcedTurnsRemaining,
         forcedOriginalTurnYr: forcedOriginalTurnYr,
         vars: {
@@ -563,7 +495,6 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
             land_plantO2,
             fungal_factor,
 
-            // expose explicit naming for UI/debug
             O2_abs: O2_abs,
             O2_abs_total: O2_abs,
             O2_prod,
@@ -580,7 +511,6 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
             f_cloud,
             albedo,
             H2O_eff,
-            // expose raw radiative equilibrium calc (K) so callers can use non-smoothed temperature
             averageTemperature_calc,
             Radiation_cooling,
             Sol,
