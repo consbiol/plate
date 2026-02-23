@@ -32,5 +32,3 @@ export function buildVisualNoiseGrid(ctx, {
   }
   return noiseGrid;
 }
-
-

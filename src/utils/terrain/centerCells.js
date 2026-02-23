@@ -25,5 +25,3 @@ export function buildCenterLandCells(ctx, {
 
   return { centerLandCells, centerLandCellsPre };
 }
-
-

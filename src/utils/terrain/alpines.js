@@ -27,5 +27,3 @@ export function generateAlpines(ctx, colors, highlandColor, lowlandColor, desert
     }
   }
 }
-
-

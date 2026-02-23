@@ -223,8 +223,7 @@
       :showCentersRed="local.showCentersRed"
       :centerBias="local.centerBias"
       @run-consumed="onRunConsumed"
-      @run-busy="onRunBusy"
-      @run-idle="onRunIdle"
+      
       @generated="onGenerated"
       @revised="onRevised"
       @drifted="onGenerated"
@@ -441,74 +440,21 @@ export default {
       mutableCenterParams: deepClone(this.centerParameters || []),
       turnYrOptions: TURN_YR_OPTIONS,
       isSyncingLocalFromStore: false,
-      popup: {
-        planePopupRef: null,
-        parametersPopupRef: null,
-        climatePopupRef: null
-      },
-      cache: {
-        planeDisplayColors: [],
-        planeBuildVersion: 0
-      },
-      run: {
-        runSignal: 0,
-        runQueue: [],
-        isBusy: false
-      },
+      popupRef: null,
+      climatePopupRef: null,
+      planeDisplayColors: [],
+      planeBuildVersion: 0,
+      runSignal: 0,
+      runQueue: [],
       runSeq: 0,
       runContext: { runMode: null, runId: null },
-      turn: {
-        turnTimer: null
-      },
-      sphere: {
-        sphereUpdateCount: 0,
-        sphereMaxUpdates: SPHERE_MAX_NON_RELOAD_UPDATES
-      },
+      turnTimer: null,
+      sphereUpdateCount: 0,
+      sphereMaxUpdates: SPHERE_MAX_NON_RELOAD_UPDATES,
       stats: null
     };
   },
   computed: {
-    planeDisplayColors: {
-      get() { return this.cache.planeDisplayColors; },
-      set(v) { this.cache.planeDisplayColors = v; }
-    },
-    planeBuildVersion: {
-      get() { return this.cache.planeBuildVersion; },
-      set(v) { this.cache.planeBuildVersion = v; }
-    },
-    planePopupRef: {
-      get() { return this.popup.planePopupRef; },
-      set(v) { this.popup.planePopupRef = v; }
-    },
-    popupRef: {
-      get() { return this.popup.parametersPopupRef; },
-      set(v) { this.popup.parametersPopupRef = v; }
-    },
-    climatePopupRef: {
-      get() { return this.popup.climatePopupRef; },
-      set(v) { this.popup.climatePopupRef = v; }
-    },
-    runSignal: {
-      get() { return this.run.runSignal; },
-      set(v) { this.run.runSignal = v; }
-    },
-    runQueue: {
-      get() { return this.run.runQueue; },
-      set(v) { this.run.runQueue = v; }
-    },
-    turnTimer: {
-      get() { return this.turn.turnTimer; },
-      set(v) { this.turn.turnTimer = v; }
-    },
-    sphereUpdateCount: {
-      get() { return this.sphere.sphereUpdateCount; },
-      set(v) { this.sphere.sphereUpdateCount = v; }
-    },
-    sphereMaxUpdates: {
-      get() { return this.sphere.sphereMaxUpdates; },
-      set(v) { this.sphere.sphereMaxUpdates = v; }
-    },
-
     storeEra() {
       return getEra(this.$store);
     },
@@ -821,12 +767,6 @@ export default {
       if (k <= 0) return;
       if (!Array.isArray(this.runQueue) || this.runQueue.length === 0) return;
       this.runQueue.splice(0, Math.min(k, this.runQueue.length));
-    },
-    onRunBusy() {
-      this.run.isBusy = true;
-    },
-    onRunIdle() {
-      this.run.isBusy = false;
     },
     _getRunModeFromPayload(payload) {
       // Prefer explicit runMode (new payload shape). Fallback to eventType mapping.

@@ -120,11 +120,6 @@ export function generateLakes(ctx, centers, centerLandCells, landMask, colors, s
   return lakeMask;
 }
 
-/**
- * Apply lowland conversion around lakes.
- * - ctx: context object (provides torusWrap, gridWidth, gridHeight)
- * - options: { colors, lakesList, lakeMask, baseLandThr, desertColor, lowlandColor }
- */
 export function applyLowlandAroundLakes(ctx, options) {
   const colors = options.colors;
   const lakesList = options.lakesList;
@@ -187,4 +182,3 @@ export function applyLowlandAroundLakes(ctx, options) {
     }
   }
 }
-

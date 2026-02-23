@@ -47,10 +47,8 @@ export function buildGridData(ctx, {
         else if (col === desertColor) terrain = { type: 'land', land: 'desert' };
         else terrain = { type: 'land', land: 'lowland' };
       }
-      // 氷河の上書き元（描画用）
       let glacierKind = null;
       if (col === glacierColor) {
-        // “水域扱い”にしたい条件: 海セル / 湖 / 海棲フラグ
         glacierKind = (!isLand || isLake || isSeaCity || isSeaCultivated || isSeaPolluted) ? 'sea' : 'land';
       }
       gridData[idx] = {
@@ -59,13 +57,10 @@ export function buildGridData(ctx, {
         terrain,
         colorHex: col,
         glacierKind,
-        // 都市/耕作地/汚染地フラグ（色は colors.js でパレットから解決）
         city: !!cityMask[idx],
-        // 苔類進出地フラグ（苔類進出時代のみ生成）
         bryophyte: !!bryophyteMask[idx],
         cultivated: !!cultivatedMask[idx],
         polluted: !!pollutedMask[idx],
-        // 海棲都市/海棲耕作地/海棲汚染地フラグ（色は colors.js でパレットから解決）
         seaCity: isSeaCity,
         seaCultivated: isSeaCultivated,
         seaPolluted: isSeaPolluted
@@ -91,5 +86,3 @@ export function markCentersOnGridData(ctx, { gridData, centers }) {
     }
   }
 }
-
-

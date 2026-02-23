@@ -1,8 +1,3 @@
-/**
- * @typedef {import('../../types/index.js').TerrainEventPayload} TerrainEventPayload
- * @typedef {import('../../types/index.js').TerrainEventType} TerrainEventType
- */
-
 export function computePreGlacierStats({
   N,
   landMask,
@@ -78,5 +73,3 @@ export function buildTerrainEventPayload({
     lowlandDistanceToSeaStats
   };
 }
-
-

@@ -101,5 +101,3 @@ export function generateHighlands(ctx, centers, centerLandCellsPre, preLandMask,
   }
   return highlandMask;
 }
-
-

@@ -30,5 +30,3 @@ export function classifyBaseColors(ctx, {
   }
   return colors;
 }
-
-

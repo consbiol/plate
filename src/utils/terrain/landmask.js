@@ -124,5 +124,3 @@ export function jitterCoastline(ctx, {
   }
   return next;
 }
-
-

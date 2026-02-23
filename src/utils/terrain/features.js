@@ -24,24 +24,53 @@ export function generateFeatures(
     ctx,
     { N, landMask, colors, lowlandColor, shallowSeaColor, seededRng }
 ) {
-    // 追加: city/cultivated の生成（低地のみ、海隣接で確率10倍）
-    const cityMask = new Array(N).fill(false);
-    const cultivatedMask = new Array(N).fill(false);
-    const bryophyteMask = new Array(N).fill(false);
-    const pollutedMask = new Array(N).fill(false);
+    const isAdjacentToSea = makeIsAdjacent(ctx, landMask, false);
+    const isAdjacentToLand = makeIsAdjacent(ctx, landMask, true);
+    const land = buildLandFeatureMasks(ctx, {
+        N,
+        landMask,
+        colors,
+        lowlandColor,
+        seededRng,
+        isAdjacentToSea
+    });
+    const sea = buildSeaFeatureMasks(ctx, {
+        N,
+        colors,
+        shallowSeaColor,
+        seededRng,
+        isAdjacentToLand
+    });
+    return { ...land, ...sea };
+}
+const createMask = (N) => new Array(N).fill(false);
+
+function buildLandFeatureMasks(ctx, {
+    N,
+    landMask,
+    colors,
+    lowlandColor,
+    seededRng,
+    isAdjacentToSea
+}) {
+    const cityMask = createMask(N);
+    const cultivatedMask = createMask(N);
+    const bryophyteMask = createMask(N);
+    const pollutedMask = createMask(N);
     const rCity = pickRng(ctx._getDerivedRng('city'));
     const rCult = pickRng(ctx._getDerivedRng('cultivated'));
     const rBryo = pickRng(ctx._getDerivedRng('bryophyte'));
-    const isAdjacentToSea = makeIsAdjacent(ctx, landMask, false);
-    const isAdjacentToLand = makeIsAdjacent(ctx, landMask, true);
     const isCivilizationEra = (ctx.era === '文明時代');
     const isBryophyteEra = (ctx.era === '苔類進出時代');
+    const baseBryo = Math.max(0, ctx.bryophyteGenerationProbability || 0);
+    const baseCult = Math.max(0, ctx.cultivatedGenerationProbability || 0);
+    const baseCity = Math.max(0, ctx.cityGenerationProbability || 0);
+
     if (isBryophyteEra) {
         for (let gy = 0; gy < ctx.gridHeight; gy++) {
             for (let gx = 0; gx < ctx.gridWidth; gx++) {
                 const idx = gy * ctx.gridWidth + gx;
                 if (colors[idx] !== lowlandColor) continue;
-                const baseBryo = Math.max(0, ctx.bryophyteGenerationProbability || 0);
                 const pcBryo = isAdjacentToSea(gx, gy) ? clamp01(baseBryo * 100) : baseBryo;
                 const startBryoRng = getStartRng(ctx, 'bryophyte-start', gx, gy, rBryo);
                 if (!bryophyteMask[idx]) {
@@ -76,7 +105,6 @@ export function generateFeatures(
             for (let gx = 0; gx < ctx.gridWidth; gx++) {
                 const idx = gy * ctx.gridWidth + gx;
                 if (colors[idx] !== lowlandColor) continue;
-                const baseCult = Math.max(0, ctx.cultivatedGenerationProbability || 0);
                 const pcCult = isAdjacentToSea(gx, gy) ? clamp01(baseCult * 5) : baseCult;
                 const startCultRng = getStartRng(ctx, 'cultivated-start', gx, gy, rCult);
                 if (!cultivatedMask[idx]) {
@@ -103,7 +131,6 @@ export function generateFeatures(
                     });
                 }
                 if (cityMask[idx]) continue;
-                const baseCity = Math.max(0, ctx.cityGenerationProbability || 0);
                 const pcCity = getBiasedCityProbability({
                     ctx,
                     gx,
@@ -160,19 +187,30 @@ export function generateFeatures(
             });
         }
     }
+    return { cityMask, cultivatedMask, bryophyteMask, pollutedMask };
+}
 
-    const seaCityMask = new Array(N).fill(false);
-    const seaCultivatedMask = new Array(N).fill(false);
-    const seaPollutedMask = new Array(N).fill(false);
+function buildSeaFeatureMasks(ctx, {
+    N,
+    colors,
+    shallowSeaColor,
+    seededRng,
+    isAdjacentToLand
+}) {
+    const seaCityMask = createMask(N);
+    const seaCultivatedMask = createMask(N);
+    const seaPollutedMask = createMask(N);
     const rSeaCity = pickRng(ctx._getDerivedRng('sea-city'));
     const rSeaCult = pickRng(ctx._getDerivedRng('sea-cultivated'));
     const isSeaCivilizationEra = (ctx.era === '海棲文明時代');
+    const baseSeaCult = Math.max(0, ctx.seaCultivatedGenerationProbability || 0);
+    const baseSeaCity = Math.max(0, ctx.seaCityGenerationProbability || 0);
+
     if (isSeaCivilizationEra) {
         for (let gy = 0; gy < ctx.gridHeight; gy++) {
             for (let gx = 0; gx < ctx.gridWidth; gx++) {
                 const idx = gy * ctx.gridWidth + gx;
                 if (colors[idx] !== shallowSeaColor) continue;
-                const baseSeaCult = Math.max(0, ctx.seaCultivatedGenerationProbability || 0);
                 const pcSeaCult = isAdjacentToLand(gx, gy) ? clamp01(baseSeaCult * 5) : baseSeaCult;
                 const startSeaCultRng = getStartRng(ctx, 'sea-cultivated-start', gx, gy, rSeaCult);
                 if (!seaCultivatedMask[idx]) {
@@ -199,7 +237,6 @@ export function generateFeatures(
                     });
                 }
                 if (seaCityMask[idx]) continue;
-                const baseSeaCity = Math.max(0, ctx.seaCityGenerationProbability || 0);
                 const pcSeaCity = getBiasedCityProbability({
                     ctx,
                     gx,
@@ -256,16 +293,5 @@ export function generateFeatures(
             });
         }
     }
-
-    return {
-        cityMask,
-        cultivatedMask,
-        bryophyteMask,
-        pollutedMask,
-        seaCityMask,
-        seaCultivatedMask,
-        seaPollutedMask
-    };
+    return { seaCityMask, seaCultivatedMask, seaPollutedMask };
 }
-
-

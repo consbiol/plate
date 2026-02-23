@@ -171,5 +171,3 @@ export function computeEffectiveMinCenterDistance(seaLandRatio, fallbackSeaLandR
   const minDistance = 20 + (x - 0.2) * 25; // 20..40
   return Math.round(minDistance);
 }
-
-
