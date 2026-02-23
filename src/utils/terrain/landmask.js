@@ -1,38 +1,42 @@
-// 陸マスクの後処理（膨張・小島削除・海岸線ジッター）
-// - Grids_Calculation.vue から切り出し（機能不変）
-
-function isSeedStrictEra(vm) {
-  return (vm.era === '文明時代' || vm.era === '海棲文明時代');
+function isSeedStrictEra(era) {
+  return (era === '文明時代' || era === '海棲文明時代');
 }
 
-export function dilateLandMask(vm, {
+function getGridContext(ctx) {
+  const { gridWidth, gridHeight, torusWrap, _getDerivedRng, era } = ctx;
+  return { gridWidth, gridHeight, torusWrap, _getDerivedRng, era };
+}
+
+function countLandNeighbors(x, y, landMask, gridWidth, torusWrap) {
+  let count = 0;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const wrapped = torusWrap(x + dx, y + dy);
+      if (!wrapped) continue;
+      if (landMask[wrapped.y * gridWidth + wrapped.x]) count++;
+    }
+  }
+  return count;
+}
+
+export function dilateLandMask(ctx, {
   landMask,
   scores,
   threshold,
   expansionBias = 0.12,
   maxIterations = 10
 }) {
+  const { gridWidth, gridHeight, torusWrap } = getGridContext(ctx);
   for (let iter = 0; iter < maxIterations; iter++) {
     const newLandMask = landMask.slice();
     let changed = false;
-    for (let gy = 0; gy < vm.gridHeight; gy++) {
-      for (let gx = 0; gx < vm.gridWidth; gx++) {
-        const idx = gy * vm.gridWidth + gx;
+    for (let gy = 0; gy < gridHeight; gy++) {
+      for (let gx = 0; gx < gridWidth; gx++) {
+        const idx = gy * gridWidth + gx;
         if (landMask[idx]) continue;
-        let landNeighborCount = 0;
-        for (let dx = -1; dx <= 1; dx++) {
-          for (let dy = -1; dy <= 1; dy++) {
-            if (dx === 0 && dy === 0) continue;
-            const wrapped = vm.torusWrap(gx + dx, gy + dy);
-            if (wrapped && landMask[wrapped.y * vm.gridWidth + wrapped.x]) {
-              landNeighborCount++;
-            }
-          }
-        }
+        const landNeighborCount = countLandNeighbors(gx, gy, landMask, gridWidth, torusWrap);
         const scoreClose = scores[idx] >= threshold - expansionBias;
-        // 大陸の統合を防ぐため、条件を厳しくする:
-        // - スコアが閾値近傍なら「近傍3」で昇格、
-        // - 無条件昇格の近傍数も3に上げる（大陸の独立性を保つ）
         if ((landNeighborCount >= 3 && scoreClose) || landNeighborCount >= 4) {
           newLandMask[idx] = true;
           changed = true;
@@ -44,78 +48,63 @@ export function dilateLandMask(vm, {
   }
 }
 
-export function removeSingleCellIslands(vm, {
+export function removeSingleCellIslands(ctx, {
   landMask,
   seededRng,
   singleCellRemovalProb = 0.5
 }) {
-  // 将来的に外部から渡される値を想定し、念のため0-1に収める
+  const { gridWidth, gridHeight, torusWrap, _getDerivedRng } = getGridContext(ctx);
   const singleCellRemovalProbClamped = Math.max(0, Math.min(1, singleCellRemovalProb));
-  for (let gy = 0; gy < vm.gridHeight; gy++) {
-    for (let gx = 0; gx < vm.gridWidth; gx++) {
-      const idx = gy * vm.gridWidth + gx;
+  for (let gy = 0; gy < gridHeight; gy++) {
+    for (let gx = 0; gx < gridWidth; gx++) {
+      const idx = gy * gridWidth + gx;
       if (!landMask[idx]) continue;
-      // 8近傍に陸があれば単独島ではない
-      let hasLandNeighbor = false;
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (dx === 0 && dy === 0) continue;
-          const wrapped = vm.torusWrap(gx + dx, gy + dy);
-          if (!wrapped) continue;
-          const nIdx = wrapped.y * vm.gridWidth + wrapped.x;
-          if (landMask[nIdx]) { hasLandNeighbor = true; break; }
-        }
-        if (hasLandNeighbor) break;
-      }
+      const hasLandNeighbor = countLandNeighbors(gx, gy, landMask, gridWidth, torusWrap) > 0;
       if (!hasLandNeighbor) {
-        // 一律でpickRng() < 確率の値で海に戻す（シードがあれば再現可能にする）
-        // _getDerivedRng は常に存在する前提（念のためのガードは不要）
-        const pickRng = vm._getDerivedRng('coast-island', gx, gy) || seededRng || Math.random;
+        const pickRng = _getDerivedRng('coast-island', gx, gy) || seededRng || Math.random;
         if (pickRng() < singleCellRemovalProbClamped) landMask[idx] = false;
       }
     }
   }
 }
 
-export function jitterCoastline(vm, {
+export function jitterCoastline(ctx, {
   landMask,
   scores,
   threshold,
   seededRng
 }) {
-  // --- 海岸線のランダム微摂動（同じシードでも海岸線だけ見た目に変化を出す） ---
-  // 近傍に異なる陸海があるセル（=海岸線セル）のうち、スコアが閾値近傍のものだけ微小確率で反転
-  // 他の要素（座標/影響/減衰/方向）はシード固定のまま
+  const { gridWidth, gridHeight, torusWrap, _getDerivedRng, era } = getGridContext(ctx);
   let minScore = Infinity, maxScore = -Infinity;
   for (let i = 0; i < scores.length; i++) {
     const s = scores[i];
     if (s < minScore) minScore = s;
     if (s > maxScore) maxScore = s;
   }
-  const scoreBand = Math.max(1e-6, (maxScore - minScore) * 0.05); // 閾値±2%帯
-  const flipProb = 0.30; // 反転確率（控えめ）
+  const scoreBand = Math.max(1e-6, (maxScore - minScore) * 0.05);
+  const flipProb = 0.30;
 
   const hasOppNeighbor = (x, y) => {
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
         if (dx === 0 && dy === 0) continue;
-        const w = vm.torusWrap(x + dx, y + dy);
+        const w = torusWrap(x + dx, y + dy);
         if (!w) continue;
-        const a = y * vm.gridWidth + x;
-        const b = w.y * vm.gridWidth + w.x;
+        const a = y * gridWidth + x;
+        const b = w.y * gridWidth + w.x;
         if (landMask[a] !== landMask[b]) return true;
       }
     }
     return false;
   };
 
-  for (let gy = 0; gy < vm.gridHeight; gy++) {
-    for (let gx = 0; gx < vm.gridWidth; gx++) {
-      const idx = gy * vm.gridWidth + gx;
+  for (let gy = 0; gy < gridHeight; gy++) {
+    for (let gx = 0; gx < gridWidth; gx++) {
+      const idx = gy * gridWidth + gx;
       const s = scores[idx];
       if (Math.abs(s - threshold) <= scoreBand && hasOppNeighbor(gx, gy)) {
-        const strict = isSeedStrictEra(vm) && !!seededRng;
-        const r = strict ? (vm._getDerivedRng('coast-flip', gx, gy) || seededRng) : Math.random;
+        const strict = isSeedStrictEra(era) && !!seededRng;
+        const r = strict ? (_getDerivedRng('coast-flip', gx, gy) || seededRng) : Math.random;
         if (r() < flipProb) {
           landMask[idx] = !landMask[idx];
         }
