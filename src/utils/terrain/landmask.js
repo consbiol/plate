@@ -46,8 +46,11 @@ export function dilateLandMask(vm, {
 
 export function removeSingleCellIslands(vm, {
   landMask,
-  seededRng
+  seededRng,
+  singleCellRemovalProb = 0.5
 }) {
+  // 将来的に外部から渡される値を想定し、念のため0-1に収める
+  const singleCellRemovalProbClamped = Math.max(0, Math.min(1, singleCellRemovalProb));
   for (let gy = 0; gy < vm.gridHeight; gy++) {
     for (let gx = 0; gx < vm.gridWidth; gx++) {
       const idx = gy * vm.gridWidth + gx;
@@ -65,10 +68,10 @@ export function removeSingleCellIslands(vm, {
         if (hasLandNeighbor) break;
       }
       if (!hasLandNeighbor) {
-        // 一律で70%の確率で海に戻す（シードがあれば再現可能にする）
+        // 一律でpickRng() < 確率の値で海に戻す（シードがあれば再現可能にする）
         // _getDerivedRng は常に存在する前提（念のためのガードは不要）
         const pickRng = vm._getDerivedRng('coast-island', gx, gy) || seededRng || Math.random;
-        if (pickRng() < 0.1) landMask[idx] = false;
+        if (pickRng() < singleCellRemovalProbClamped) landMask[idx] = false;
       }
     }
   }
