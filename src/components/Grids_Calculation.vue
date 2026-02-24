@@ -1633,8 +1633,10 @@ export default {
       // 「non-lowland → lowland に戻ったセル」だけ苔を再サンプルする。
       // これにより、氷河→低地復活などの後でも苔率が毎ターンの気候計算へ反映され続ける。
       const isBryophyteEra = (this.era === '苔類進出時代');
-      const isCivilizationEra = (this.era === '文明時代');
-      const isSeaCivilizationEra = (this.era === '海棲文明時代');
+      const isLandCultivationEra = (this.era === '文明時代' || this.era === '海棲文明時代');
+      const isLandCityEra = (this.era === '文明時代');
+      const isSeaCultivationEra = (this.era === '文明時代' || this.era === '海棲文明時代');
+      const isSeaCityEra = (this.era === '海棲文明時代');
       const baseBryo = Math.max(0, Number(this.bryophyteGenerationProbability || 0));
       const baseCult = Math.max(0, Number(this.cultivatedGenerationProbability || 0));
       const baseCity = Math.max(0, Number(this.cityGenerationProbability || 0));
@@ -1724,41 +1726,45 @@ export default {
             }
           }
           // non-lowland → lowland に戻った場合のみ、文明要素を軽量に再サンプル
-          else if (isCivilizationEra) {
+          else if (isLandCultivationEra || isLandCityEra) {
             const prev = base[i];
             const prevIsLowland = !!(prev && prev.terrain && prev.terrain.type === 'land' && prev.terrain.land === 'lowland');
             if (!prevIsLowland) {
               const gx = i % this.gridWidth;
               const gy = Math.floor(i / this.gridWidth);
               const adjSea = isAdjacentToSea(gx, gy);
-              // cultivated（先に）
-              if (!cell.cultivated) {
-                const pCult = Math.min(1, adjSea ? (baseCult * 5) : baseCult);
-                if (pCult > 0) {
-                  const rng = createDerivedRng(this.deterministicSeed, 'cultivated-revise', `i${i}`) || Math.random;
-                  if (rng() < pCult) cell.cultivated = true;
+              if (isLandCultivationEra) {
+                // cultivated（先に）
+                if (!cell.cultivated) {
+                  const pCult = Math.min(1, adjSea ? (baseCult * 5) : baseCult);
+                  if (pCult > 0) {
+                    const rng = createDerivedRng(this.deterministicSeed, 'cultivated-revise', `i${i}`) || Math.random;
+                    if (rng() < pCult) cell.cultivated = true;
+                  }
                 }
               }
-              // city（後で）
-              if (!cell.city) {
-                const pcCity = getBiasedCityProbability({
-                  fractalNoise2D: (x, y, o, p, s) => this.fractalNoise2D(x, y, o, p, s),
-                  gx,
-                  gy,
-                  baseProbability: baseCity,
-                  isAdjacentFn: isAdjacentToSea,
-                  biasScale: cityBiasScale,
-                  biasMin: cityBiasMin,
-                  biasMax: cityBiasMax,
-                  adjacencyMultiplier: 5
-                });
-                if (pcCity > 0) {
-                  const rng = createDerivedRng(this.deterministicSeed, 'city-revise', `i${i}`) || Math.random;
-                  if (rng() < pcCity) cell.city = true;
+              if (isLandCityEra) {
+                // city（後で）
+                if (!cell.city) {
+                  const pcCity = getBiasedCityProbability({
+                    fractalNoise2D: (x, y, o, p, s) => this.fractalNoise2D(x, y, o, p, s),
+                    gx,
+                    gy,
+                    baseProbability: baseCity,
+                    isAdjacentFn: isAdjacentToSea,
+                    biasScale: cityBiasScale,
+                    biasMin: cityBiasMin,
+                    biasMax: cityBiasMax,
+                    adjacencyMultiplier: 5
+                  });
+                  if (pcCity > 0) {
+                    const rng = createDerivedRng(this.deterministicSeed, 'city-revise', `i${i}`) || Math.random;
+                    if (rng() < pcCity) cell.city = true;
+                  }
                 }
               }
               // polluted（概算、低地/都市/農地上）
-              if (countPollutedAreas > 0 && !cell.polluted) {
+              if (isLandCityEra && countPollutedAreas > 0 && !cell.polluted) {
                 // 生成側は「海岸セル重み10」だが、Reviseは戻りセルだけなので簡易に海岸優遇のみ残す
                 const w = adjSea ? 10 : 1;
                 const p = Math.min(1, pPollutedApprox * w);
@@ -1783,41 +1789,45 @@ export default {
             cell.seaPolluted = false;
           }
           // non-shallow → shallow に戻った場合のみ、海棲文明要素を軽量に再サンプル
-          else if (isSeaCivilizationEra) {
+          else if (isSeaCultivationEra || isSeaCityEra) {
             const prev = base[i];
             const prevIsShallow = !!(prev && prev.terrain && prev.terrain.type === 'sea' && prev.terrain.sea === 'shallow');
             if (!prevIsShallow) {
               const gx = i % this.gridWidth;
               const gy = Math.floor(i / this.gridWidth);
               const adjLand = isAdjacentToLand(gx, gy);
-              // seaCultivated（先に）
-              if (!cell.seaCultivated) {
-                const pSeaCult = Math.min(1, adjLand ? (baseSeaCult * 5) : baseSeaCult);
-                if (pSeaCult > 0) {
-                  const rng = createDerivedRng(this.deterministicSeed, 'sea-cultivated-revise', `i${i}`) || Math.random;
-                  if (rng() < pSeaCult) cell.seaCultivated = true;
+              if (isSeaCultivationEra) {
+                // seaCultivated（先に）
+                if (!cell.seaCultivated) {
+                  const pSeaCult = Math.min(1, adjLand ? (baseSeaCult * 5) : baseSeaCult);
+                  if (pSeaCult > 0) {
+                    const rng = createDerivedRng(this.deterministicSeed, 'sea-cultivated-revise', `i${i}`) || Math.random;
+                    if (rng() < pSeaCult) cell.seaCultivated = true;
+                  }
                 }
               }
-              // seaCity（後で）
-              if (!cell.seaCity) {
-                const pcSeaCity = getBiasedCityProbability({
-                  fractalNoise2D: (x, y, o, p, s) => this.fractalNoise2D(x, y, o, p, s),
-                  gx,
-                  gy,
-                  baseProbability: baseSeaCity,
-                  isAdjacentFn: isAdjacentToLand,
-                  biasScale: cityBiasScale,
-                  biasMin: cityBiasMin,
-                  biasMax: cityBiasMax,
-                  adjacencyMultiplier: 5
-                });
-                if (pcSeaCity > 0) {
-                  const rng = createDerivedRng(this.deterministicSeed, 'sea-city-revise', `i${i}`) || Math.random;
-                  if (rng() < pcSeaCity) cell.seaCity = true;
+              if (isSeaCityEra) {
+                // seaCity（後で）
+                if (!cell.seaCity) {
+                  const pcSeaCity = getBiasedCityProbability({
+                    fractalNoise2D: (x, y, o, p, s) => this.fractalNoise2D(x, y, o, p, s),
+                    gx,
+                    gy,
+                    baseProbability: baseSeaCity,
+                    isAdjacentFn: isAdjacentToLand,
+                    biasScale: cityBiasScale,
+                    biasMin: cityBiasMin,
+                    biasMax: cityBiasMax,
+                    adjacencyMultiplier: 5
+                  });
+                  if (pcSeaCity > 0) {
+                    const rng = createDerivedRng(this.deterministicSeed, 'sea-city-revise', `i${i}`) || Math.random;
+                    if (rng() < pcSeaCity) cell.seaCity = true;
+                  }
                 }
               }
               // seaPolluted（概算、浅瀬/海棲都市/海棲農地上）
-              if (countSeaPollutedAreas > 0 && !cell.seaPolluted) {
+              if (isSeaCityEra && countSeaPollutedAreas > 0 && !cell.seaPolluted) {
                 const w = adjLand ? 10 : 1;
                 const p = Math.min(1, pSeaPollutedApprox * w);
                 if (p > 0) {

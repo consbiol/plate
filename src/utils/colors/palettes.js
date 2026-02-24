@@ -215,6 +215,7 @@ function getEraColors_Civilization() {
         border: '#000000',
         city: '#9a9a9a',
         cultivated: '#6B8E23',
+        seaCultivated: '#51a69a',
         polluted: '#4e4a57'
     };
 }
@@ -225,7 +226,7 @@ function getEraColors_SeaCivilization() {
         deepSea: '#1E508C',
         shallowSea: '#3070b0',
         lowland: '#228B22',
-        desert: '#96826E',
+        desert: '#D2B48C',
         highland: '#91644B',
         alpine: '#5F5046',
         tundra: '#7ea836',
@@ -233,6 +234,7 @@ function getEraColors_SeaCivilization() {
         seaGlacier: '#F0F8FF',
         glacier: '#E6EEF2',
         border: '#000000',
+        cultivated: '#6B8E23',
         seaCity: '#5C6B73',
         seaCultivated: '#51a69a',
         seaPolluted: '#786491'

@@ -630,8 +630,10 @@ export function createDefaultWorkerDepsFunctions({ depsSnapshot = null } = {}) {
     }, { gridData, centers: c.centers });
 
     const isBryophyteEra = (getInput('era', null) === '苔類進出時代');
-    const isCivilizationEra = (getInput('era', null) === '文明時代');
-    const isSeaCivilizationEra = (getInput('era', null) === '海棲文明時代');
+    const isLandCultivationEra = (getInput('era', null) === '文明時代' || getInput('era', null) === '海棲文明時代');
+    const isLandCityEra = (getInput('era', null) === '文明時代');
+    const isSeaCultivationEra = (getInput('era', null) === '文明時代' || getInput('era', null) === '海棲文明時代');
+    const isSeaCityEra = (getInput('era', null) === '海棲文明時代');
     const baseBryo = Math.max(0, Number(getInput('bryophyteGenerationProbability', 0) || 0));
     const baseCult = Math.max(0, Number(getInput('cultivatedGenerationProbability', 0) || 0));
     const baseCity = Math.max(0, Number(getInput('cityGenerationProbability', 0) || 0));
@@ -706,38 +708,42 @@ export function createDefaultWorkerDepsFunctions({ depsSnapshot = null } = {}) {
               if (rng() < p) cell.bryophyte = true;
             }
           }
-        } else if (isCivilizationEra) {
+        } else if (isLandCultivationEra || isLandCityEra) {
           const prev = base[i];
           const prevIsLowland = !!(prev && prev.terrain && prev.terrain.type === 'land' && prev.terrain.land === 'lowland');
           if (!prevIsLowland) {
             const gx = i % getProp('gridWidth', 0);
             const gy = Math.floor(i / getProp('gridWidth', 0));
             const adjSea = isAdjacentToSea(gx, gy);
-            if (!cell.cultivated) {
-              const pCult = Math.min(1, adjSea ? (baseCult * 5) : baseCult);
-              if (pCult > 0) {
-                const rng = createDerivedRng(getProp('deterministicSeed', null), 'cultivated-revise', `i${i}`) || Math.random;
-                if (rng() < pCult) cell.cultivated = true;
+            if (isLandCultivationEra) {
+              if (!cell.cultivated) {
+                const pCult = Math.min(1, adjSea ? (baseCult * 5) : baseCult);
+                if (pCult > 0) {
+                  const rng = createDerivedRng(getProp('deterministicSeed', null), 'cultivated-revise', `i${i}`) || Math.random;
+                  if (rng() < pCult) cell.cultivated = true;
+                }
               }
             }
-            if (!cell.city) {
-              const pcCity = getBiasedCityProbability({
-                fractalNoise2D: (x, y, o, p, s) => fractalNoise2D(x, y, o, p, s),
-                gx,
-                gy,
-                baseProbability: baseCity,
-                isAdjacentFn: isAdjacentToSea,
-                biasScale: cityBiasScale,
-                biasMin: cityBiasMin,
-                biasMax: cityBiasMax,
-                adjacencyMultiplier: 5
-              });
-              if (pcCity > 0) {
-                const rng = createDerivedRng(getProp('deterministicSeed', null), 'city-revise', `i${i}`) || Math.random;
-                if (rng() < pcCity) cell.city = true;
+            if (isLandCityEra) {
+              if (!cell.city) {
+                const pcCity = getBiasedCityProbability({
+                  fractalNoise2D: (x, y, o, p, s) => fractalNoise2D(x, y, o, p, s),
+                  gx,
+                  gy,
+                  baseProbability: baseCity,
+                  isAdjacentFn: isAdjacentToSea,
+                  biasScale: cityBiasScale,
+                  biasMin: cityBiasMin,
+                  biasMax: cityBiasMax,
+                  adjacencyMultiplier: 5
+                });
+                if (pcCity > 0) {
+                  const rng = createDerivedRng(getProp('deterministicSeed', null), 'city-revise', `i${i}`) || Math.random;
+                  if (rng() < pcCity) cell.city = true;
+                }
               }
             }
-            if (countPollutedAreas > 0 && !cell.polluted) {
+            if (isLandCityEra && countPollutedAreas > 0 && !cell.polluted) {
               const w = adjSea ? 10 : 1;
               const p = Math.min(1, pPollutedApprox * w);
               if (p > 0) {
@@ -757,38 +763,42 @@ export function createDefaultWorkerDepsFunctions({ depsSnapshot = null } = {}) {
           cell.seaCity = false;
           cell.seaCultivated = false;
           cell.seaPolluted = false;
-        } else if (isSeaCivilizationEra) {
+        } else if (isSeaCultivationEra || isSeaCityEra) {
           const prev = base[i];
           const prevIsShallow = !!(prev && prev.terrain && prev.terrain.type === 'sea' && prev.terrain.sea === 'shallow');
           if (!prevIsShallow) {
             const gx = i % getProp('gridWidth', 0);
             const gy = Math.floor(i / getProp('gridWidth', 0));
             const adjLand = isAdjacentToLand(gx, gy);
-            if (!cell.seaCultivated) {
-              const pSeaCult = Math.min(1, adjLand ? (baseSeaCult * 5) : baseSeaCult);
-              if (pSeaCult > 0) {
-                const rng = createDerivedRng(getProp('deterministicSeed', null), 'sea-cultivated-revise', `i${i}`) || Math.random;
-                if (rng() < pSeaCult) cell.seaCultivated = true;
+            if (isSeaCultivationEra) {
+              if (!cell.seaCultivated) {
+                const pSeaCult = Math.min(1, adjLand ? (baseSeaCult * 5) : baseSeaCult);
+                if (pSeaCult > 0) {
+                  const rng = createDerivedRng(getProp('deterministicSeed', null), 'sea-cultivated-revise', `i${i}`) || Math.random;
+                  if (rng() < pSeaCult) cell.seaCultivated = true;
+                }
               }
             }
-            if (!cell.seaCity) {
-              const pcSeaCity = getBiasedCityProbability({
-                fractalNoise2D: (x, y, o, p, s) => fractalNoise2D(x, y, o, p, s),
-                gx,
-                gy,
-                baseProbability: baseSeaCity,
-                isAdjacentFn: isAdjacentToLand,
-                biasScale: cityBiasScale,
-                biasMin: cityBiasMin,
-                biasMax: cityBiasMax,
-                adjacencyMultiplier: 5
-              });
-              if (pcSeaCity > 0) {
-                const rng = createDerivedRng(getProp('deterministicSeed', null), 'sea-city-revise', `i${i}`) || Math.random;
-                if (rng() < pcSeaCity) cell.seaCity = true;
+            if (isSeaCityEra) {
+              if (!cell.seaCity) {
+                const pcSeaCity = getBiasedCityProbability({
+                  fractalNoise2D: (x, y, o, p, s) => fractalNoise2D(x, y, o, p, s),
+                  gx,
+                  gy,
+                  baseProbability: baseSeaCity,
+                  isAdjacentFn: isAdjacentToLand,
+                  biasScale: cityBiasScale,
+                  biasMin: cityBiasMin,
+                  biasMax: cityBiasMax,
+                  adjacencyMultiplier: 5
+                });
+                if (pcSeaCity > 0) {
+                  const rng = createDerivedRng(getProp('deterministicSeed', null), 'sea-city-revise', `i${i}`) || Math.random;
+                  if (rng() < pcSeaCity) cell.seaCity = true;
+                }
               }
             }
-            if (countSeaPollutedAreas > 0 && !cell.seaPolluted) {
+            if (isSeaCityEra && countSeaPollutedAreas > 0 && !cell.seaPolluted) {
               const w = adjLand ? 10 : 1;
               const p = Math.min(1, pSeaPollutedApprox * w);
               if (p > 0) {
