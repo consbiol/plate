@@ -253,35 +253,21 @@ export function createDefaultWorkerDepsFunctions({ depsSnapshot = null } = {}) {
     const glacierColor = tc.glacier;
     const directions = getDirections8();
 
-    const landSources = [];
-    for (let gy = 0; gy < gridHeight; gy++) {
-      for (let gx = 0; gx < gridWidth; gx++) {
-        const idx = gy * gridWidth + gx;
-        if (refinedLandMask[idx]) landSources.push({ x: gx, y: gy });
-      }
-    }
     const distanceToLand = computeDistanceMap({
-      sources: landSources,
+      sourceMask: refinedLandMask,
+      sourceValue: true,
       N,
       directions,
       gridWidth,
-      torusWrap: (x, y) => torusWrapFn(x, y),
-      torusDistance: (x1, y1, x2, y2) => torusDistanceFn(x1, y1, x2, y2)
+      torusWrap: (x, y) => torusWrapFn(x, y)
     });
-    const seaSources = [];
-    for (let gy = 0; gy < gridHeight; gy++) {
-      for (let gx = 0; gx < gridWidth; gx++) {
-        const idx = gy * gridWidth + gx;
-        if (!refinedLandMask[idx]) seaSources.push({ x: gx, y: gy });
-      }
-    }
     const distanceToSea = computeDistanceMap({
-      sources: seaSources,
+      sourceMask: refinedLandMask,
+      sourceValue: false,
       N,
       directions,
       gridWidth,
-      torusWrap: (x, y) => torusWrapFn(x, y),
-      torusDistance: (x1, y1, x2, y2) => torusDistanceFn(x1, y1, x2, y2)
+      torusWrap: (x, y) => torusWrapFn(x, y)
     });
 
     const colors = classifyBaseColors({
@@ -743,7 +729,7 @@ export function createDefaultWorkerDepsFunctions({ depsSnapshot = null } = {}) {
                 }
               }
             }
-            if (isLandCityEra && countPollutedAreas > 0 && !cell.polluted) {
+            if (countPollutedAreas > 0 && !cell.polluted) {
               const w = adjSea ? 10 : 1;
               const p = Math.min(1, pPollutedApprox * w);
               if (p > 0) {
@@ -798,7 +784,7 @@ export function createDefaultWorkerDepsFunctions({ depsSnapshot = null } = {}) {
                 }
               }
             }
-            if (isSeaCityEra && countSeaPollutedAreas > 0 && !cell.seaPolluted) {
+            if (countSeaPollutedAreas > 0 && !cell.seaPolluted) {
               const w = adjLand ? 10 : 1;
               const p = Math.min(1, pSeaPollutedApprox * w);
               if (p > 0) {

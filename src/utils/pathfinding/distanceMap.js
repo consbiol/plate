@@ -1,86 +1,114 @@
 const createMinHeap = () => {
-  const heap = [];
+  const idxHeap = [];
+  const distHeap = [];
   const swap = (i, j) => {
-    const tmp = heap[i];
-    heap[i] = heap[j];
-    heap[j] = tmp;
+    const ti = idxHeap[i];
+    idxHeap[i] = idxHeap[j];
+    idxHeap[j] = ti;
+    const td = distHeap[i];
+    distHeap[i] = distHeap[j];
+    distHeap[j] = td;
   };
   const siftUp = (index) => {
     let i = index;
     while (i > 0) {
       const p = Math.floor((i - 1) / 2);
-      if (heap[p].dist <= heap[i].dist) break;
+      if (distHeap[p] <= distHeap[i]) break;
       swap(p, i);
       i = p;
     }
   };
   const siftDown = (index) => {
     let i = index;
-    while (i < heap.length) {
+    const len = idxHeap.length;
+    while (i < len) {
       const left = i * 2 + 1;
       const right = i * 2 + 2;
       let smallest = i;
-      if (left < heap.length && heap[left].dist < heap[smallest].dist) smallest = left;
-      if (right < heap.length && heap[right].dist < heap[smallest].dist) smallest = right;
+      if (left < len && distHeap[left] < distHeap[smallest]) smallest = left;
+      if (right < len && distHeap[right] < distHeap[smallest]) smallest = right;
       if (smallest === i) break;
       swap(i, smallest);
       i = smallest;
     }
   };
-  const push = (node) => {
-    heap.push(node);
-    siftUp(heap.length - 1);
+  const push = (idx, dist) => {
+    idxHeap.push(idx);
+    distHeap.push(dist);
+    siftUp(idxHeap.length - 1);
   };
-  const pop = () => {
-    if (heap.length === 0) return null;
-    const top = heap[0];
-    const last = heap.pop();
-    if (heap.length > 0) {
-      heap[0] = last;
+  const popInto = (out) => {
+    if (idxHeap.length === 0) return false;
+    out.idx = idxHeap[0];
+    out.dist = distHeap[0];
+    const lastIdx = idxHeap.pop();
+    const lastDist = distHeap.pop();
+    if (idxHeap.length > 0) {
+      idxHeap[0] = lastIdx;
+      distHeap[0] = lastDist;
       siftDown(0);
     }
-    return top;
+    return true;
   };
   return {
     push,
-    pop,
+    popInto,
     get size() {
-      return heap.length;
+      return idxHeap.length;
     }
   };
 };
 
 export function computeDistanceMap({
   sources,
+  sourceMask,
+  sourceValue = true,
   N,
   directions,
   gridWidth,
-  torusWrap,
-  torusDistance
+  torusWrap
 }) {
   const dist = new Array(N).fill(Infinity);
-  if (!sources || sources.length === 0) return dist;
+  const hasSources = Array.isArray(sources) && sources.length > 0;
+  const hasMask = Array.isArray(sourceMask) && sourceMask.length === N;
+  if (!hasSources && !hasMask) return dist;
   const heap = createMinHeap();
+  const current = { idx: 0, dist: 0 };
+  const dirs = Array.isArray(directions)
+    ? directions.map((dir) => ({
+      dx: dir.dx,
+      dy: dir.dy,
+      w: Number.isFinite(dir.w) ? dir.w : Math.hypot(dir.dx, dir.dy)
+    }))
+    : [];
 
-  for (const s of sources) {
-    const sIdx = s.y * gridWidth + s.x;
-    dist[sIdx] = 0;
-    heap.push({ x: s.x, y: s.y, idx: sIdx, dist: 0 });
+  if (hasSources) {
+    for (const s of sources) {
+      const sIdx = s.y * gridWidth + s.x;
+      dist[sIdx] = 0;
+      heap.push(sIdx, 0);
+    }
+  } else {
+    for (let i = 0; i < N; i++) {
+      if (sourceMask[i] !== sourceValue) continue;
+      dist[i] = 0;
+      heap.push(i, 0);
+    }
   }
 
   while (heap.size > 0) {
-    const current = heap.pop();
-    if (!current) break;
+    if (!heap.popInto(current)) break;
     if (current.dist !== dist[current.idx]) continue;
-    for (const dir of directions) {
-      const wrapped = torusWrap(current.x + dir.dx, current.y + dir.dy);
+    const cx = current.idx % gridWidth;
+    const cy = (current.idx / gridWidth) | 0;
+    for (const dir of dirs) {
+      const wrapped = torusWrap(cx + dir.dx, cy + dir.dy);
       if (!wrapped) continue;
       const nIdx = wrapped.y * gridWidth + wrapped.x;
-      const w = torusDistance(current.x, current.y, wrapped.x, wrapped.y);
-      const nd = current.dist + w;
+      const nd = current.dist + dir.w;
       if (nd < dist[nIdx]) {
         dist[nIdx] = nd;
-        heap.push({ x: wrapped.x, y: wrapped.y, idx: nIdx, dist: nd });
+        heap.push(nIdx, nd);
       }
     }
   }

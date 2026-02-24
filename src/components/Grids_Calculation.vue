@@ -967,36 +967,22 @@ export default {
           highlandColor, alpineColor, tundraColor, glacierColor
         } = this._getBaseColors();
         const directions = getDirections8();
-        const landSources = [];
-        for (let gy = 0; gy < this.gridHeight; gy++) {
-          for (let gx = 0; gx < this.gridWidth; gx++) {
-            const idx = gy * this.gridWidth + gx;
-            if (landMask[idx]) landSources.push({ x: gx, y: gy });
-          }
-        }
         const distanceToLand = computeDistanceMap({
-          sources: landSources,
+          sourceMask: landMask,
+          sourceValue: true,
           N,
           directions,
           gridWidth: this.gridWidth,
-          torusWrap: (x, y) => this.torusWrap(x, y),
-          torusDistance: (x1, y1, x2, y2) => this.torusDistance(x1, y1, x2, y2)
+          torusWrap: (x, y) => this.torusWrap(x, y)
         });
 
-        const seaSources = [];
-        for (let gy = 0; gy < this.gridHeight; gy++) {
-          for (let gx = 0; gx < this.gridWidth; gx++) {
-            const idx = gy * this.gridWidth + gx;
-            if (!landMask[idx]) seaSources.push({ x: gx, y: gy });
-          }
-        }
         const distanceToSea = computeDistanceMap({
-          sources: seaSources,
+          sourceMask: landMask,
+          sourceValue: false,
           N,
           directions,
           gridWidth: this.gridWidth,
-          torusWrap: (x, y) => this.torusWrap(x, y),
-          torusDistance: (x1, y1, x2, y2) => this.torusDistance(x1, y1, x2, y2)
+          torusWrap: (x, y) => this.torusWrap(x, y)
         });
 
         const colors = classifyBaseColors({
