@@ -48,7 +48,7 @@ function fmtSig(v, sig = 3) {
   return rounded.toFixed(decimals);
 }
 
-function renderGasPartialPressureRow(key, raw) {
+function renderGasPartialPressureRow(key, raw, Pressure) {
   const n = Number(raw);
   if (!isFinite(n)) {
     return `<div class="row"><label>${escapeHtml(key)} (bar):</label><span>-</span></div>`;
@@ -57,7 +57,8 @@ function renderGasPartialPressureRow(key, raw) {
   // UI/説明用: 0.01 bar (= 10,000 ppm) 未満は ppm で表示
   const isPpm = n <= 0.01;
   if (isPpm) {
-    const ppm = n * 1e6;
+    const p = Number(Pressure);
+    const ppm = (isFinite(p) && p > 0) ? (n * 1e6 / p) : (n * 1e6);
     const display = (Math.abs(ppm) < 100) ? String(Math.round(ppm)) : fmtSig(ppm, 3);
     return `<div class="row"><label>${escapeHtml(key)} (ppm):</label><span>${escapeHtml(display)}</span></div>`;
   }
@@ -124,13 +125,13 @@ export function buildClimateOutputHtml({ climateTurn, climateVars, climate } = {
       <div class="row"><label>land_plantO2:</label><span>${fmtNum(v.land_plantO2, 6)}</span></div>
       <div class="row"><label>fungal_factor:</label><span>${fmtNum(v.fungal_factor, 6)}</span></div>
       <div class="row"><label>Pressure (bar):</label><span>${fmtSig(v.Pressure, 3)}</span></div>
-      ${renderGasPartialPressureRow('f_N2', v.f_N2)}
-      ${renderGasPartialPressureRow('f_O2', v.f_O2)}
-      ${renderGasPartialPressureRow('f_CO2', v.f_CO2)}
-      ${renderGasPartialPressureRow('f_H2O', v.f_H2O)}
-      ${renderGasPartialPressureRow('f_CH4', v.f_CH4)}
-      ${renderGasPartialPressureRow('f_Ar', v.f_Ar)}
-      ${renderGasPartialPressureRow('f_H2', v.f_H2)}
+      ${renderGasPartialPressureRow('f_N2', v.f_N2, v.Pressure)}
+      ${renderGasPartialPressureRow('f_O2', v.f_O2, v.Pressure)}
+      ${renderGasPartialPressureRow('f_CO2', v.f_CO2, v.Pressure)}
+      ${renderGasPartialPressureRow('f_H2O', v.f_H2O, v.Pressure)}
+      ${renderGasPartialPressureRow('f_CH4', v.f_CH4, v.Pressure)}
+      ${renderGasPartialPressureRow('f_Ar', v.f_Ar, v.Pressure)}
+      ${renderGasPartialPressureRow('f_H2', v.f_H2, v.Pressure)}
       <div class="row"><label>f_cloud:</label><span>${fmtSig(v.f_cloud, 3)}</span></div>
       <div class="row"><label>albedo:</label><span>${fmtSig(v.albedo, 3)}</span></div>
       <div class="row"><label>H2O_eff:</label><span>${fmtNum(v.H2O_eff, 6)}</span> <span class="muted">→地球現在1</span></div>
