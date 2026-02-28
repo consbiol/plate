@@ -51,19 +51,35 @@ function fmtSig(v, sig = 3) {
 function renderGasPartialPressureRow(key, raw, Pressure) {
   const n = Number(raw);
   if (!isFinite(n)) {
-    return `<div class="row"><label>${escapeHtml(key)} (bar):</label><span>-</span></div>`;
+    return `<div class="row"><label>${escapeHtml(key)} (%):</label><span>-</span></div>`;
   }
 
-  // UI/説明用: 0.01 bar (= 10,000 ppm) 未満は ppm で表示
-  const isPpm = n <= 0.01;
-  if (isPpm) {
-    const p = Number(Pressure);
-    const ppm = (isFinite(p) && p > 0) ? (n * 1e6 / p) : (n * 1e6);
+  const p = Number(Pressure);
+  const hasValidP = isFinite(p) && p > 0;
+
+  // 表示値は「混合比」をベースにする:
+  //   - 1%以上 → % 表示:  f_gas(bar) / Pressure(bar) * 100
+  //   - 1%未満 → ppm 表示: f_gas(bar) / Pressure(bar) * 1e6
+  if (hasValidP) {
+    const frac = n / p; // 無次元（全圧に対する比）
+    if (frac < 0.01) {
+      const ppm = frac * 1e6;
+      const display = (Math.abs(ppm) < 100) ? String(Math.round(ppm)) : fmtSig(ppm, 3);
+      return `<div class="row"><label>${escapeHtml(key)} (ppm):</label><span>${escapeHtml(display)}</span></div>`;
+    }
+    const percent = frac * 100;
+    return `<div class="row"><label>${escapeHtml(key)} (%):</label><span>${escapeHtml(fmtSig(percent, 3))}</span></div>`;
+  }
+
+  // 全圧が不明/0 の場合は、従来通り n を「分圧 bar ≒ 混合比」とみなしてスケールする
+  const approxFrac = n;
+  if (approxFrac < 0.01) {
+    const ppm = approxFrac * 1e6;
     const display = (Math.abs(ppm) < 100) ? String(Math.round(ppm)) : fmtSig(ppm, 3);
     return `<div class="row"><label>${escapeHtml(key)} (ppm):</label><span>${escapeHtml(display)}</span></div>`;
   }
-
-  return `<div class="row"><label>${escapeHtml(key)} (bar):</label><span>${escapeHtml(fmtSig(n, 3))}</span></div>`;
+  const percent = approxFrac * 100;
+  return `<div class="row"><label>${escapeHtml(key)} (%):</label><span>${escapeHtml(fmtSig(percent, 3))}</span></div>`;
 }
 
 export function buildClimateOutputHtml({ climateTurn, climateVars, climate } = {}) {
