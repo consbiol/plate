@@ -70,16 +70,8 @@ function renderGasPartialPressureRow(key, raw, Pressure) {
     const percent = frac * 100;
     return `<div class="row"><label>${escapeHtml(key)} (%):</label><span>${escapeHtml(fmtSig(percent, 3))}</span></div>`;
   }
-
-  // 全圧が不明/0 の場合は、従来通り n を「分圧 bar ≒ 混合比」とみなしてスケールする
-  const approxFrac = n;
-  if (approxFrac < 0.01) {
-    const ppm = approxFrac * 1e6;
-    const display = (Math.abs(ppm) < 100) ? String(Math.round(ppm)) : fmtSig(ppm, 3);
-    return `<div class="row"><label>${escapeHtml(key)} (ppm):</label><span>${escapeHtml(display)}</span></div>`;
-  }
-  const percent = approxFrac * 100;
-  return `<div class="row"><label>${escapeHtml(key)} (%):</label><span>${escapeHtml(fmtSig(percent, 3))}</span></div>`;
+  // Pressure が無効なときは、無理に推定せず「-」表示にする
+  return `<div class="row"><label>${escapeHtml(key)} (%):</label><span>-</span></div>`;
 }
 
 export function buildClimateOutputHtml({ climateTurn, climateVars, climate } = {}) {
