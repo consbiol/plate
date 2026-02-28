@@ -15,9 +15,7 @@ const GREEN_ZERO_ERAS = new Set([
 ]);
 const GREEN_LOWLAND_ERAS = new Set([
   'シダ植物時代',
-  '大森林時代',
-  '文明時代',
-  '海棲文明時代'
+  '大森林時代'
 ]);
 
 export function buildTerrainFractionsFromTypeCounts({ typeCounts, preGlacierStats, gridWidth, gridHeight, era } = {}) {
@@ -51,8 +49,10 @@ export function buildTerrainFractionsFromTypeCounts({ typeCounts, preGlacierStat
   const e = (typeof era === 'string') ? era : null;
   let f_green = 0;
   if (e === '苔類進出時代') {
+    // 苔類進出時代: 苔グリッドのみを「緑地」とみなす
     f_green = f_bryophyte;
   } else if (e && GREEN_LOWLAND_ERAS.has(e)) {
+    // シダ植物時代・大森林時代・文明時代・海棲文明時代: 低地のみ
     f_green = f_lowland;
   } else if (e && GREEN_ZERO_ERAS.has(e)) {
     f_green = 0;
