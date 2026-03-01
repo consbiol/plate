@@ -13,7 +13,7 @@
       <div class="event-group">
         <div class="event-label">太陽活動 (sol_event)</div>
         <div class="sol-event-controls">
-          <button class="sol-step-btn" @click="bumpSol(-10)" :disabled="disabled">-</button>
+          <button class="sol-step-btn" @click="bumpSol(-10)">-</button>
           <input
             class="sol-slider"
             type="range"
@@ -23,14 +23,14 @@
             :value="solEvent"
             disabled
           />
-          <button class="sol-step-btn" @click="bumpSol(10)" :disabled="disabled">+</button>
+          <button class="sol-step-btn" @click="bumpSol(10)">+</button>
           <div class="sol-value">sol_event: {{ solEvent }}</div>
         </div>
       </div>
       <div class="event-group">
         <div class="event-label">マントル活動</div>
         <div class="sol-event-controls">
-          <button class="sol-step-btn" @click="bumpVolcanoMag(-1)" :disabled="disabled || volcanoMagAtMin">-</button>
+          <button class="sol-step-btn" @click="bumpVolcanoMag(-1)" :disabled="volcanoMagAtMin">-</button>
           <input
             class="sol-slider"
             type="range"
@@ -40,14 +40,14 @@
             :value="volcanoMagIndex"
             disabled
           />
-          <button class="sol-step-btn" @click="bumpVolcanoMag(1)" :disabled="disabled || volcanoMagAtMax">+</button>
+          <button class="sol-step-btn" @click="bumpVolcanoMag(1)" :disabled="volcanoMagAtMax">+</button>
           <div class="sol-value">Volcano_event x{{ volcanoMagLabel }}</div>
         </div>
       </div>
       <div class="event-group">
         <div class="event-label">Land Ratio</div>
         <div class="sol-event-controls">
-          <button class="sol-step-btn" @click="bumpLandRatio(-0.01)" :disabled="disabled || landRatioAtMin">-</button>
+          <button class="sol-step-btn" @click="bumpLandRatio(-0.01)" :disabled="landRatioAtMin">-</button>
           <input
             class="sol-slider"
             type="range"
@@ -57,7 +57,7 @@
             :value="landRatioDelta"
             disabled
           />
-          <button class="sol-step-btn" @click="bumpLandRatio(0.01)" :disabled="disabled || landRatioAtMax">+</button>
+          <button class="sol-step-btn" @click="bumpLandRatio(0.01)" :disabled="landRatioAtMax">+</button>
           <div class="sol-value">Δ land_ratio: {{ landRatioDeltaLabel }}</div>
         </div>
       </div>
