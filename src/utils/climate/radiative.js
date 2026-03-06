@@ -142,16 +142,17 @@ export function computeAlbedo({ f_cloud, hazeFrac, terrain = {}, Time_yr = 0 } =
     const A_glacier = glacierAlbedo(f_glacier);
 
     const milankovitch = 1 + 0.015 * Math.sin(2 * Math.PI * Time_yr / 100000);
+    const f_clear = 1 - f_cloud; // (1 - f_cloud) の計算をここで実行し、後はこのキャッシュを使う
 
     const albedo_0 =
         // 氷河（氷河分布球面幾何＋緯度依存の日射重み付け）
-        (1 - f_cloud) * A_glacier * f_glacier + f_cloud * (A_glacier + (1 - A_glacier) * 0.05) * f_glacier
-        + (1 - f_cloud) * 0.13 * (f_green + f_tundra) + f_cloud * (0.13 + 0.15) * (f_green + f_tundra)
-        + (1 - f_cloud) * 0.14 * f_city + f_cloud * (0.14 + 0.06) * f_city
-        + (1 - f_cloud) * 0.38 * f_desert + f_cloud * (0.38 + 0.07) * f_desert
-        + (1 - f_cloud) * 0.18 * (f_cultivated + f_polluted) + f_cloud * (0.18 + 0.12) * (f_cultivated + f_polluted)
-        + (1 - f_cloud) * 0.22 * (f_highland + f_alpine) + f_cloud * (0.22 + 0.03) * (f_highland + f_alpine)
-        + (1 - f_cloud) * 0.06 * f_ocean + f_cloud * (0.06 + 0.25) * f_ocean
+        f_clear * A_glacier * f_glacier + f_cloud * (A_glacier + (1 - A_glacier) * 0.05) * f_glacier
+        + f_clear * 0.13 * (f_green + f_tundra) + f_cloud * (0.13 + 0.15) * (f_green + f_tundra)
+        + f_clear * 0.14 * f_city + f_cloud * (0.14 + 0.06) * f_city
+        + f_clear * 0.38 * f_desert + f_cloud * (0.38 + 0.07) * f_desert
+        + f_clear * 0.18 * (f_cultivated + f_polluted) + f_cloud * (0.18 + 0.12) * (f_cultivated + f_polluted)
+        + f_clear * 0.22 * (f_highland + f_alpine) + f_cloud * (0.22 + 0.03) * (f_highland + f_alpine)
+        + f_clear * 0.06 * f_ocean + f_cloud * (0.06 + 0.25) * f_ocean
 
     let albedo = (albedo_0 + (1 - albedo_0) * 0.12 * hazeFrac) * milankovitch;
     if (albedo < 0.15) albedo = 0.15;

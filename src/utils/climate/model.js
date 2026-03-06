@@ -201,6 +201,7 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     const sol_event = Number(events.sol_event);
     const CosmicRay = (typeof events.CosmicRay === 'number') ? events.CosmicRay : 1;
     const Volcano_event_manual = Number(events.Volcano_event_manual) || 0;
+    const sqrtTurnYr = Math.sqrt(Turn_yr);
     const nextTimeYrEra = Time_yr_era + Turn_yr;
     const eraWillChange = getNextEraByTime(era, nextTimeYrEra).didChange;
     let tempAlphaEvent = Temp_alpha;
@@ -218,9 +219,10 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     const tempSigma =
         averageTemperature < 22.5
             ? tempSigmaColdSide
-            : tempSigmaHotSide
+            : tempSigmaHotSide;
 
-    const greenIndex_calc = 1.81 * Math.exp(-(sq(averageTemperature - 22.5)) / (2 * sq(tempSigma))) * f_cloud * co2FactorClamped * O2_suppression;
+    const greeningTech = 1;
+    const greenIndex_calc = 1.81 * Math.exp(-(sq(averageTemperature - 22.5)) / (2 * sq(tempSigma))) * f_cloud * co2FactorClamped * O2_suppression * greeningTech;
     if (Time_turn === 0 || eraWillChange) {
         greenIndex = greenIndex_calc;
     } else {
@@ -238,7 +240,7 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     const CO2_carbonate_eq =
         0.00028 * Math.exp((averageTemperature - 15) / 60);
     const CO2_flux_ocean =
-        -1 * Turn_yr ** 0.5
+        -1 * sqrtTurnYr
         * 0.0000012
         * f_ocean
         * f_CO2
@@ -246,7 +248,7 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
         * Math.exp(-(averageTemperature - 15) / 80);
 
     const CO2_flux_carbonate =
-        -1 * Turn_yr ** 0.5
+        -1 * sqrtTurnYr
         * 0.00000015
         * (f_CO2 - CO2_carbonate_eq)
         * Math.exp((averageTemperature - 15) / 20)
@@ -257,7 +259,7 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     const land_weathering_eff =
         1 + 0.3 * Math.tanh(3 * Pland_t);
     const CO2_abs_rock =
-        Turn_yr ** 0.5
+        sqrtTurnYr
         * 0.00000008
         * (f_land / 0.3)
         * land_weathering_eff
@@ -266,7 +268,7 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
         * Math.exp(-sq((averageTemperature - 30) / 22));
 
     const CO2_abs_plant =
-        Turn_yr ** 0.5
+        sqrtTurnYr
         * 0.0000006
         * Pland_t
         * (f_green / 0.3)
@@ -280,7 +282,7 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     const CO2_abs_total = CO2_abs_rock + CO2_abs_plant + CO2_abs_ocean + CO2_abs_carbonate;
 
     const CO2_release_volcano =
-        Turn_yr ** 0.5
+        sqrtTurnYr
         * 0.00000025
         * (Volcano_event + Volcano_event_manual)
         * Math.pow(4.55e9 / (Time_yr + 0.1e9), 1.25)
@@ -316,14 +318,14 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     const land_abs_eff = (20 * ReducingFactor) + 0.6 * land_abs_eff_planet;
     const volcGate = f_O2_forAbs / (f_O2_forAbs + 0.1);
     const O2_abs =
-        Turn_yr ** 0.5
+        sqrtTurnYr
         * 0.00008
         * land_abs_eff
         * (f_land / 0.3)
         * (Math.pow((f_O2_forAbs / 0.21), 0.6) + 0.1)
         * Math.min(Math.exp(-sq((averageTemperature - 25) / 25)), 3)
         * f_O2_forAbs
-        + Turn_yr ** 0.5
+        + sqrtTurnYr
         * 0.0003
         * (Volcano_event + Volcano_event_manual / 20)
         * volcGate;
@@ -332,7 +334,7 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     const land_plantO2 = computeLandPlantO2(era);
     const fungal_factor = computeFungalFactor(era);
     const O2_prod =
-        Turn_yr ** 0.5
+        sqrtTurnYr
         * 0.0007
         * (
             0.6
@@ -364,7 +366,7 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     const ageFactor = 1 - Math.exp(-Time_yr / o2HighTempAgeTau);
     const tempSigmoid = 1 / (1 + Math.exp(-(averageTemperature - o2HighTempTth) / o2HighTempTscale));
 
-    let O2_release_hightemp = Turn_yr ** 0.5 * o2HighTempCoef * f_ocean * H2O_eff * tempSigmoid * ageFactor;
+    let O2_release_hightemp = sqrtTurnYr * o2HighTempCoef * f_ocean * H2O_eff * tempSigmoid * ageFactor;
     O2_release_hightemp = Math.max(0, Math.min(O2_release_hightemp, o2HighTempMax));
 
     if (NO_HIGH_TEMP_ERAS.has(era)) {
