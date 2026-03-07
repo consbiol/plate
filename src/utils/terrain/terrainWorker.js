@@ -86,7 +86,7 @@ if (typeof self !== 'undefined') {
       const outputs = buildWorkerOutputs({
         payload,
         hfCache: nextHfCache,
-        driftState: resolvedDeps && resolvedDeps.state ? resolvedDeps.state : null
+        driftState: state || (resolvedDeps && resolvedDeps.state ? resolvedDeps.state : null)
       });
       if (outputs && outputs.hfCache) {
         cachedHfCache = outputs.hfCache;

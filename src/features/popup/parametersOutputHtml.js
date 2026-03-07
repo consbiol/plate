@@ -163,14 +163,14 @@ export function buildParametersOutputHtml({
       const phase = drift.phase;
       let ve = null;
       if (phase === 'Approach') {
-        if (sp > 30) ve = 4.0; // Lv3
-        else if (sp > 20 && sp < 30) ve = 2.5; // Lv2
+        if (sp > 30) ve = 3.0;
+        else if (sp > 20 && sp < 30) ve = 2.0;
       } else if (phase === 'Repel') {
-        if (sp > 30) ve = 5.0; // Lv4
-        else if (sp > 20 && sp < 30) ve = 4.0; // Lv3
-        else if (sp > 10 && sp < 20) ve = 2.5; // Lv2
-        else if (sp > 0 && sp < 10) ve = 1.5; // Lv1
-        else if (sp === 0) ve = 1.0; // Lv0
+        if (sp > 30) ve = 3.0;
+        else if (sp > 20 && sp < 30) ve = 2.0;
+        else if (sp > 10 && sp < 20) ve = 1.5;
+        else if (sp > 0 && sp < 10) ve = 1.2;
+        else if (sp === 0) ve = 1.0;
       }
       if (ve === null) ve = 1.0;
       return `<div class="row"><label>Volcano_event:</label><span>${escape(ve)}</span></div>`;

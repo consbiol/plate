@@ -458,7 +458,6 @@ export default {
         _getLandDistanceThresholdForRow: (...args) => this._getLandDistanceThresholdForRow(...args)
       };
     },
-    // --- 将来的な Web Worker に渡しやすいよう、主要入力をまとめる ---
     _buildGenerationJobInputs() {
       const source = this._collectGenerationJobInputSource();
       return buildGenerationJobInputs(source);
@@ -1380,14 +1379,7 @@ export default {
       }
       return null;
     },
-    // Drift:
-    // - 前回Generateの中心点（hfCache.centers）をキャッシュとして使用
-    // - 新アルゴリズム:
-    //   - 50ターンごとに Approach / Repel を交互
-    //   - 各ターンで「重心法 1」「最短点法 1」「ランダム 1 x2」を順に試行
-    //   - Repel では上下端5グリッド以内なら赤道方向へ 1 追加
-    //   - 常に minCenterDistance（中心間の排他距離）を衝突判定で維持
-    // - すべてのノイズをランダムに再抽選（deterministicSeed由来の派生RNGも無効化）
+    // Drift:大陸移動アルゴリズム
     /**
      * One drift turn. Called by runSignal watcher (mode: drift) and emits `drifted`.
      * @returns {TerrainEventPayload} emitted payload

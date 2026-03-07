@@ -308,9 +308,13 @@ export function runDrift(runtime, { runContext = null, deps = null } = {}) {
         }
       } else {
         const cycle = turn0 % 3;
-        const dG = getDist(p, center, useYtorus);
-        const stG = stepFromVector(dG.dx, dG.dy);
-        movePrimary(p, stG.dx * -1, stG.dy * -1, rngForMoves);
+        const REPEL_SPEED_FACTOR = 0.8;
+
+        if (rngForMoves() < REPEL_SPEED_FACTOR) {
+          const dG = getDist(p, center, useYtorus);
+          const stG = stepFromVector(dG.dx, dG.dy);
+          movePrimary(p, stG.dx * -1, stG.dy * -1, rngForMoves);
+        }
 
         let nearest = null, second = null;
         let minD = Infinity, secondD = Infinity;
@@ -321,24 +325,28 @@ export function runDrift(runtime, { runContext = null, deps = null } = {}) {
           if (d < minD) { secondD = minD; second = nearest; minD = d; nearest = other; }
           else if (d < secondD) { secondD = d; second = other; }
         }
-        if (nearest) {
+        if (nearest && rngForMoves() < REPEL_SPEED_FACTOR) {
           const dN = getDist(p, nearest, useYtorus);
           const stN = stepFromVector(dN.dx, dN.dy);
           movePrimary(p, stN.dx * -1, stN.dy * -1, rngForMoves);
         }
 
         if (cycle === 2) {
-          const r = RAND_DIRS_8[(rngForMoves() * RAND_DIRS_8.length) | 0];
-          move(p, r.dx, r.dy);
-          if (second) {
+          if (rngForMoves() < REPEL_SPEED_FACTOR) {
+            const r = RAND_DIRS_8[(rngForMoves() * RAND_DIRS_8.length) | 0];
+            move(p, r.dx, r.dy);
+          }
+          if (second && rngForMoves() < REPEL_SPEED_FACTOR) {
             const d2 = getDist(p, second, useYtorus);
             const st2 = stepFromVector(d2.dx, d2.dy);
             movePrimary(p, st2.dx * 1, st2.dy * 1, rngForMoves);
           }
         } else {
           for (let k = 0; k < 2; k++) {
-            const r = RAND_DIRS_8[(rngForMoves() * RAND_DIRS_8.length) | 0];
-            move(p, r.dx, r.dy);
+            if (rngForMoves() < REPEL_SPEED_FACTOR) {
+              const r = RAND_DIRS_8[(rngForMoves() * RAND_DIRS_8.length) | 0];
+              move(p, r.dx, r.dy);
+            }
           }
         }
 
@@ -359,6 +367,7 @@ export function runDrift(runtime, { runContext = null, deps = null } = {}) {
 
     const centers = points.map((p) => ({ x: p.x, y: p.y }));
 
+    //superPloomの計算
     let sum = 0;
     let cnt = 0;
     for (let i = 0; i < points.length; i++) {
@@ -373,7 +382,7 @@ export function runDrift(runtime, { runContext = null, deps = null } = {}) {
     let baseDefault = 50 + (((minCD - 20) / 5) * 2);
     baseDefault = Math.min(baseDefault, 58);
     if (avgDist < baseDefault) {
-      spc += 1;
+      spc += isApproach ? 3 : 1;
     } else if (avgDist >= 58 && avgDist <= 62) {
       spc -= 4;
     } else if (avgDist > 62 && avgDist <= 65) {

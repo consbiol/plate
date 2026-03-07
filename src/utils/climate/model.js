@@ -99,16 +99,16 @@ function applyVolcanoDrift(baseVolcanoEvent, driftMetrics) {
     const phaseName = (typeof driftMetrics.phase === 'string') ? driftMetrics.phase : null;
 
     if (phaseName === 'Approach') {
-        if (superPloom > 30) return 4.0;
-        if (superPloom > 20 && superPloom < 30) return 2.5;
+        if (superPloom > 30) return 3.0;
+        if (superPloom > 20 && superPloom < 30) return 2.0;
         return baseVolcanoEvent;
     }
 
     if (phaseName === 'Repel') {
-        if (superPloom > 30) return 5.0;
-        if (superPloom > 20 && superPloom < 30) return 4.0;
-        if (superPloom > 10 && superPloom < 20) return 2.5;
-        if (superPloom > 0 && superPloom < 10) return 1.5;
+        if (superPloom > 30) return 3.0;
+        if (superPloom > 20 && superPloom < 30) return 2.0;
+        if (superPloom > 10 && superPloom < 20) return 1.5;
+        if (superPloom > 0 && superPloom < 10) return 1.0;
         if (superPloom === 0) return 1.0;
     }
 
