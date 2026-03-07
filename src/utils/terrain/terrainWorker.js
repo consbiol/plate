@@ -82,9 +82,7 @@ if (typeof self !== 'undefined') {
       const state = (result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'state'))
         ? result.state
         : null;
-      const nextHfCache = (state && state.hfCache)
-        ? state.hfCache
-        : (resolvedDeps && resolvedDeps.hfCache ? resolvedDeps.hfCache : null);
+      const nextHfCache = (state && state.hfCache) ? state.hfCache : null;
       const outputs = buildWorkerOutputs({
         payload,
         hfCache: nextHfCache,

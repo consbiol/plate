@@ -3,7 +3,7 @@
 // ---------------------------
 // Turn runner / simulation cadence
 // ---------------------------
-export const TURN_MIN_WAIT_MS = 100;
+export const TURN_MIN_WAIT_MS = 50;
 export const TURN_LAG_FALLBACK_WAIT_MS = 100;
 export const TURN_PLANE_UPDATE_EVERY_TURNS = 2;
 export const TURN_SPHERE_UPDATE_EVERY_TURNS = 5;
