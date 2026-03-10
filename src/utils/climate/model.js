@@ -221,8 +221,8 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
             ? tempSigmaColdSide
             : tempSigmaHotSide;
 
-    const greeningTech = 1;
-    const greenIndex_calc = 1.81 * Math.exp(-(sq(averageTemperature - 22.5)) / (2 * sq(tempSigma))) * f_cloud * co2FactorClamped * O2_suppression * greeningTech;
+    const greeningTech = 0;
+    const greenIndex_calc = 1.81 * Math.exp(-(sq(averageTemperature - 22.5)) / (2 * sq(tempSigma))) * f_cloud * co2FactorClamped * O2_suppression + greeningTech;
     if (Time_turn === 0 || eraWillChange) {
         greenIndex = greenIndex_calc;
     } else {
