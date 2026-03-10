@@ -38,9 +38,9 @@ export function drawSphereCPU(vm, canvas) {
         const distBottom = height - 1 - y;
         const minDist = Math.min(distTop, distBottom);
         let factor = 1.0;
-        if (minDist <= 1) factor = 5.0;
-        else if (minDist <= 4) factor = 3.0;
-        else if (minDist <= 14) factor = 2.0;
+        if (minDist <= 1) factor = 8.0;
+        else if (minDist <= 4) factor = 4.0;
+        else if (minDist <= 14) factor = 2.5;
         else if (minDist <= 29) factor = 1.3;
 
         accumulated += factor;
