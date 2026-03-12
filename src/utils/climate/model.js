@@ -163,7 +163,7 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
         : 0;
     let baseAverageTemperature = (typeof state.baseAverageTemperature === 'number') ? state.baseAverageTemperature : 15;
 
-    const { GI_alpha, CO2_alpha, O2_alpha, Temp_alpha } = buildTurnAlphaParams(Turn_yr);
+    const { GI_alpha, CO2_alpha, O2_alpha, Temp_alpha, CH4_alpha } = buildTurnAlphaParams(Turn_yr);
 
     let f_N2 = Number(v0.f_N2);
     let f_O2 = Number(v0.f_O2);
@@ -381,7 +381,8 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     f_O2 = O2_alpha * f_O2_calc + (1 - O2_alpha) * f_O2;
 
     const initial_CH4 = Number(constants.initial_CH4) || 0.01;
-    f_CH4 = initial_CH4 / (1 + sq(f_O2 / 0.003)) * 1 / (1 + Math.pow((f_O2 / 0.05), 4)) + CH4_event;
+    const f_CH4_calc = initial_CH4 / (1 + sq(f_O2 / 0.003)) * 1 / (1 + Math.pow((f_O2 / 0.05), 4)) + CH4_event;
+    f_CH4 = CH4_alpha * f_CH4_calc + (1 - CH4_alpha) * f_CH4;
     f_CH4 = Math.max(f_CH4, 0.0000001);
 
     const f_H2O = H2O_eff * 0.01;

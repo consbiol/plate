@@ -310,9 +310,9 @@ export function buildTurnAlphaParams(Turn_yr) {
     })[key];
 
     const O2_alpha = ({
-        10: 0.10,
-        20: 0.30,
-        100: 0.10,
+        10: 0.08,
+        20: 0.10,
+        100: 0.15,
         1000: 0.30,
         2000: 0.40,
         5000: 0.55,
@@ -345,7 +345,19 @@ export function buildTurnAlphaParams(Turn_yr) {
         100000: 0.75
     })[key];
 
-    return { GI_alpha, CO2_alpha, O2_alpha, Temp_alpha, glacier_alpha, alphaKey: key };
+    const CH4_alpha = ({
+        10: 0.005,
+        20: 0.010,
+        100: 0.05,
+        1000: 0.4,
+        2000: 0.6,
+        5000: 0.7,
+        10000: 0.8,
+        50000: 0.9,
+        100000: 0.95
+    })[key];
+
+    return { GI_alpha, CO2_alpha, O2_alpha, Temp_alpha, glacier_alpha, CH4_alpha, alphaKey: key };
 }
 
 export function getNextEraByTime(curEra, Time_yr_era) {
