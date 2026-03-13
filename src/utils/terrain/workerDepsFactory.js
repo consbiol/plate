@@ -46,15 +46,17 @@ export function createWorkerDepsWithFunctions({ depsSnapshot = null, functions =
 export function createDefaultWorkerDepsFunctions({ depsSnapshot = null } = {}) {
   const props = (depsSnapshot && depsSnapshot.props) ? depsSnapshot.props : {};
   const state = (depsSnapshot && depsSnapshot.state) ? depsSnapshot.state : {};
+  const hfCacheInit = depsSnapshot && depsSnapshot.hfCache ? depsSnapshot.hfCache : null;
   const internal = {
     forceRandomDerivedRng: false,
     _glacierRowsState: {},
-    wobbleRowsFixed: null,
-    wobbleShiftByX: null,
-    baseLandDistanceThresholdFixed: null,
+    // generate/update 時に固定された値を hfCache から復元（revise で使う）
+    wobbleRowsFixed: (hfCacheInit && hfCacheInit.wobbleRowsFixed != null) ? hfCacheInit.wobbleRowsFixed : null,
+    wobbleShiftByX: (hfCacheInit && Array.isArray(hfCacheInit.wobbleShiftByX)) ? hfCacheInit.wobbleShiftByX : null,
+    baseLandDistanceThresholdFixed: (hfCacheInit && hfCacheInit.baseLandDistanceThresholdFixed != null) ? hfCacheInit.baseLandDistanceThresholdFixed : null,
     emitSeq: 0,
     generationInputs: null,
-    hfCache: depsSnapshot && depsSnapshot.hfCache ? depsSnapshot.hfCache : null
+    hfCache: hfCacheInit
   };
 
   const getProp = (key, fallback = null) => (
@@ -449,7 +451,11 @@ export function createDefaultWorkerDepsFunctions({ depsSnapshot = null } = {}) {
       seaNoiseAmplitude,
       landNoiseAmplitude,
       preGlacierStats,
-      gridDataBase: gridData
+      gridDataBase: gridData,
+      // generate/update 時に固定された値を revise で使うために保持
+      wobbleShiftByX: internal.wobbleShiftByX ? internal.wobbleShiftByX.slice() : null,
+      wobbleRowsFixed: internal.wobbleRowsFixed,
+      baseLandDistanceThresholdFixed: internal.baseLandDistanceThresholdFixed
     };
 
     const ensured = ensureRunContext({

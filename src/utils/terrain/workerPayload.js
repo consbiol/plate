@@ -81,7 +81,11 @@ const HF_CACHE_KEYS = [
   'seaNoiseAmplitude',
   'landNoiseAmplitude',
   'preGlacierStats',
-  'gridDataBase'
+  'gridDataBase',
+  // generate/update 時に固定された wobble / landDistanceThreshold を revise で使うために保持
+  'wobbleShiftByX',
+  'wobbleRowsFixed',
+  'baseLandDistanceThresholdFixed'
 ];
 
 const deepClonePlain = (value) => {

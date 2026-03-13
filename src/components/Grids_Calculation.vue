@@ -1242,7 +1242,11 @@ export default {
         // 氷河行数計算に使う海率（氷河上書き前）
         preGlacierStats,
         // featuresを「不整合なら消す」ためのベース
-        gridDataBase: gridData
+        gridDataBase: gridData,
+        // generate/update 時に固定された値を revise で使うために保持
+        wobbleShiftByX: this._wobbleShiftByX ? this._wobbleShiftByX.slice() : null,
+        wobbleRowsFixed: this.wobbleRowsFixed,
+        baseLandDistanceThresholdFixed: this.baseLandDistanceThresholdFixed
       };
 
       const ensured = this._ensureRunContext({
@@ -1351,6 +1355,8 @@ export default {
         return null;
       }
       if (worker) {
+        // generate/update は新しい hfCache を作るので、worker 側キャッシュを無効化
+        this.workerHasHfCache = false;
         try {
           const outputs = await this._postTerrainWorkerJob({ runMode, runContext });
           if (outputs) {
@@ -1391,6 +1397,8 @@ export default {
         return null;
       }
       if (worker) {
+        // drift は centers を移動するので、worker 側キャッシュを無効化
+        this.workerHasHfCache = false;
         try {
           const outputs = await this._postTerrainWorkerJob({ runMode: 'drift', runContext });
           if (outputs) {

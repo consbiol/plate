@@ -43,6 +43,11 @@ if (typeof self !== 'undefined') {
       post({ id, error: 'Missing inputs' });
       return;
     }
+    // generate/update は完全新規生成なので、古い hfCache を使わせない
+    const isFullGeneration = (inputs.runMode === 'generate' || inputs.runMode === 'update');
+    if (isFullGeneration) {
+      cachedHfCache = null;
+    }
     const mergedSnapshot = (() => {
       const baseSnapshot = (depsSnapshot && typeof depsSnapshot === 'object')
         ? depsSnapshot
