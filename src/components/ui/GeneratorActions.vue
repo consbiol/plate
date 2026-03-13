@@ -107,6 +107,16 @@
           <button @click="triggerVolcano(5)" :disabled="isEventLocked">Lv5</button>
         </div>
       </div>
+      <div class="event-group">
+        <div class="event-label">メタンハイドレートの上昇</div>
+        <div class="event-buttons">
+          <button @click="triggerCH4(1)" :disabled="isEventLocked">Lv1</button>
+          <button @click="triggerCH4(2)" :disabled="isEventLocked">Lv2</button>
+          <button @click="triggerCH4(3)" :disabled="isEventLocked">Lv3</button>
+          <button @click="triggerCH4(4)" :disabled="isEventLocked">Lv4</button>
+          <button @click="triggerCH4(5)" :disabled="isEventLocked">Lv5</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -239,6 +249,9 @@ export default {
     ,
     triggerVolcano(level) {
       this.$store.commit('triggerVolcanoManualLevel', { level: Number(level) });
+    },
+    triggerCH4(level) {
+      this.$store.commit('triggerCH4Event', { level: Number(level) });
     }
   }
 };

@@ -78,6 +78,8 @@ function buildDefaultClimateState() {
             Fire_one_shot_remaining: 0,
             // Cosmic (超新星) のワンショット残ターン（mutation で 3 に設定し、model 側でデクリメントして 0 で CosmicRay を 1 に戻す）
             Cosmic_one_shot_remaining: 0,
+            // CH4 のワンショット残ターン
+            CH4_one_shot_remaining: 0,
             Fire_event_CO2: 0,
             CH4_event: 0,
             sol_event: 0,
@@ -357,6 +359,25 @@ export function createClimateSlice() {
                 }, { forceTurnWindow: true });
             }
             ,
+            // メタンハイドレートの上昇イベント（ワンショット）
+            // payload: { level: 1..5 } - Lv1..Lv5 の強度を指定。Lv0(リセット)の場合は level=0。
+            triggerCH4Event(state, payload) {
+                const lvl = (payload && typeof payload.level === 'number') ? Math.floor(payload.level) : 0;
+                patchClimateEvents(state, (ev) => {
+                    const mapping = {
+                        0: 0,
+                        1: 0.00001,
+                        2: 0.00005,
+                        3: 0.00010,
+                        4: 0.0005,
+                        5: 0.001
+                    };
+                    const val = Object.prototype.hasOwnProperty.call(mapping, lvl) ? mapping[lvl] : 0;
+                    ev.CH4_event = Number(val);
+                    // 1ターンだけ有効にするフラグ（model側でデクリメントして次ターンにリセットする）
+                    ev.CH4_one_shot_remaining = (lvl === 0) ? 0 : 1;
+                }, { forceTurnWindow: true });
+            },
             // 火山イベント（マニュアル：Step2 UI からトリガー。Lv1..Lv5 を 3 ターンセット）
             // payload: { level: 0..5 } - Lv0 はリセット
             triggerVolcanoManualLevel(state, payload) {

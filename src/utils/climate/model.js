@@ -463,6 +463,9 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     applyOneShotReset(nextEvents, 'Fire_one_shot_remaining', (e) => {
         e.Fire_event_CO2 = 0;
     });
+    applyOneShotReset(nextEvents, 'CH4_one_shot_remaining', (e) => {
+        e.CH4_event = 0;
+    });
     applyOneShotReset(nextEvents, 'Volcano_manual_remaining', (e) => {
         e.Volcano_event_manual = 0;
     });
