@@ -260,11 +260,19 @@ export default {
       this._sphereCanvas = canvas;
       // 初期回転速度を 10 grid/s に設定（1 grid/s = 1000 ms, 10 grid/s = 100 ms）
       this._rotationMsPerGrid = 100;
+      
+      this._useWebGL = false;
+      this._useWorker = false;
       try {
         this._useWebGL = this.initWebGL(canvas);
       } catch (e) {
         this._useWebGL = false;
       }
+      
+      if (!this._useWebGL) {
+        this._useWorker = this.initWorker(canvas);
+      }
+
       // 初回描画前に、現在の雲量をスナップショットとして取り込む
       this.applyCloudSnapshot();
       // WebGL context lost/restored を監視（GPUリセット等で真っ黒になるのを防ぐ）
@@ -281,10 +289,8 @@ export default {
       // popup/iframe が開いていて canvas がある場合は即反映
       if (this.desiredRotationEnabled) {
         this.startRotationLoop();
-        this._isRotating = true;
       } else {
         this.stopRotationLoop();
-        this._isRotating = false;
       }
       // ボタン表示も可能なら同期
       bestEffort(() => {
@@ -370,6 +376,14 @@ export default {
         // ignore
       }
       this._useWebGL = false;
+      
+      if (this._sphereWorker) {
+        this._sphereWorker.postMessage({ type: 'dispose' });
+        this._sphereWorker.terminate();
+        this._sphereWorker = null;
+      }
+      this._useWorker = false;
+
       // context lost/restored listener 解除
       this.unbindWebGLContextEvents();
       // beforeunload の解除（再オープン時の多重登録防止）
@@ -423,19 +437,35 @@ export default {
     initWebGL(canvas) {
       return initSphereWebGL(this, canvas);
     },
+    initWorker(canvas) {
+      if (typeof window === 'undefined' || !window.OffscreenCanvas) return false;
+      try {
+        const offscreen = canvas.transferControlToOffscreen();
+        const worker = new Worker(new URL('../features/sphere/sphereWorker.js', import.meta.url), { type: 'module' });
+        worker.onmessage = (e) => {
+          if (e.data.type === 'speedUpdated') {
+            this._rotationMsPerGrid = e.data.rotationMsPerGrid;
+            this.updateSpeedLabel();
+          }
+        };
+        worker.postMessage({ type: 'init', canvas: offscreen }, [offscreen]);
+        this._sphereWorker = worker;
+        return true;
+      } catch (e) {
+        return false;
+      }
+    },
     drawWebGL() {
       return drawSphereWebGL(this);
     },
     toggleRotate(btn) {
       if (this._isRotating) {
         this.stopRotationLoop();
-        this._isRotating = false;
         this.desiredRotationEnabled = false;
         if (btn) btn.textContent = 'Rotate';
       } else {
-        // rAFベースの回転ループ開始
+        // rAFベースの回転ループ開始 または Workerへの通知
         this.startRotationLoop();
-        this._isRotating = true;
         this.desiredRotationEnabled = true;
         if (btn) btn.textContent = 'Stop';
       }
@@ -446,6 +476,13 @@ export default {
       this.requestRedraw();
     },
     startRotationLoop() {
+      this._isRotating = true;
+      if (this._useWorker) {
+        if (this._sphereWorker) {
+          this._sphereWorker.postMessage({ type: 'setRotation', payload: { enabled: true } });
+        }
+        return;
+      }
       // ensure canvas reference
       const canvas = this._sphereCanvas;
       if (!canvas) return;
@@ -482,15 +519,27 @@ export default {
       this.updateSpeedLabel();
     },
     stopRotationLoop() {
+      this._isRotating = false;
+      if (this._useWorker) {
+        if (this._sphereWorker) {
+          this._sphereWorker.postMessage({ type: 'setRotation', payload: { enabled: false } });
+        }
+        return;
+      }
       if (this._rafId) {
         cancelAnimationFrame(this._rafId);
         this._rafId = null;
       }
       this._lastTimestamp = null;
       this._accumMs = 0;
-      this._isRotating = false;
     },
     adjustSpeed(faster) {
+      if (this._useWorker) {
+        if (this._sphereWorker) {
+          this._sphereWorker.postMessage({ type: 'adjustSpeed', payload: { faster } });
+        }
+        return;
+      }
       const cur = this._rotationMsPerGrid || 1000;
       // 倍率調整（高速化: 半分、低速化: 1.5倍）
       const next = faster ? (cur / 1.5) : (cur * 1.5);
@@ -513,7 +562,40 @@ export default {
       el.textContent = `${gridsPerSec.toFixed(2)} grid/s`;
     },
     drawSphere(canvas) {
-      return drawSphereCPU(this, canvas);
+      const config = {
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        gridData: this.gridData,
+        polarBufferRows: this.polarBufferRows,
+        polarAvgRows: this.polarAvgRows,
+        polarBlendRows: this.polarBlendRows,
+        polarNoiseStrength: this.polarNoiseStrength,
+        polarNoiseScale: this.polarNoiseScale,
+        landTintColor: this.landTintColor,
+        landTintStrength: this.landTintStrength,
+        era: this.era,
+        f_cloud: this.f_cloud,
+        cloudPeriod: this.cloudPeriod,
+        polarCloudBoost: this.polarCloudBoost,
+        _rotationColumns: this._rotationColumns,
+        _precompute: this._precompute,
+        _sunShadowEnabled: this._sunShadowEnabled,
+        _getFCloudForRender: this._getFCloudForRender(),
+        _getCloudPeriodForRender: this._getCloudPeriodForRender(),
+        _getPolarCloudBoostForRender: this._getPolarCloudBoostForRender(),
+      };
+      if (this._useWorker) {
+        if (this._sphereWorker) {
+          this._sphereWorker.postMessage({ type: 'updateConfig', payload: config });
+          // If not rotating, request a single redraw manually
+          if (!this._isRotating) {
+            this._sphereWorker.postMessage({ type: 'requestRedraw' });
+          }
+        }
+      } else {
+        drawSphereCPU(config, canvas);
+        this._precompute = config._precompute;
+      }
     }
   }
 }

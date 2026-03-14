@@ -381,8 +381,8 @@ export function computeNextClimateTurnCore(cur, deps = {}) {
     f_O2 = O2_alpha * f_O2_calc + (1 - O2_alpha) * f_O2;
 
     const initial_CH4 = Number(constants.initial_CH4) || 0.01;
-    const f_CH4_calc = initial_CH4 / (1 + sq(f_O2 / 0.003)) * 1 / (1 + Math.pow((f_O2 / 0.05), 4)) + CH4_event;
-    f_CH4 = CH4_alpha * f_CH4_calc + (1 - CH4_alpha) * f_CH4;
+    const f_CH4_calc = initial_CH4 / (1 + sq(f_O2 / 0.003)) * 1 / (1 + Math.pow((f_O2 / 0.05), 4));
+    f_CH4 = CH4_alpha * f_CH4_calc + (1 - CH4_alpha) * f_CH4 + CH4_event;
     f_CH4 = Math.max(f_CH4, 0.0000001);
 
     const f_H2O = H2O_eff * 0.01;

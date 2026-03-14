@@ -1,12 +1,17 @@
 import { deriveDisplayColorsFromGridData, getEraTerrainColors, getEraLandTint, getEraCloudTint } from '../../utils/colors.js';
+import { fractalNoise2D } from '../../utils/noise.js';
+import { parseColorToRgb } from './colorParse.js';
+import { nightAlphaForCol } from './nightShadow.js';
+import { rand2, fbmTile } from './cloudNoise.js';
+import { sampleClassWeightSmooth } from './classWeight.js';
 
 /**
  * Sphere の CPU レンダラ（元 `Sphere_Display.vue` の `drawSphere` を移植）。
  *
- * 互換性重視のため、第一段階では vm（Vueコンポーネントインスタンス）をそのまま受け取り、
- * 既存のキャッシュ（vm._precompute）やユーティリティメソッド（vm.parseColorToRgb 等）に依存する。
+ * Web Workerへの切り離しに向け、Vueコンポーネント(vm)の代わりに必要なパラメータや
+ * 状態をまとめた config オブジェクトを受け取るよう変更しました。
  */
-export function drawSphereCPU(vm, canvas) {
+export function drawSphereCPU(config, canvas) {
     // 高速化版レンダリング: プリマップ + ImageData + パレット参照
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -19,10 +24,10 @@ export function drawSphereCPU(vm, canvas) {
     const datasetR = (canvas && canvas.dataset && canvas.dataset.fixedSphereR) ? parseInt(canvas.dataset.fixedSphereR, 10) : null;
     const R = (datasetR && isFinite(datasetR)) ? datasetR : Math.floor(Math.min(W, H) * 0.30);
 
-    const width = vm.gridWidth;
-    const height = vm.gridHeight;
+    const width = config.gridWidth;
+    const height = config.gridHeight;
     const maxTotalBuf = Math.max(0, height - 2);
-    const totalBuf = Math.max(0, Math.min(maxTotalBuf, vm.polarBufferRows));
+    const totalBuf = Math.max(0, Math.min(maxTotalBuf, config.polarBufferRows));
     const topBuf = Math.floor(totalBuf / 2);
     const bottomBuf = totalBuf - topBuf;
     // Build stretched row map: rows near both poles are repeated to simulate vertical stretching.
@@ -50,18 +55,18 @@ export function drawSphereCPU(vm, canvas) {
         }
     }
     const stretchedHeight = expandedRowMapArr.length;
-    const colShift = (vm._rotationColumns || 0);
-    const cityRgb = vm._getCityLightRgb();
+    const colShift = (config._rotationColumns || 0);
+    const cityRgb = [255, 240, 140]; // _getCityLightRgb() in vm
 
     // プリコンピュートのキャッシュ条件: canvasサイズ / mapサイズ / bufs
     // drawSphere start
     // derive displayColors once (available outside precompute block)
-    const eraColors = getEraTerrainColors(vm.era);
-    let displayColors = (vm.gridData && vm.gridData.length === width * height)
-        ? deriveDisplayColorsFromGridData(vm.gridData, width, height, undefined, eraColors, /*preferPalette*/ true)
+    const eraColors = getEraTerrainColors(config.era);
+    let displayColors = (config.gridData && config.gridData.length === width * height)
+        ? deriveDisplayColorsFromGridData(config.gridData, width, height, undefined, eraColors, /*preferPalette*/ true)
         : [];
 
-    if (!vm._precompute || vm._precompute.W !== W || vm._precompute.H !== H || vm._precompute.width !== width || vm._precompute.height !== height || vm._precompute.topBuf !== topBuf || vm._precompute.bottomBuf !== bottomBuf) {
+    if (!config._precompute || config._precompute.W !== W || config._precompute.H !== H || config._precompute.width !== width || config._precompute.height !== height || config._precompute.topBuf !== topBuf || config._precompute.bottomBuf !== bottomBuf) {
         const displayStride = width + 2;
         const effHeight = stretchedHeight + topBuf + bottomBuf;
         const expectedDisplayLen2 = (width + 2) * (height + 2);
@@ -74,7 +79,7 @@ export function drawSphereCPU(vm, canvas) {
         // パレット作成（display配列インデックス -> RGB）
         const palette = new Uint8ClampedArray(displayColors.length * 3);
         for (let i = 0; i < displayColors.length; i++) {
-            const rgb = vm.parseColorToRgb(displayColors[i]);
+            const rgb = parseColorToRgb(displayColors[i]);
             const outIdx = i * 3;
             palette[outIdx] = rgb[0];
             palette[outIdx + 1] = rgb[1];
@@ -152,7 +157,7 @@ export function drawSphereCPU(vm, canvas) {
                 fracArrFinal[i] = 0;
             }
         }
-        vm._precompute = {
+        config._precompute = {
             W, H, R, cx, cy, width, height, topBuf, bottomBuf, pixels,
             baseIx: Int16Array.from(baseIxArr),
             iyMap: Int16Array.from(iyMapArr),
@@ -167,7 +172,7 @@ export function drawSphereCPU(vm, canvas) {
     }
 
     // ImageData に描画
-    const pc = vm._precompute;
+    const pc = config._precompute;
     const imageData = ctx.createImageData(W, H);
     const data = imageData.data;
     const displayStride = pc.displayStride;
@@ -199,8 +204,8 @@ export function drawSphereCPU(vm, canvas) {
             };
             const topColor = pickMost(countsTop);
             const bottomColor = pickMost(countsBottom);
-            if (topColor) polarTopRgb = vm.parseColorToRgb(topColor);
-            if (bottomColor) polarBottomRgb = vm.parseColorToRgb(bottomColor);
+            if (topColor) polarTopRgb = parseColorToRgb(topColor);
+            if (bottomColor) polarBottomRgb = parseColorToRgb(bottomColor);
         }
     } catch (e) {
         // fall back to white if anything fails
@@ -224,14 +229,14 @@ export function drawSphereCPU(vm, canvas) {
             const displayYMap = (side === 1) ? 1 : height;
             const mapIdx = displayYMap * pc.displayStride + displayX;
             const mapColorStr = displayColors[mapIdx] || 'rgb(0,0,0)';
-            let colMap = vm.parseColorToRgb(mapColorStr);
+            let colMap = parseColorToRgb(mapColorStr);
             // 分類重み（海/陸/乾燥）取得用のマップ座標
-            const xMap = (displayX - 1 + (vm._rotationColumns || 0)) % width;
+            const xMap = (displayX - 1 + (config._rotationColumns || 0)) % width;
             const yMap = (side === 1) ? 0 : (height - 1);
             // 雲クラス重み（UV基準の9タップ平滑・バイリニア補間）
             let classW = 1.0;
             // 極近傍でも陸（氷河除く）なら軽くトーンを足す（近似）
-            if (vm.gridData && vm.gridData.length === width * height) {
+            if (config.gridData && config.gridData.length === width * height) {
                 // 連続uv（map域）を算出し、uvオフセットに基づく9サンプル平均を取得
                 const effHeightLocal = pc.stretchedHeight + topBuf + bottomBuf;
                 const uTopFrac = topBuf / effHeightLocal;
@@ -241,18 +246,18 @@ export function drawSphereCPU(vm, canvas) {
                 const sq = sx * sx + sy * sy;
                 const sz = Math.sqrt(Math.max(0, 1 - Math.min(1, sq)));
                 const lambda = Math.atan2(sx, sz);
-                const uCoord = (((lambda + Math.PI) / (2 * Math.PI)) + (vm._rotationColumns || 0) / Math.max(1, width)) % 1;
+                const uCoord = (((lambda + Math.PI) / (2 * Math.PI)) + (config._rotationColumns || 0) / Math.max(1, width)) % 1;
                 // For polar-region pixels we map mercY into stretched space; clamp into [0,1]
                 const vCoord = Math.max(0, Math.min(1, (vEff - uTopFrac) / Math.max(1e-6, uHeightFrac)));
-                const cloudPeriod = (typeof vm._getCloudPeriodForRender === 'function') ? vm._getCloudPeriodForRender() : vm.cloudPeriod;
+                const cloudPeriod = config._getCloudPeriodForRender !== undefined ? config._getCloudPeriodForRender : config.cloudPeriod;
                 const rUV = 0.75 / Math.max(1, cloudPeriod || 16);
-                classW = vm._sampleClassWeightSmooth(uCoord, vCoord, width, height, vm.gridData, rUV);
-                const cell = vm.gridData[yMap * width + xMap];
+                classW = sampleClassWeightSmooth(uCoord, vCoord, width, height, config.gridData, rUV);
+                const cell = config.gridData[yMap * width + xMap];
                 if (cell && cell.terrain && cell.terrain.type === 'land' && cell.terrain.land !== 'glacier') {
-                    const tint = vm.parseColorToRgb(vm.landTintColor || getEraLandTint(vm.era));
-                    const k = Math.max(0, Math.min(1, (vm.landTintStrength || 0) * 0.6)); // 極はやや弱め
+                    const tint = parseColorToRgb(config.landTintColor || getEraLandTint(config.era));
+                    const k = Math.max(0, Math.min(1, (config.landTintStrength || 0) * 0.6)); // 極はやや弱め
                     // ランダム濃淡
-                    const nVar = vm._rand2 ? vm._rand2(xMap, yMap) : 0.5;
+                    const nVar = rand2(xMap, yMap);
                     const shade = 1.0 + (nVar - 0.5) * 0.1;
                     colMap = [
                         Math.max(0, Math.min(255, Math.round((colMap[0] * (1 - k) + tint[0] * k) * shade))),
@@ -266,7 +271,7 @@ export function drawSphereCPU(vm, canvas) {
             const effHeightLocal = pc.stretchedHeight + topBuf + bottomBuf;
             const uTopFrac = topBuf / effHeightLocal;
             const uHeightFrac = pc.stretchedHeight / effHeightLocal;
-            const blendRows = Math.max(0, Math.min(vm.polarBlendRows || 3, Math.floor(effHeightLocal)));
+            const blendRows = Math.max(0, Math.min(config.polarBlendRows || 3, Math.floor(effHeightLocal)));
             const blendFrac = blendRows / effHeightLocal;
             let delta = 0;
             if (side === 1) delta = uTopFrac - mercY;
@@ -276,8 +281,10 @@ export function drawSphereCPU(vm, canvas) {
                 polarWeight = Math.max(0, Math.min(1, delta / blendFrac));
             }
             // add fractal noise to break straight seam
-            const n = vm._fractalNoise2D((pc.cx + p.px) * (vm.polarNoiseScale || 0.05), (pc.cy + p.py) * (vm.polarNoiseScale || 0.05), 4, 0.5);
-            polarWeight = Math.max(0, Math.min(1, polarWeight + (n - 0.5) * (vm.polarNoiseStrength || 0.3)));
+            // fractalNoise2D returns roughly [-1, 1], so output maps similarly to old _fractalNoise2D -> (v*0.5)+0.5.
+            const rawNoise = fractalNoise2D((pc.cx + p.px) * (config.polarNoiseScale || 0.05), (pc.cy + p.py) * (config.polarNoiseScale || 0.05), 4, 0.5, 1.0);
+            const n = (rawNoise * 0.5) + 0.5;
+            polarWeight = Math.max(0, Math.min(1, polarWeight + (n - 0.5) * (config.polarNoiseStrength || 0.3)));
             const mapWeight = 1 - polarWeight;
             const r = Math.round(colPolar[0] * polarWeight + colMap[0] * mapWeight);
             const g = Math.round(colPolar[1] * polarWeight + colMap[1] * mapWeight);
@@ -286,16 +293,16 @@ export function drawSphereCPU(vm, canvas) {
             // 経度u: 回転を反映したマップ列から推定
             const uEff = ((xMap % width) + width) % width / width;
             // クラウド有効度
-            const fCloud = (typeof vm._getFCloudForRender === 'function') ? vm._getFCloudForRender() : vm.f_cloud;
+            const fCloud = config._getFCloudForRender !== undefined ? config._getFCloudForRender : config.f_cloud;
             const effC = Math.max(0, Math.min(1, (fCloud || 0) * classW));
             let rr = r, gg = g, bb = b;
             if (effC > 0) {
-                const cloudPeriod = (typeof vm._getCloudPeriodForRender === 'function') ? vm._getCloudPeriodForRender() : vm.cloudPeriod;
-                const nCloud = vm._fbmTile(uEff, vEff, cloudPeriod || 16);
+                const cloudPeriod = config._getCloudPeriodForRender !== undefined ? config._getCloudPeriodForRender : config.cloudPeriod;
+                const nCloud = fbmTile(uEff, vEff, cloudPeriod || 16);
                 let t = 0.9 + (0.2 - 0.9) * effC; // mix(0.9,0.2,effC)
                 // 極ブースト: vEffが0/1に近いほど閾値を下げる（端で1, 赤道で0）
                 const pole = Math.max(0, Math.min(1, Math.abs(0.5 - vEff) / 0.5));
-                const polarCloudBoost = (typeof vm._getPolarCloudBoostForRender === 'function') ? vm._getPolarCloudBoostForRender() : vm.polarCloudBoost;
+                const polarCloudBoost = config._getPolarCloudBoostForRender !== undefined ? config._getPolarCloudBoostForRender : config.polarCloudBoost;
                 const boost = Math.max(0, Math.min(1, polarCloudBoost || 0));
                 const tAdj = 0.25 * boost * pole;
                 t = Math.max(0, Math.min(1, t - tAdj));
@@ -307,21 +314,21 @@ export function drawSphereCPU(vm, canvas) {
                 else coverage = (nCloud - (t - edge)) / (2 * edge);
                 const alpha = 0.35 + 0.45 * Math.sqrt(effC);
                 const depth = Math.max(0, Math.min(1, (nCloud - t) / Math.max(1e-3, 1 - t)));
-                const detail = vm._fbmTile((uEff + 0.123) % 1, (vEff + 0.456) % 1, (cloudPeriod || 16) * 4);
+                const detail = fbmTile((uEff + 0.123) % 1, (vEff + 0.456) % 1, (cloudPeriod || 16) * 4);
                 const density = 0.3 + (1.0 - 0.3) * (0.5 * detail + 0.5 * depth);
                 const k = Math.max(0, Math.min(1, coverage * alpha * density));
-                const cloudTint = vm.parseColorToRgb(getEraCloudTint(vm.era));
+                const cloudTint = parseColorToRgb(getEraCloudTint(config.era));
                 rr = Math.round(rr * (1 - k) + cloudTint[0] * k);
                 gg = Math.round(gg * (1 - k) + cloudTint[1] * k);
                 bb = Math.round(bb * (1 - k) + cloudTint[2] * k);
             }
             // --- 太陽の影（夜側） ---
             const colForSun = ((ix0 + colShift) % width + width) % width;
-            const aNight = vm._sunShadowEnabled ? vm._nightAlphaForCol(colForSun, width) : 0;
+            const aNight = config._sunShadowEnabled ? nightAlphaForCol(colForSun, width) : 0;
             if (aNight > 0) {
                 // smooth city intensity by 2x2 neighbor average
                 let cityCount = 0;
-                if (vm.gridData && vm.gridData.length === width * height) {
+                if (config.gridData && config.gridData.length === width * height) {
                     const sx0 = xMap;
                     const sx1 = (xMap + 1) % width;
                     const sy0 = yMap;
@@ -332,8 +339,9 @@ export function drawSphereCPU(vm, canvas) {
                         const sx = ((coords[si][0] % width) + width) % width;
                         const sy = coords[si][1];
                         if (sy >= 0 && sy < height) {
-                            const c = vm.gridData[sy * width + sx];
-                            if (vm._isCityCell(c)) cityCount++;
+                            const c = config.gridData[sy * width + sx];
+                            const isCity = !!(c && (c.city || c.seaCity)); // logic from _isCityCell
+                            if (isCity) cityCount++;
                         }
                     }
                 }
@@ -362,7 +370,7 @@ export function drawSphereCPU(vm, canvas) {
             // 陸（氷河除く）に青灰色トーンを適用
             // 分類重み（UV基準の9タップ平滑・バイリニア補間）
             let classW = 1.0;
-            if (vm.gridData && vm.gridData.length === width * height) {
+            if (config.gridData && config.gridData.length === width * height) {
                 // compute continuous vCoord using precomputed original row and fractional offset
                 const iyOrig = pc.iyMap[i];
                 const frac = pc.frac ? pc.frac[i] || 0 : 0;
@@ -372,19 +380,19 @@ export function drawSphereCPU(vm, canvas) {
                 const sq = sx * sx + sy * sy;
                 const sz = Math.sqrt(Math.max(0, 1 - Math.min(1, sq)));
                 const lambda = Math.atan2(sx, sz);
-                const uCoord = (((lambda + Math.PI) / (2 * Math.PI)) + (vm._rotationColumns || 0) / Math.max(1, width)) % 1;
-                const cloudPeriod = (typeof vm._getCloudPeriodForRender === 'function') ? vm._getCloudPeriodForRender() : vm.cloudPeriod;
+                const uCoord = (((lambda + Math.PI) / (2 * Math.PI)) + (config._rotationColumns || 0) / Math.max(1, width)) % 1;
+                const cloudPeriod = config._getCloudPeriodForRender !== undefined ? config._getCloudPeriodForRender : config.cloudPeriod;
                 const rUV = 0.75 / Math.max(1, cloudPeriod || 16);
-                classW = vm._sampleClassWeightSmooth(uCoord, vCoord, width, height, vm.gridData, rUV);
+                classW = sampleClassWeightSmooth(uCoord, vCoord, width, height, config.gridData, rUV);
                 // 陸トーン適用のためのセル参照（グリッド座標）
                 const xMap = ((ix0 + colShift) % width + width) % width;
                 const yMap = iy;
-                const cell = vm.gridData[yMap * width + xMap];
+                const cell = config.gridData[yMap * width + xMap];
                 if (cell && cell.terrain && cell.terrain.type === 'land' && cell.terrain.land !== 'glacier') {
-                    const tint = vm.parseColorToRgb(vm.landTintColor || getEraLandTint(vm.era));
-                    const k = Math.max(0, Math.min(1, vm.landTintStrength || 0));
+                    const tint = parseColorToRgb(config.landTintColor || getEraLandTint(config.era));
+                    const k = Math.max(0, Math.min(1, config.landTintStrength || 0));
                     // ランダム濃淡（地形っぽさ）: 基準±5%程度
-                    const nVar = vm._rand2 ? vm._rand2(xMap, yMap) : 0.5;
+                    const nVar = rand2(xMap, yMap);
                     const shade = 1.0 + (nVar - 0.5) * 0.1;
                     r = Math.max(0, Math.min(255, Math.round((r * (1 - k) + tint[0] * k) * shade)));
                     g = Math.max(0, Math.min(255, Math.round((g * (1 - k) + tint[1] * k) * shade)));
@@ -394,16 +402,16 @@ export function drawSphereCPU(vm, canvas) {
             // --- 雲オーバーレイ（描画後に適用） ---
             // 経度u: 回転を反映したマップ列から
             const uEff = ((((ix0 + colShift) % width) + width) % width) / width;
-            const fCloud = (typeof vm._getFCloudForRender === 'function') ? vm._getFCloudForRender() : vm.f_cloud;
+            const fCloud = config._getFCloudForRender !== undefined ? config._getFCloudForRender : config.f_cloud;
             const effC = Math.max(0, Math.min(1, (fCloud || 0) * classW));
             let rr = r, gg = g, bb = b;
             if (effC > 0) {
-                const cloudPeriod = (typeof vm._getCloudPeriodForRender === 'function') ? vm._getCloudPeriodForRender() : vm.cloudPeriod;
-                const nCloud = vm._fbmTile(uEff, vEff, cloudPeriod || 16);
+                const cloudPeriod = config._getCloudPeriodForRender !== undefined ? config._getCloudPeriodForRender : config.cloudPeriod;
+                const nCloud = fbmTile(uEff, vEff, cloudPeriod || 16);
                 let t = 0.9 + (0.2 - 0.9) * effC;
                 // 極ブースト（端で1, 赤道で0）
                 const pole = Math.max(0, Math.min(1, Math.abs(0.5 - vEff) / 0.5));
-                const polarCloudBoost = (typeof vm._getPolarCloudBoostForRender === 'function') ? vm._getPolarCloudBoostForRender() : vm.polarCloudBoost;
+                const polarCloudBoost = config._getPolarCloudBoostForRender !== undefined ? config._getPolarCloudBoostForRender : config.polarCloudBoost;
                 const boost = Math.max(0, Math.min(1, polarCloudBoost || 0));
                 const tAdj = 0.25 * boost * pole;
                 t = Math.max(0, Math.min(1, t - tAdj));
@@ -414,23 +422,23 @@ export function drawSphereCPU(vm, canvas) {
                 else coverage = (nCloud - (t - edge)) / (2 * edge);
                 const alpha = 0.35 + 0.45 * Math.sqrt(effC);
                 const depth = Math.max(0, Math.min(1, (nCloud - t) / Math.max(1e-3, 1 - t)));
-                const detail = vm._fbmTile((uEff + 0.123) % 1, (vEff + 0.456) % 1, (cloudPeriod || 16) * 4);
+                const detail = fbmTile((uEff + 0.123) % 1, (vEff + 0.456) % 1, (cloudPeriod || 16) * 4);
                 const density = 0.3 + (1.0 - 0.3) * (0.5 * detail + 0.5 * depth);
                 const k = Math.max(0, Math.min(1, coverage * alpha * density));
-                const cloudTint = vm.parseColorToRgb(getEraCloudTint(vm.era));
+                const cloudTint = parseColorToRgb(getEraCloudTint(config.era));
                 rr = Math.round(rr * (1 - k) + cloudTint[0] * k);
                 gg = Math.round(gg * (1 - k) + cloudTint[1] * k);
                 bb = Math.round(bb * (1 - k) + cloudTint[2] * k);
             }
             // --- 太陽の影（夜側） ---
             const colForSun = ((ix0 + colShift) % width + width) % width;
-            const aNight = vm._sunShadowEnabled ? vm._nightAlphaForCol(colForSun, width) : 0;
+            const aNight = config._sunShadowEnabled ? nightAlphaForCol(colForSun, width) : 0;
             if (aNight > 0) {
                 // smooth city intensity by 2x2 neighbor average
                 let cityCount = 0;
                 let xCenter = ((ix0 + colShift) % width + width) % width;
                 let yCenter = iy;
-                if (vm.gridData && vm.gridData.length === width * height) {
+                if (config.gridData && config.gridData.length === width * height) {
                     const sx0 = xCenter;
                     const sx1 = (xCenter + 1) % width;
                     const sy0 = yCenter;
@@ -440,8 +448,9 @@ export function drawSphereCPU(vm, canvas) {
                         const sx = ((coords[si][0] % width) + width) % width;
                         const sy = coords[si][1];
                         if (sy >= 0 && sy < height) {
-                            const c = vm.gridData[sy * width + sx];
-                            if (vm._isCityCell(c)) cityCount++;
+                            const c = config.gridData[sy * width + sx];
+                            const isCity = !!(c && (c.city || c.seaCity));
+                            if (isCity) cityCount++;
                         }
                     }
                 }

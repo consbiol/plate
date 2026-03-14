@@ -24,11 +24,9 @@ function simulate(height) {
         else if (minDist <= 29) factor = 1.3;// 15..29 (15 rows)
 
         accumulated += factor;
-        let count = 0;
         while (accumulated >= 1) {
             expandedRowMapArr.push(y);
             accumulated -= 1;
-            count++;
         }
 
         if (minDist <= 20) { // Limit output
